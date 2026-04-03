@@ -1,3 +1,4 @@
+import { supabase } from './supabase.js'
 import { useState, useEffect, useCallback, useRef } from "react";
 
 async function ai(sys, usr, tok = 900) {
@@ -1131,7 +1132,17 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
                 style={{padding:"9px 20px",background:regStep===1&&!canNext1||regStep===2&&!canNext2||regStep===4&&!canNext4?T.border:T.sage,color:regStep===1&&!canNext1||regStep===2&&!canNext2||regStep===4&&!canNext4?T.stone:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:regStep===1&&!canNext1||regStep===2&&!canNext2||regStep===4&&!canNext4?"not-allowed":"pointer",letterSpacing:".3px",transition:"background .15s"}} onMouseEnter={e=>{if(e.target.style.background!==T.border)e.target.style.background=T.sage2}} onMouseLeave={e=>{if(e.target.style.background!==T.border)e.target.style.background=T.sage}}>
                 Continue →
               </button>
-            :<button onClick={()=>setRegistered(true)} disabled={!canFinish} style={{padding:"9px 20px",background:!canFinish?T.border:T.sage,color:!canFinish?T.stone:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:!canFinish?"not-allowed":"pointer",letterSpacing:".3px"}}>
+            :<button onClick={()=>{
+                supabase.from('businesses').insert({
+                  name: listing.name,
+                  category: listing.category,
+                  location: listing.location,
+                  email: listing.email,
+                  phone: listing.phone,
+                  status: 'pending',
+                });
+                setRegistered(true);
+              }} disabled={!canFinish} style={{padding:"9px 20px",background:!canFinish?T.border:T.sage,color:!canFinish?T.stone:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:!canFinish?"not-allowed":"pointer",letterSpacing:".3px"}}>
                 Publish listing →
               </button>}
         </div>
@@ -2384,10 +2395,6 @@ export default function App() {
           <button onClick={()=>setBizPreview(v=>!v)}
             style={{padding:"4px 12px",background:bizPreview?T.sage:"transparent",color:bizPreview?"#fff":T.stone,border:`1px solid ${bizPreview?T.sage:T.stone2}`,borderRadius:2,fontFamily:F.body,fontSize:9,fontWeight:600,cursor:"pointer",letterSpacing:".5px"}}>
             {bizPreview?"✓ Viewing business console":"👁 Preview business console"}
-          </button>
-          <button onClick={()=>setAdminPreview(true)}
-            style={{padding:"4px 12px",background:"transparent",color:T.ochre,border:`1px solid ${T.ochre}`,borderRadius:2,fontFamily:F.body,fontSize:9,fontWeight:600,cursor:"pointer",letterSpacing:".5px"}}>
-            👁 Preview admin panel
           </button>
         </div>
       </div>
