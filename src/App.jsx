@@ -98,7 +98,7 @@ const INTEGRATIONS = [
   { id:"ical",       name:"iCal Feed",   desc:"Any calendar, 15-min sync",    auth:"Feed URL",    col:T.ochre },
   { id:"custom",     name:"Custom API",  desc:"Your own booking system",      auth:"Bearer Token",col:T.stone },
 ];
-const CATS = ["All","Yoga","Surfing","Hotel Gym","Pool Access","Fitness Class","Pilates","Meditation"];
+const CATS = ["All","Yoga","Pilates","Surfing","Paddle Surfing","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","HIIT","Crossfit","Tennis","Padel","Horse Riding","Meditation","Sound Healing","Massage & Spa","Cold Water Therapy","Breathwork","Nutrition & Wellness","Dance","Martial Arts","Other"];
 const LOCS = ["All Mallorca","Palma","Sóller","Deià","Pollença","Alcúdia","Santanyí","Valldemossa"];
 const SYNC = {1:"Mindbody",2:"Acuity",3:"Acuity",4:"FareHarbor",5:"Custom API",6:"Mindbody",7:"Gympass",8:"iCal",9:"Custom API"};
 
@@ -455,34 +455,33 @@ function HomePage({ listings, bookings, onSelect, savedIds, onToggleSave, onSetV
   return (
     <div>
       {/* ─ GREEN HERO ─ */}
-      <div style={{background:`linear-gradient(155deg,${T.sage2} 0%,${T.sage} 55%,#5a7a51 100%)`,minHeight:460,position:"relative",overflow:"hidden",display:"flex",flexDirection:"column",justifyContent:"flex-end",padding:"0 0 44px"}}>
+      <div style={{background:`linear-gradient(155deg,${T.sage2} 0%,${T.sage} 55%,#5a7a51 100%)`,minHeight:460,position:"relative",overflow:"hidden",display:"flex",flexDirection:"column",justifyContent:"center",padding:"60px 0 52px"}}>
         <div style={{position:"absolute",inset:0,backgroundImage:"url('https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=1400&q=65')",backgroundSize:"cover",backgroundPosition:"center top",opacity:.18}}/>
         <div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(60,82,51,.2) 0%,rgba(60,82,51,.82) 100%)"}}/>
-        <div style={{maxWidth:1140,margin:"0 auto",padding:"0 28px",position:"relative",width:"100%"}}>
-          {/* F1 hero wordmark — white name on sage, ochre descriptor */}
+        <div style={{maxWidth:680,margin:"0 auto",padding:"0 28px",position:"relative",width:"100%",textAlign:"center"}}>
+          {/* F1 hero wordmark */}
           <div style={{marginBottom:20}}>
             <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:"clamp(52px,7vw,88px)",fontWeight:700,color:"#fff",lineHeight:1,letterSpacing:"-3px"}}>wello</div>
             <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:11,fontWeight:400,color:T.ochreL,letterSpacing:"6px",marginTop:6,textTransform:"uppercase"}}>the wellness pass</div>
           </div>
-          <p style={{fontFamily:F.body,color:"rgba(255,255,255,.6)",fontSize:13,lineHeight:1.7,margin:"0 0 22px",maxWidth:360,fontWeight:300}}>
+          <p style={{fontFamily:F.body,color:"rgba(255,255,255,.7)",fontSize:14,lineHeight:1.7,margin:"0 auto 28px",maxWidth:420,fontWeight:300}}>
             Your pass to studios, gyms, hotels, spas and outdoor adventures across Mallorca.
           </p>
           {/* AI Search */}
-          <div style={{display:"flex",maxWidth:490,background:"rgba(250,248,244,.12)",backdropFilter:"blur(10px)",border:"1px solid rgba(255,255,255,.2)",borderRadius:3,overflow:"hidden",marginBottom:7}}>
+          <div style={{display:"flex",maxWidth:520,margin:"0 auto 8px",background:"rgba(250,248,244,.12)",backdropFilter:"blur(10px)",border:"1px solid rgba(255,255,255,.2)",borderRadius:3,overflow:"hidden"}}>
             <span style={{padding:"0 12px",display:"flex",alignItems:"center",color:"rgba(255,255,255,.55)",fontSize:12,flexShrink:0}}>✦</span>
             <input value={aiQ} onChange={e=>setAiQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runAI()}
               placeholder='Try "outdoor yoga under 2 credits" or "pool access Palma"…'
-              style={{flex:1,padding:"11px 0",border:"none",outline:"none",fontFamily:F.body,fontSize:11,background:"transparent",color:"#fff"}}/>
+              style={{flex:1,padding:"12px 0",border:"none",outline:"none",fontFamily:F.body,fontSize:11,background:"transparent",color:"#fff"}}/>
             {aiResults&&<button onClick={()=>{setAiResults(null);setAiQ("");setAiNote("");}} style={{padding:"0 10px",background:"transparent",color:"rgba(255,255,255,.6)",border:"none",cursor:"pointer",fontSize:11,fontFamily:F.body}}>✕</button>}
-            <button onClick={runAI} disabled={aiLoading||!aiQ.trim()} style={{padding:"0 16px",background:aiLoading?"rgba(255,255,255,.08)":"rgba(255,255,255,.22)",color:"#fff",border:"none",cursor:aiLoading||!aiQ.trim()?"not-allowed":"pointer",fontFamily:F.body,fontSize:11,fontWeight:600,flexShrink:0}}>
+            <button onClick={runAI} disabled={aiLoading||!aiQ.trim()} style={{padding:"0 18px",background:aiLoading?"rgba(255,255,255,.08)":"rgba(255,255,255,.22)",color:"#fff",border:"none",cursor:aiLoading||!aiQ.trim()?"not-allowed":"pointer",fontFamily:F.body,fontSize:11,fontWeight:600,flexShrink:0}}>
               {aiLoading?"…":"Search"}
             </button>
           </div>
-          {aiNote&&<div style={{display:"flex",alignItems:"center",gap:5,marginBottom:5}}><span style={{fontSize:9,color:T.ochreL}}>✦</span><span style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.65)",fontStyle:"italic"}}>{aiNote}</span></div>}
-          <div style={{display:"flex",gap:8,marginTop:22,flexWrap:"wrap"}}>
-            <button onClick={()=>onSetView("explore")} style={{padding:"10px 20px",background:"#fff",color:T.sage,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:".4px"}} onMouseEnter={e=>e.target.style.opacity=".88"} onMouseLeave={e=>e.target.style.opacity="1"}>Explore all →</button>
-            <button onClick={()=>onSetView("credits")} style={{padding:"10px 20px",background:"transparent",color:"#fff",border:"1px solid rgba(255,255,255,.35)",borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>◈ Buy Credits</button>
-            <button onClick={()=>onSetView("biz-portal")} style={{padding:"10px 20px",background:"transparent",color:"rgba(255,255,255,.7)",border:"1px solid rgba(255,255,255,.2)",borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300,display:"flex",alignItems:"center",gap:6}} onMouseEnter={e=>e.currentTarget.style.borderColor="rgba(255,255,255,.4)"} onMouseLeave={e=>e.currentTarget.style.borderColor="rgba(255,255,255,.2)"}><span style={{fontSize:10}}>🏢</span> List your business</button>
+          {aiNote&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:8}}><span style={{fontSize:9,color:T.ochreL}}>✦</span><span style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.65)",fontStyle:"italic"}}>{aiNote}</span></div>}
+          <div style={{display:"flex",gap:8,marginTop:22,flexWrap:"wrap",justifyContent:"center"}}>
+            <button onClick={()=>onSetView("explore")} style={{padding:"10px 22px",background:"#fff",color:T.sage,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:".4px"}} onMouseEnter={e=>e.target.style.opacity=".88"} onMouseLeave={e=>e.target.style.opacity="1"}>Explore all →</button>
+            <button onClick={()=>onSetView("credits")} style={{padding:"10px 22px",background:"transparent",color:"#fff",border:"1px solid rgba(255,255,255,.35)",borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>◈ Buy Credits</button>
           </div>
         </div>
       </div>
@@ -519,61 +518,6 @@ function HomePage({ listings, bookings, onSelect, savedIds, onToggleSave, onSetV
           )}
         </div>
 
-        {/* ─ BUSINESS CTA BANNER ─ */}
-        <div style={{marginBottom:48,background:T.paper,borderRadius:4,border:`1px solid ${T.border}`,overflow:"hidden",display:"flex",flexWrap:"wrap"}}>
-          {/* Left: pitch */}
-          <div style={{flex:"1 1 300px",padding:"32px 32px"}}>
-            <div style={{display:"inline-flex",alignItems:"center",gap:6,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:2,padding:"3px 9px",marginBottom:16}}>
-              <span style={{width:4,height:4,borderRadius:"50%",background:T.sage,display:"inline-block"}}/>
-              <span style={{fontFamily:F.body,fontSize:8,color:T.sage,letterSpacing:"2px",textTransform:"uppercase",fontWeight:600}}>Built for Mallorca businesses</span>
-            </div>
-            <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:24,color:T.ink,fontWeight:700,margin:"0 0 4px",lineHeight:1.15,letterSpacing:"-0.5px"}}>Fill your quiet hours.<br/>Reach more people.</h2>
-            <p style={{fontFamily:F.body,fontSize:11,color:T.ochre,letterSpacing:"3px",textTransform:"uppercase",margin:"8px 0 14px",fontWeight:400}}>the wellness pass</p>
-            <p style={{fontFamily:F.body,fontSize:13,color:T.stone,lineHeight:1.75,margin:"0 0 24px",fontWeight:300,maxWidth:360}}>Wello connects your studio, gym or pool to local fitness enthusiasts, expats and tourists who want flexibility while they're on the island — and can help fill some of your quieter hours.</p>
-            <div style={{display:"flex",flexDirection:"column",gap:13,marginBottom:26}}>
-              {[
-                ["Access a ready market","Locals, expats and tourists actively searching for classes and experiences across the island."],
-                ["Fill your off-peak slots","List your quieter sessions and turn empty spaces into real revenue without reducing your prices."],
-                ["Built here, for here","Wello is a Mallorca-first platform, built to connect the island's best wellness businesses with the people who want them."],
-              ].map(([title,desc])=>(
-                <div key={title} style={{display:"flex",alignItems:"flex-start",gap:10}}>
-                  <div style={{width:17,height:17,borderRadius:"50%",background:T.sageXL,border:`1px solid ${T.sageL}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2}}>
-                    <span style={{fontSize:8,color:T.sage,fontWeight:700}}>✓</span>
-                  </div>
-                  <div>
-                    <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600,marginBottom:2}}>{title}</div>
-                    <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.5}}>{desc}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div style={{display:"flex",gap:9,flexWrap:"wrap"}}>
-              <button onClick={()=>onSetView("biz-portal")} style={{padding:"11px 22px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:"pointer",letterSpacing:".4px",transition:"background .15s"}} onMouseEnter={e=>e.target.style.background=T.sage2} onMouseLeave={e=>e.target.style.background=T.sage}>
-                List your business →
-              </button>
-              <button onClick={()=>onSetView("business")} style={{padding:"11px 18px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:12,cursor:"pointer",fontWeight:300,transition:"border-color .15s"}} onMouseEnter={e=>e.target.style.borderColor=T.border2} onMouseLeave={e=>e.target.style.borderColor=T.border}>
-                See how it works
-              </button>
-            </div>
-          </div>
-          {/* Right: social proof panel */}
-          <div style={{flex:"0 1 240px",background:T.sage,padding:"32px 28px",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
-            <div>
-              <div style={{fontFamily:F.body,fontSize:8,letterSpacing:"2px",textTransform:"uppercase",color:"rgba(255,255,255,.45)",marginBottom:16}}>Perfect for</div>
-              <div style={{display:"flex",flexDirection:"column",gap:11}}>
-                {[["Studios","Yoga, pilates, meditation & more"],["Gyms","Independent gyms & day passes"],["Hotels","Gym access, pool days & spa"],["Outdoor adventures","Guided activities & experiences"],["Fitness classes","HIIT, circuits & group sessions"],["Pool days","Lap lanes, leisure & clubs"],["Spa treatments","Massage, recovery & wellness"]].map(([cat,sub])=>(
-                  <div key={cat} style={{display:"flex",alignItems:"center",gap:9}}>
-                    <div style={{width:5,height:5,borderRadius:"50%",background:T.ochreL,flexShrink:0}}/>
-                    <div>
-                      <div style={{fontFamily:F.body,fontSize:11,color:"rgba(255,255,255,.85)",fontWeight:500}}>{cat}</div>
-                      <div style={{fontFamily:F.body,fontSize:9,color:"rgba(255,255,255,.4)",fontWeight:300}}>{sub}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
 
       </div>
     </div>
@@ -805,6 +749,38 @@ function printInvoice({ invoiceNo, date, businessName, businessAddress, vatNo, i
 // ═══════════════════════════════════════════════════════════════
 // PAGE: BUSINESS  (full registration + dashboard)
 // ═══════════════════════════════════════════════════════════════
+// ── Extracted to avoid re-mount on every keystroke ──────────────
+function RegStepBar({ regStep, steps }) {
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:28,overflowX:"auto",paddingBottom:2}}>
+      {steps.map((label,i)=>{
+        const n=i+1, done=regStep>n, active=regStep===n;
+        return (
+          <div key={n} style={{display:"flex",alignItems:"center",flexShrink:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <div style={{width:22,height:22,borderRadius:"50%",background:done?T.sage:active?T.sage:T.border,color:done||active?"#fff":T.stone2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontFamily:F.body,fontWeight:600,flexShrink:0,transition:"background .2s"}}>{done?"✓":n}</div>
+              <span style={{fontFamily:F.body,fontSize:10,color:active?T.sage:done?T.stone:T.stone2,fontWeight:active?600:300,whiteSpace:"nowrap"}}>{label}</span>
+            </div>
+            {i<steps.length-1&&<div style={{width:20,height:1,background:done?T.sage:T.border,margin:"0 8px",transition:"background .2s",flexShrink:0}}/>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RegCard({ children, title, subtitle }) {
+  return (
+    <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden",marginBottom:14}}>
+      {title&&<div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+        <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>{title}</div>
+        {subtitle&&<div style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300}}>{subtitle}</div>}
+      </div>}
+      <div style={{padding:"16px"}}>{children}</div>
+    </div>
+  );
+}
+
 function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
   // Registration wizard state
   const [registered, setRegistered] = useState(false);
@@ -814,7 +790,7 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
   // Listing form
   const [listing, setListing] = useState({
     name:"", category:"Yoga Studio", location:"Palma", description:"", shortDesc:"",
-    address:"", website:"", instagram:"", phone:"", email:"",
+    address:"", website:"", instagram:"", phone:"", email:"", notes:"",
     creditPrice:"2", cancellationPolicy:"24h", languages:"English, Spanish",
   });
   const [photos, setPhotos] = useState([]); // simulated photo slots
@@ -878,528 +854,127 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
     setConnecting(null);
   }
 
-  // ── Registration Wizard ───────────────────────────────────────
+  // ── Registration Interest Form ──────────────────────────────
   if (!registered) {
-    const canNext1 = listing.name.trim() && listing.email.trim() && listing.phone.trim();
-    const canNext2 = classes.some(c=>c.name.trim());
-    const canNext4 = Object.values(connected).some(Boolean) || skipIntegration;
-    const canFinish = payout.accountName.trim() && payout.iban.trim() && payout.commissionAccepted;
+    const canSubmit = listing.name.trim() && listing.email.trim() && listing.phone.trim();
 
-    const StepBar = () => (
-      <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:28,overflowX:"auto",paddingBottom:2}}>
-        {REG_STEPS.map((label,i)=>{
-          const n=i+1, done=regStep>n, active=regStep===n;
-          return (
-            <div key={n} style={{display:"flex",alignItems:"center",flexShrink:0}}>
-              <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <div style={{width:22,height:22,borderRadius:"50%",background:done?T.sage:active?T.sage:T.border,color:done||active?"#fff":T.stone2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontFamily:F.body,fontWeight:600,flexShrink:0,transition:"background .2s"}}>{done?"✓":n}</div>
-                <span style={{fontFamily:F.body,fontSize:10,color:active?T.sage:done?T.stone:T.stone2,fontWeight:active?600:300,whiteSpace:"nowrap"}}>{label}</span>
-              </div>
-              {i<REG_STEPS.length-1&&<div style={{width:20,height:1,background:done?T.sage:T.border,margin:"0 8px",transition:"background .2s",flexShrink:0}}/>}
-            </div>
-          );
-        })}
-      </div>
-    );
-
-    const Card = ({children,title,subtitle})=>(
-      <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden",marginBottom:14}}>
-        {title&&<div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-          <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>{title}</div>
-          {subtitle&&<div style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300}}>{subtitle}</div>}
-        </div>}
-        <div style={{padding:"16px"}}>{children}</div>
-      </div>
-    );
+    function handleSubmit() {
+      supabase.from('businesses').insert({
+        name: listing.name,
+        category: listing.category,
+        location: listing.location,
+        email: listing.email,
+        phone: listing.phone,
+        notes: listing.notes || '',
+        status: 'pending',
+      });
+      setRegistered(true);
+    }
 
     return (
-      <div style={{maxWidth:720,margin:"0 auto",padding:"32px 28px 58px"}}>
-        <div style={{marginBottom:20}}>
-          <Label>Business Registration</Label>
-          <h1 style={{fontFamily:F.display,fontSize:22,color:T.ink,fontWeight:400,margin:"0 0 4px"}}>List your business</h1>
-          <p style={{fontFamily:F.body,color:T.stone,fontSize:11,fontWeight:300}}>Step {regStep} of {REG_STEPS.length} — {REG_STEPS[regStep-1]}</p>
+      <div style={{maxWidth:560,margin:"0 auto",padding:"52px 28px 80px"}}>
+
+        {/* Header */}
+        <div style={{marginBottom:32}}>
+          <div style={{display:"inline-flex",alignItems:"center",gap:6,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:2,padding:"4px 10px",marginBottom:16}}>
+            <span style={{width:5,height:5,borderRadius:"50%",background:T.sage,display:"inline-block"}}/>
+            <span style={{fontFamily:F.body,fontSize:9,color:T.sage,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase"}}>For Mallorca businesses</span>
+          </div>
+          <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:26,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 12px"}}>Register your interest</h1>
+          <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:0}}>Tell us about your venue and we'll be in touch within 2 working days to discuss how Wello works and agree the right setup for you. No commitment required.</p>
         </div>
-        <StepBar/>
 
-        {/* ── STEP 1: Venue details ── */}
-        {regStep===1&&(
-          <>
-            <Card title="Basic information">
-              <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <div style={{gridColumn:"1/-1"}}><FieldLabel>Business name *</FieldLabel><input placeholder="e.g. Sol & Alma Yoga" value={listing.name} onChange={e=>setListing(p=>({...p,name:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                  <div><FieldLabel>Category *</FieldLabel><select value={listing.category} onChange={e=>setListing(p=>({...p,category:e.target.value}))} style={INP3}>{CATS.filter(c=>c!=="All").map(c=><option key={c}>{c}</option>)}</select></div>
-                  <div><FieldLabel>Location *</FieldLabel><select value={listing.location} onChange={e=>setListing(p=>({...p,location:e.target.value}))} style={INP3}>{LOCS.filter(l=>l!=="All Mallorca").map(l=><option key={l}>{l}</option>)}</select></div>
-                  <div style={{gridColumn:"1/-1"}}><FieldLabel>Full address</FieldLabel><input placeholder="Carrer de la Rosa 12, 07001 Palma" value={listing.address} onChange={e=>setListing(p=>({...p,address:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                </div>
-              </div>
-            </Card>
-            <Card title="Your story" subtitle="Shown on your public listing">
-              <div style={{display:"flex",flexDirection:"column",gap:11}}>
-                <div><FieldLabel>Short description (shown in cards, max 120 chars)</FieldLabel><input placeholder="Rooftop yoga overlooking the Tramuntana mountains…" value={listing.shortDesc} onChange={e=>setListing(p=>({...p,shortDesc:e.target.value.slice(0,120)}))} style={INP3} onFocus={onF} onBlur={onB}/><div style={{fontFamily:F.body,fontSize:9,color:T.stone2,marginTop:4,textAlign:"right"}}>{listing.shortDesc.length}/120</div></div>
-                <div><FieldLabel>Full description</FieldLabel><textarea placeholder="Tell guests what makes your venue special — the atmosphere, your approach, what to expect…" value={listing.description} onChange={e=>setListing(p=>({...p,description:e.target.value}))} style={{...INP3,minHeight:90,resize:"vertical"}} onFocus={onF} onBlur={onB}/></div>
-                <div><FieldLabel>Languages offered</FieldLabel><input placeholder="English, Spanish, German…" value={listing.languages} onChange={e=>setListing(p=>({...p,languages:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-              </div>
-            </Card>
-            <Card title="Contact details">
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                <div><FieldLabel>Contact email *</FieldLabel><input type="email" placeholder="hello@yourstudio.com" value={listing.email} onChange={e=>setListing(p=>({...p,email:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                <div><FieldLabel>Phone number *</FieldLabel><input type="tel" placeholder="+34 971 000 000" value={listing.phone} onChange={e=>setListing(p=>({...p,phone:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                <div><FieldLabel>Website</FieldLabel><input placeholder="https://yourstudio.com" value={listing.website} onChange={e=>setListing(p=>({...p,website:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                <div><FieldLabel>Instagram</FieldLabel><input placeholder="@yourstudio" value={listing.instagram} onChange={e=>setListing(p=>({...p,instagram:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-              </div>
-            </Card>
-          </>
-        )}
+        {/* Form */}
+        <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:4,padding:"24px"}}>
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
 
-        {/* ── STEP 2: Classes & photos ── */}
-        {regStep===2&&(
-          <>
-            <Card title="Photos" subtitle="Add up to 8 photos">
-              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:9,marginBottom:12}}>
-                {[0,1,2,3,4,5,6,7].map(i=>(
-                  <div key={i} onClick={()=>setPhotoAdded(true)} style={{aspectRatio:"1",borderRadius:3,border:`1.5px dashed ${photoAdded&&i<3?T.sageL:T.border}`,background:photoAdded&&i<3?T.sageXL:T.bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all .15s",position:"relative",overflow:"hidden"}}
-                    onMouseEnter={e=>{e.currentTarget.style.borderColor=T.sage;e.currentTarget.style.background=T.sageXL;}}
-                    onMouseLeave={e=>{e.currentTarget.style.borderColor=photoAdded&&i<3?T.sageL:T.border;e.currentTarget.style.background=photoAdded&&i<3?T.sageXL:T.bg;}}>
-                    {photoAdded&&i<3?(
-                      <div style={{position:"absolute",inset:0,background:[`url(https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=200&q=60)`,`url(https://images.unsplash.com/photo-1518611012118-696072aa579a?w=200&q=60)`,`url(https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=200&q=60)`][i],backgroundSize:"cover",backgroundPosition:"center"}}/>
-                    ):<>
-                      <span style={{fontSize:16,color:T.stone2,marginBottom:3}}>+</span>
-                      <span style={{fontFamily:F.body,fontSize:8,color:T.stone2,fontWeight:300}}>{i===0?"Cover photo":"Add photo"}</span>
-                    </>}
-                  </div>
-                ))}
-              </div>
-              <div style={{display:"flex",gap:8}}>
-                <button onClick={()=>setPhotoAdded(true)} style={{padding:"7px 14px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer"}}>Upload photos</button>
-                <span style={{fontFamily:F.body,fontSize:10,color:T.stone2,alignSelf:"center",fontWeight:300}}>JPG or PNG · max 8MB each · min 800×600px</span>
-              </div>
-              {photoAdded&&<div style={{marginTop:10,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:2,padding:"7px 11px",fontFamily:F.body,fontSize:10,color:T.sage}}>✓ 3 photos uploaded · Cover photo set</div>}
-            </Card>
-
-            <Card title="Your classes" subtitle="Add all sessions you want to list">
-              <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:12}}>
-                {classes.map((cls,i)=>(
-                  <div key={cls.id} style={{border:`1px solid ${T.border}`,borderRadius:3,padding:"13px 14px"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:11}}>
-                      <span style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>Class {i+1}</span>
-                      {classes.length>1&&<button onClick={()=>setClasses(p=>p.filter(c=>c.id!==cls.id))} style={{background:"transparent",border:"none",color:T.stone2,cursor:"pointer",fontSize:12}}>×</button>}
-                    </div>
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9}}>
-                      <div style={{gridColumn:"1/-1"}}><FieldLabel>Class name</FieldLabel><input placeholder="e.g. Sunrise Vinyasa Flow" value={cls.name} onChange={e=>setClasses(p=>p.map(c=>c.id===cls.id?{...c,name:e.target.value}:c))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                      <div><FieldLabel>Type / style</FieldLabel><input placeholder="Vinyasa, Yin, HIIT…" value={cls.type} onChange={e=>setClasses(p=>p.map(c=>c.id===cls.id?{...c,type:e.target.value}:c))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                      <div><FieldLabel>Duration (mins)</FieldLabel><input type="number" placeholder="60" value={cls.duration} onChange={e=>setClasses(p=>p.map(c=>c.id===cls.id?{...c,duration:e.target.value}:c))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                      <div><FieldLabel>Max participants</FieldLabel><input type="number" placeholder="10" value={cls.maxSpots} onChange={e=>setClasses(p=>p.map(c=>c.id===cls.id?{...c,maxSpots:e.target.value}:c))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                      <div><FieldLabel>Credits per person</FieldLabel><select value={cls.credits} onChange={e=>setClasses(p=>p.map(c=>c.id===cls.id?{...c,credits:e.target.value}:c))} style={INP3}>{[1,2,3,4,5].map(n=><option key={n} value={n}>◈ {n} credit{n>1?"s":""}</option>)}</select></div>
-                      <div style={{gridColumn:"1/-1"}}><FieldLabel>Short description (optional)</FieldLabel><input placeholder="What participants can expect…" value={cls.description} onChange={e=>setClasses(p=>p.map(c=>c.id===cls.id?{...c,description:e.target.value}:c))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button onClick={()=>setClasses(p=>[...p,{id:Date.now(),name:"",type:"",duration:"60",maxSpots:"10",credits:"2",description:""}])} style={{padding:"7px 14px",background:"transparent",color:T.sage,border:`1px solid ${T.sageL}`,borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer"}}>+ Add another class</button>
-            </Card>
-
-            <Card title="Policies">
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                <div><FieldLabel>Cancellation policy</FieldLabel><select value={listing.cancellationPolicy} onChange={e=>setListing(p=>({...p,cancellationPolicy:e.target.value}))} style={INP3}><option value="24h">24 hours notice</option><option value="48h">48 hours notice</option><option value="72h">72 hours notice</option><option value="no_refund">No refunds</option></select></div>
-                <div><FieldLabel>Credit price per class</FieldLabel><select value={listing.creditPrice} onChange={e=>setListing(p=>({...p,creditPrice:e.target.value}))} style={INP3}>{[1,2,3,4,5].map(n=><option key={n} value={n}>◈ {n} credit{n>1?"s":""}</option>)}</select></div>
-              </div>
-            </Card>
-          </>
-        )}
-
-        {/* ── STEP 3: Availability ── */}
-        {regStep===3&&(
-          <>
-            <Card title="Weekly schedule" subtitle="Set your regular class times">
-              <div style={{display:"flex",flexDirection:"column",gap:9,marginBottom:12}}>
-                {slots.map((sl,i)=>(
-                  <div key={sl.id} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr auto",gap:8,alignItems:"end"}}>
-                    <div><FieldLabel>{i===0?"Day":""}</FieldLabel><select value={sl.day} onChange={e=>setSlots(p=>p.map(s=>s.id===sl.id?{...s,day:e.target.value}:s))} style={INP3}>
-                      {["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"].map(d=><option key={d}>{d}</option>)}
-                    </select></div>
-                    <div><FieldLabel>{i===0?"Start time":""}</FieldLabel><input type="time" value={sl.time} onChange={e=>setSlots(p=>p.map(s=>s.id===sl.id?{...s,time:e.target.value}:s))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                    <div><FieldLabel>{i===0?"Max spots":""}</FieldLabel><input type="number" value={sl.spots} onChange={e=>setSlots(p=>p.map(s=>s.id===sl.id?{...s,spots:e.target.value}:s))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                    <button onClick={()=>setSlots(p=>p.filter(s=>s.id!==sl.id))} style={{padding:"9px 10px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:2,color:T.stone2,cursor:"pointer",fontSize:12,marginTop:slots.length>1?"16px":"0"}}>×</button>
-                  </div>
-                ))}
-              </div>
-              <button onClick={()=>setSlots(p=>[...p,{id:Date.now(),day:"Monday",time:"10:00",recurring:true,spots:"10"}])} style={{padding:"7px 14px",background:"transparent",color:T.sage,border:`1px solid ${T.sageL}`,borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer"}}>+ Add time slot</button>
-            </Card>
-
-            <Card title="Exceptions & closures">
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <div><FieldLabel>Date</FieldLabel><input type="date" style={INP3} onFocus={onF} onBlur={onB}/></div>
-                  <div><FieldLabel>Reason</FieldLabel><input placeholder="Public holiday, private event…" style={INP3} onFocus={onF} onBlur={onB}/></div>
-                </div>
-                <button style={{alignSelf:"flex-start",padding:"6px 13px",background:"transparent",color:T.sage,border:`1px solid ${T.sageL}`,borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer"}}>+ Add closure</button>
-              </div>
-            </Card>
-
-            <div style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:3,padding:"13px 15px",display:"flex",gap:10}}>
-              <span style={{color:T.ochre,fontSize:13,flexShrink:0}}>✦</span>
-              <div><div style={{fontFamily:F.body,fontSize:11,color:T.ochre,fontWeight:600,marginBottom:2}}>AI Schedule Parser</div><div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,marginBottom:9}}>Already have a schedule? Paste any format — email, spreadsheet, notes — and AI will parse it instantly.</div>
-              <textarea placeholder={"Monday 9am - Vinyasa 60 mins, 10 spots\nWeds & Fri 7:30am Sunrise yoga 75min outdoor\nSaturday 10:00 Yin yoga 90 min, 8 people max"} style={{...INP3,minHeight:72,resize:"vertical",marginBottom:8,background:"rgba(255,255,255,.5)"}} onFocus={e=>e.target.style.borderColor=T.ochre} onBlur={e=>e.target.style.borderColor=T.ochreL}/>
-              <button style={{padding:"6px 14px",background:T.ochre,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer"}}>✦ Parse with AI</button></div>
-            </div>
-          </>
-        )}
-
-        {/* ── STEP 4: Calendar integration (optional) ── */}
-        {regStep===4&&(
-          <>
-            <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:3,padding:"13px 15px",marginBottom:16,display:"flex",gap:10}}>
-              <span style={{color:T.sage,fontSize:13,flexShrink:0}}>✓</span>
-              <div><div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600,marginBottom:2}}>This step is optional</div><div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>Connect your existing booking system for live availability sync. You can also skip this and manage availability manually.</div></div>
+            <div>
+              <FieldLabel>Business name *</FieldLabel>
+              <input placeholder="e.g. Sol & Alma Yoga" value={listing.name}
+                onChange={e=>setListing(p=>({...p,name:e.target.value}))}
+                style={INP3} onFocus={onF} onBlur={onB}/>
             </div>
 
-            <div style={{display:"flex",flexDirection:"column",gap:9,marginBottom:14}}>
-              {INTEGRATIONS.map(intg=>{
-                const ok=connected[intg.id], ing=connecting===intg.id;
-                return (
-                  <div key={intg.id} style={{background:T.paper,borderRadius:3,border:`1px solid ${ok?T.sageL:T.border}`,padding:"13px 15px",transition:"border-color .2s"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:ok?0:10}}>
-                      <div style={{width:28,height:28,borderRadius:3,background:ok?T.sageXL:T.bg,border:`1px solid ${ok?T.sageL:T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><div style={{width:7,height:7,borderRadius:"50%",background:ok?T.sage:intg.col}}/></div>
-                      <div style={{flex:1}}><div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600,marginBottom:1}}>{intg.name}</div><div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{intg.desc} · {intg.auth}</div></div>
-                      {ok?<div style={{display:"flex",alignItems:"center",gap:3}}><span style={{width:4,height:4,borderRadius:"50%",background:T.sage,display:"inline-block"}}/><span style={{fontFamily:F.body,fontSize:9,color:T.sage,fontWeight:600}}>Connected</span></div>
-                      :<span style={{fontFamily:F.body,fontSize:9,color:T.stone2}}>Not connected</span>}
-                    </div>
-                    {!ok&&(
-                      <div style={{display:"flex",gap:6}}>
-                        <input value={keys[intg.id]||""} onChange={e=>setKeys(p=>({...p,[intg.id]:e.target.value}))} placeholder={intg.auth==="Feed URL"?"https://your-calendar.ical":`Your ${intg.name} ${intg.auth}`}
-                          style={{flex:1,padding:"8px 10px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:11,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",transition:"border-color .18s"}} onFocus={onF} onBlur={onB}/>
-                        <button onClick={()=>connect(intg)} disabled={!keys[intg.id]?.trim()||ing} style={{padding:"8px 14px",background:!keys[intg.id]?.trim()||ing?T.border:T.sage,color:!keys[intg.id]?.trim()||ing?T.stone:"#fff",border:"none",borderRadius:2,fontSize:10,fontFamily:F.body,fontWeight:600,cursor:!keys[intg.id]?.trim()||ing?"not-allowed":"pointer",whiteSpace:"nowrap"}}>{ing?"Connecting…":"Connect"}</button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div>
+                <FieldLabel>Category *</FieldLabel>
+                <select value={listing.category} onChange={e=>setListing(p=>({...p,category:e.target.value}))} style={INP3}>
+                  {CATS.filter(c=>c!=="All").map(c=><option key={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <FieldLabel>Address *</FieldLabel>
+                <input placeholder="e.g. Carrer de la Rosa 12, 07001 Palma" value={listing.location}
+                  onChange={e=>setListing(p=>({...p,location:e.target.value}))}
+                  style={INP3} onFocus={onF} onBlur={onB}/>
+              </div>
             </div>
 
-            <div onClick={()=>setSkipIntegration(p=>!p)} style={{display:"flex",alignItems:"center",gap:9,cursor:"pointer",padding:"11px 14px",background:skipIntegration?T.sageXL:T.paper,border:`1px solid ${skipIntegration?T.sageL:T.border}`,borderRadius:3,transition:"all .15s"}}>
-              <div style={{width:16,height:16,borderRadius:2,border:`1.5px solid ${skipIntegration?T.sage:T.border2}`,background:skipIntegration?T.sage:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .15s"}}>
-                {skipIntegration&&<span style={{color:"#fff",fontSize:9,fontWeight:700}}>✓</span>}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div>
+                <FieldLabel>Email address *</FieldLabel>
+                <input type="email" placeholder="hello@yourstudio.com" value={listing.email}
+                  onChange={e=>setListing(p=>({...p,email:e.target.value}))}
+                  style={INP3} onFocus={onF} onBlur={onB}/>
               </div>
-              <span style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:300}}>I'll manage my availability manually — skip for now</span>
+              <div>
+                <FieldLabel>Phone number *</FieldLabel>
+                <input type="tel" placeholder="+34 971 000 000" value={listing.phone}
+                  onChange={e=>setListing(p=>({...p,phone:e.target.value}))}
+                  style={INP3} onFocus={onF} onBlur={onB}/>
+              </div>
             </div>
-          </>
-        )}
 
-        {/* ── STEP 5: Payout & launch ── */}
-        {regStep===5&&(
-          <>
-            <Card title="Payout details" subtitle="Where we send your earnings">
-              <div style={{display:"flex",flexDirection:"column",gap:11}}>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <div style={{gridColumn:"1/-1"}}><FieldLabel>Account holder name *</FieldLabel><input placeholder="Jane Smith or Sol & Alma Yoga SL" value={payout.accountName} onChange={e=>setPayout(p=>({...p,accountName:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                  <div style={{gridColumn:"1/-1"}}><FieldLabel>IBAN *</FieldLabel><input placeholder="ES12 3456 7890 1234 5678 9012" value={payout.iban} onChange={e=>setPayout(p=>({...p,iban:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                  <div><FieldLabel>BIC / SWIFT</FieldLabel><input placeholder="CAHMESMMXXX" value={payout.bic} onChange={e=>setPayout(p=>({...p,bic:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                  <div><FieldLabel>VAT / CIF number (if applicable)</FieldLabel><input placeholder="ESB12345678" value={payout.vatNumber} onChange={e=>setPayout(p=>({...p,vatNumber:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                </div>
-                <div style={{background:T.bg,borderRadius:2,padding:"11px 13px",border:`1px solid ${T.border}`}}>
-                  <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600,marginBottom:4}}>Commission rate</div>
-                  <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.6}}>Your commission rate will be agreed with the Wello team before your listing goes live. We'll be in touch once your registration is reviewed. Payouts are processed weekly every Friday.</div>
-                </div>
-              </div>
-            </Card>
-
-            <Card title="Listing summary">
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {[["Business",listing.name||"—"],["Category",listing.category],["Location",listing.location],["Classes",`${classes.filter(c=>c.name).length} listed`],["Weekly slots",`${slots.length} recurring`],["Calendar sync",Object.values(connected).some(Boolean)?Object.keys(connected).filter(k=>connected[k]).join(", "):"Manual management"],["Photos",photoAdded?"3 uploaded":"None added"]].map(([k,v])=>(
-                  <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${T.border}`}}>
-                    <span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>{k}</span>
-                    <span style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{v}</span>
-                  </div>
-                ))}
-              </div>
-            </Card>
-
-            <div onClick={()=>setPayout(p=>({...p,commissionAccepted:!p.commissionAccepted}))} style={{display:"flex",alignItems:"flex-start",gap:9,cursor:"pointer",padding:"12px 14px",background:payout.commissionAccepted?T.sageXL:T.paper,border:`1px solid ${payout.commissionAccepted?T.sageL:T.border}`,borderRadius:3,marginBottom:14,transition:"all .15s"}}>
-              <div style={{width:16,height:16,borderRadius:2,border:`1.5px solid ${payout.commissionAccepted?T.sage:T.border2}`,background:payout.commissionAccepted?T.sage:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1,transition:"all .15s"}}>
-                {payout.commissionAccepted&&<span style={{color:"#fff",fontSize:9,fontWeight:700}}>✓</span>}
-              </div>
-              <span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.55}}>I agree to the Wello <span style={{color:T.sage,textDecoration:"underline"}}>Terms of Service</span> and understand that a commission will be agreed with the Wello team before my listing goes live. *</span>
+            <div>
+              <FieldLabel>Anything else you'd like us to know? <span style={{color:T.stone2,fontWeight:300}}>(optional)</span></FieldLabel>
+              <textarea placeholder="e.g. we run 6 classes a week, have 20 spots per class, and would love help filling our quieter Monday mornings..."
+                value={listing.notes||""}
+                onChange={e=>setListing(p=>({...p,notes:e.target.value}))}
+                style={{...INP3,minHeight:90,resize:"vertical"}} onFocus={onF} onBlur={onB}/>
             </div>
-          </>
-        )}
 
-        {/* Nav buttons */}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6}}>
-          <button onClick={()=>regStep>1?setRegStep(s=>s-1):onSetView("home")} style={{padding:"9px 18px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>← {regStep===1?"Back to home":"Previous"}</button>
-          {regStep<5
-            ?<button onClick={()=>setRegStep(s=>s+1)} disabled={regStep===1&&!canNext1||regStep===2&&!canNext2||regStep===4&&!canNext4}
-                style={{padding:"9px 20px",background:regStep===1&&!canNext1||regStep===2&&!canNext2||regStep===4&&!canNext4?T.border:T.sage,color:regStep===1&&!canNext1||regStep===2&&!canNext2||regStep===4&&!canNext4?T.stone:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:regStep===1&&!canNext1||regStep===2&&!canNext2||regStep===4&&!canNext4?"not-allowed":"pointer",letterSpacing:".3px",transition:"background .15s"}} onMouseEnter={e=>{if(e.target.style.background!==T.border)e.target.style.background=T.sage2}} onMouseLeave={e=>{if(e.target.style.background!==T.border)e.target.style.background=T.sage}}>
-                Continue →
-              </button>
-            :<button onClick={()=>{
-                supabase.from('businesses').insert({
-                  name: listing.name,
-                  category: listing.category,
-                  location: listing.location,
-                  email: listing.email,
-                  phone: listing.phone,
-                  status: 'pending',
-                });
-                setRegistered(true);
-              }} disabled={!canFinish} style={{padding:"9px 20px",background:!canFinish?T.border:T.sage,color:!canFinish?T.stone:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:!canFinish?"not-allowed":"pointer",letterSpacing:".3px"}}>
-                Publish listing →
-              </button>}
+            <button onClick={handleSubmit} disabled={!canSubmit}
+              style={{padding:"12px",background:canSubmit?T.sage:T.border,color:canSubmit?"#fff":T.stone,border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:canSubmit?"pointer":"not-allowed",letterSpacing:".4px",transition:"background .15s",marginTop:4}}
+              onMouseEnter={e=>{if(canSubmit)e.target.style.background=T.sage2}} onMouseLeave={e=>{if(canSubmit)e.target.style.background=T.sage}}>
+              Register interest →
+            </button>
+          </div>
+        </div>
+
+        {/* Reassurance */}
+        <div style={{marginTop:16,display:"flex",gap:16,flexWrap:"wrap"}}>
+          {["No monthly fee","No commitment","We'll be in touch within 2 working days"].map(t=>(
+            <div key={t} style={{display:"flex",alignItems:"center",gap:5}}>
+              <span style={{fontSize:10,color:T.sage}}>✓</span>
+              <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{t}</span>
+            </div>
+          ))}
         </div>
       </div>
     );
   }
 
-  // ── Post-registration: Dashboard ──────────────────────────────
-  const INP2 = {flex:1,padding:"8px 10px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:11,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",boxSizing:"border-box",transition:"border-color .18s"};
 
+  // ── Post-registration: Confirmation ──────────────────────────
   return (
-    <div style={{maxWidth:880,margin:"0 auto",padding:"32px 28px 58px"}}>
-      {/* Header */}
-      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
-        <div>
-          <Label>Business Dashboard</Label>
-          <h1 style={{fontFamily:F.display,fontSize:22,color:T.ink,fontWeight:400,margin:"0 0 3px"}}>{listing.name||"Your Venue"}</h1>
-          <div style={{display:"flex",alignItems:"center",gap:7}}>
-            <span style={{width:6,height:6,borderRadius:"50%",background:T.sage,display:"inline-block",animation:"pulse 2s infinite"}}/>
-            <span style={{fontFamily:F.body,fontSize:10,color:T.sage,fontWeight:600}}>Live on marketplace</span>
-            <span style={{fontFamily:F.body,fontSize:10,color:T.stone2}}>· {listing.category} · {listing.location}</span>
+    <div style={{maxWidth:520,margin:"80px auto",padding:"0 28px",textAlign:"center"}}>
+      <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:24}}>✓</div>
+      <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:24,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 12px"}}>Thanks, we'll be in touch!</h1>
+      <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 6px"}}>We've received your interest for <strong style={{color:T.ink,fontWeight:600}}>{listing.name}</strong>.</p>
+      <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 28px"}}>Someone from the Wello team will be in touch within 2 working days to have a conversation about how it all works and agree the right setup for your venue.</p>
+      <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:3,padding:"16px 20px",textAlign:"left",marginBottom:24}}>
+        <div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600,marginBottom:10}}>What happens next</div>
+        {["We review your registration","We call or email to introduce Wello and walk you through how it works","You receive your onboarding details and set up your full listing","Your listing goes live on the marketplace"].map((s,i)=>(
+          <div key={i} style={{display:"flex",gap:10,marginBottom:8}}>
+            <div style={{width:18,height:18,borderRadius:"50%",background:T.sage,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:700,flexShrink:0,marginTop:1}}>{i+1}</div>
+            <span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.5}}>{s}</span>
           </div>
-        </div>
-        <a href="#" style={{padding:"7px 14px",background:T.sageXL,color:T.sage,border:`1px solid ${T.sageL}`,borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,textDecoration:"none"}}>View public listing ↗</a>
+        ))}
       </div>
-
-      {/* Tabs */}
-      <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,marginBottom:22,overflowX:"auto",scrollbarWidth:"none"}}>
-        {DASH_TABS.map(([k,l])=><button key={k} onClick={()=>setTab(k)} style={{padding:"7px 14px",border:"none",borderBottom:`2px solid ${tab===k?T.sage:"transparent"}`,background:"transparent",color:tab===k?T.sage:T.stone,fontFamily:F.body,fontSize:11,fontWeight:tab===k?600:300,cursor:"pointer",marginBottom:-1,transition:"all .13s",whiteSpace:"nowrap"}}>{l}</button>)}
-      </div>
-
-      {/* Overview */}
-      {tab==="overview"&&(
-        <div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10,marginBottom:22}}>
-            {[["Bookings this month","24"],["Credits earned","86 ◈"],["Avg occupancy","68%"],["Listing views","312"],["Saved by users","47"],["Avg rating","4.8 ★"]].map(([l,v])=>(
-              <div key={l} style={{background:T.paper,borderRadius:3,border:`1px solid ${T.border}`,padding:"13px 14px"}}>
-                <Label>{l}</Label><div style={{fontFamily:F.display,fontSize:20,color:T.ink,fontWeight:400}}>{v}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"15px 16px",marginBottom:14}}>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600,marginBottom:11}}>Upcoming bookings</div>
-            {[["Sunrise Flow","2026-03-22","07:00","8 guests"],["Sunset Vinyasa","2026-03-22","18:30","6 guests"],["Sunrise Flow","2026-03-23","07:00","3 guests"]].map(([name,date,time,guests])=>(
-              <div key={name+time} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
-                <div style={{flex:1}}><div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{name}</div><div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{date} at {time}</div></div>
-                <span style={{fontFamily:F.body,fontSize:10,color:T.stone2}}>{guests}</span>
-                <span style={{background:T.sageXL,color:T.sage,fontSize:8,padding:"2px 7px",borderRadius:2,fontFamily:F.body,fontWeight:700,textTransform:"uppercase",letterSpacing:"1px"}}>Confirmed</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Listing */}
-      {tab==="listing"&&(
-        <div style={{display:"flex",flexDirection:"column",gap:13}}>
-          {[{title:"Basic information",fields:[{l:"Business name",k:"name",p:"Sol & Alma Yoga"},{l:"Category",k:"category",el:"cat"},{l:"Location",k:"location",el:"loc"},{l:"Full address",k:"address",p:"Carrer de la Rosa 12…"}]},
-            {title:"Your story",fields:[{l:"Short description",k:"shortDesc",el:"ta-sm"},{l:"Full description",k:"description",el:"ta"}]},
-            {title:"Contact & social",fields:[{l:"Contact email",k:"email",t:"email"},{l:"Phone",k:"phone",t:"tel"},{l:"Website",k:"website"},{l:"Instagram",k:"instagram"}]}
-          ].map(section=>(
-            <div key={section.title} style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden"}}>
-              <div style={{padding:"11px 15px",borderBottom:`1px solid ${T.border}`}}><div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{section.title}</div></div>
-              <div style={{padding:"15px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                {section.fields.map(f=>(
-                  <div key={f.k} style={{gridColumn:f.el?.startsWith("ta")||f.k==="name"||f.k==="address"?"1/-1":"auto"}}>
-                    <FieldLabel>{f.l}</FieldLabel>
-                    {f.el==="cat"?<select value={listing[f.k]} onChange={e=>setListing(p=>({...p,[f.k]:e.target.value}))} style={INP3}>{CATS.filter(c=>c!=="All").map(c=><option key={c}>{c}</option>)}</select>
-                    :f.el==="loc"?<select value={listing[f.k]} onChange={e=>setListing(p=>({...p,[f.k]:e.target.value}))} style={INP3}>{LOCS.filter(l=>l!=="All Mallorca").map(l=><option key={l}>{l}</option>)}</select>
-                    :f.el?.startsWith("ta")?<textarea value={listing[f.k]} onChange={e=>setListing(p=>({...p,[f.k]:e.target.value}))} style={{...INP3,minHeight:f.el==="ta-sm"?48:80,resize:"vertical"}} onFocus={onF} onBlur={onB}/>
-                    :<input type={f.t||"text"} placeholder={f.p||""} value={listing[f.k]||""} onChange={e=>setListing(p=>({...p,[f.k]:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-          <button style={{alignSelf:"flex-start",padding:"8px 18px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer"}}>Save changes</button>
-        </div>
-      )}
-
-      {/* Classes */}
-      {tab==="classes"&&(
-        <div>
-          <div style={{display:"flex",flexDirection:"column",gap:11,marginBottom:13}}>
-            {classes.map((cls,i)=>(
-              <div key={cls.id} style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"14px 15px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:11}}>
-                  <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{cls.name||`Class ${i+1}`}</div>
-                  <div style={{display:"flex",gap:7}}>
-                    <span style={{background:T.sageXL,color:T.sage,fontSize:9,padding:"2px 8px",borderRadius:2,fontFamily:F.body,fontWeight:600}}>◈ {cls.credits}</span>
-                    {classes.length>1&&<button onClick={()=>setClasses(p=>p.filter(c=>c.id!==cls.id))} style={{background:"transparent",border:"none",color:T.stone2,cursor:"pointer",fontSize:12}}>×</button>}
-                  </div>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:9}}>
-                  <div><FieldLabel>Class name</FieldLabel><input value={cls.name} onChange={e=>setClasses(p=>p.map(c=>c.id===cls.id?{...c,name:e.target.value}:c))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                  <div><FieldLabel>Type / style</FieldLabel><input value={cls.type} onChange={e=>setClasses(p=>p.map(c=>c.id===cls.id?{...c,type:e.target.value}:c))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                  <div><FieldLabel>Credits</FieldLabel><select value={cls.credits} onChange={e=>setClasses(p=>p.map(c=>c.id===cls.id?{...c,credits:e.target.value}:c))} style={INP3}>{[1,2,3,4,5].map(n=><option key={n} value={n}>◈ {n}</option>)}</select></div>
-                  <div><FieldLabel>Duration (mins)</FieldLabel><input type="number" value={cls.duration} onChange={e=>setClasses(p=>p.map(c=>c.id===cls.id?{...c,duration:e.target.value}:c))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                  <div><FieldLabel>Max spots</FieldLabel><input type="number" value={cls.maxSpots} onChange={e=>setClasses(p=>p.map(c=>c.id===cls.id?{...c,maxSpots:e.target.value}:c))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <button onClick={()=>setClasses(p=>[...p,{id:Date.now(),name:"",type:"",duration:"60",maxSpots:"10",credits:"2",description:""}])} style={{padding:"7px 14px",background:"transparent",color:T.sage,border:`1px solid ${T.sageL}`,borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer",marginBottom:13}}>+ Add class</button>
-          <br/><button style={{padding:"8px 18px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer"}}>Save changes</button>
-        </div>
-      )}
-
-      {/* Availability */}
-      {tab==="availability"&&(
-        <div style={{display:"flex",flexDirection:"column",gap:13}}>
-          <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"15px"}}>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600,marginBottom:12}}>Weekly schedule</div>
-            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:11}}>
-              {slots.map((sl,i)=>(
-                <div key={sl.id} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr auto",gap:8,alignItems:"end"}}>
-                  <div><FieldLabel>{i===0?"Day":""}</FieldLabel><select value={sl.day} onChange={e=>setSlots(p=>p.map(s=>s.id===sl.id?{...s,day:e.target.value}:s))} style={INP3}>{["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"].map(d=><option key={d}>{d}</option>)}</select></div>
-                  <div><FieldLabel>{i===0?"Time":""}</FieldLabel><input type="time" value={sl.time} onChange={e=>setSlots(p=>p.map(s=>s.id===sl.id?{...s,time:e.target.value}:s))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                  <div><FieldLabel>{i===0?"Spots":""}</FieldLabel><input type="number" value={sl.spots} onChange={e=>setSlots(p=>p.map(s=>s.id===sl.id?{...s,spots:e.target.value}:s))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                  <button onClick={()=>setSlots(p=>p.filter(s=>s.id!==sl.id))} style={{padding:"9px 10px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:2,color:T.stone2,cursor:"pointer",fontSize:12,marginTop:slots.length>1?"16px":"0"}}>×</button>
-                </div>
-              ))}
-            </div>
-            <button onClick={()=>setSlots(p=>[...p,{id:Date.now(),day:"Monday",time:"10:00",recurring:true,spots:"10"}])} style={{padding:"6px 12px",background:"transparent",color:T.sage,border:`1px solid ${T.sageL}`,borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer"}}>+ Add slot</button>
-          </div>
-          <div style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:3,padding:"13px 15px"}}>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.ochre,fontWeight:600,marginBottom:3}}>✦ AI Schedule Parser</div>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,marginBottom:9}}>Paste messy text and AI will parse it into slots automatically.</div>
-            <textarea placeholder={"Monday 9am - Reformer Pilates 55 mins\nWeds & Fri 7:30am yoga outdoor 75min\nSat 10:00 Yin yoga 90 min, 8 people max"} style={{...INP3,minHeight:68,resize:"vertical",marginBottom:8}} onFocus={e=>e.target.style.borderColor=T.ochre} onBlur={e=>e.target.style.borderColor=T.ochreL}/>
-            <button style={{padding:"6px 13px",background:T.ochre,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer"}}>✦ Parse with AI</button>
-          </div>
-          <button style={{alignSelf:"flex-start",padding:"8px 18px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer"}}>Save schedule</button>
-        </div>
-      )}
-
-      {/* Integrations */}
-      {tab==="integrations"&&(
-        <div>
-          <div style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:3,padding:"11px 14px",marginBottom:14,display:"flex",gap:9}}>
-            <span style={{color:T.ochre,fontSize:12,flexShrink:0}}>✦</span>
-            <div><div style={{fontFamily:F.body,fontSize:11,color:T.ochre,fontWeight:600,marginBottom:2}}>Automatic live sync</div><div style={{fontFamily:F.body,fontSize:11,color:T.stone,lineHeight:1.6,fontWeight:300}}>Once connected, your availability syncs automatically every few minutes — no manual updates needed.</div></div>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {INTEGRATIONS.map(intg=>{
-              const ok=connected[intg.id],ing=connecting===intg.id;
-              return (
-                <div key={intg.id} style={{background:T.paper,borderRadius:3,border:`1px solid ${ok?T.sageL:T.border}`,padding:"13px 15px",transition:"border-color .2s"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:ok?0:10}}>
-                    <div style={{width:28,height:28,borderRadius:3,background:ok?T.sageXL:T.bg,border:`1px solid ${ok?T.sageL:T.border}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><div style={{width:7,height:7,borderRadius:"50%",background:ok?T.sage:intg.col}}/></div>
-                    <div style={{flex:1}}><div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600,marginBottom:1}}>{intg.name}</div><div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{intg.desc} · {intg.auth}</div></div>
-                    {ok?<div style={{display:"flex",alignItems:"center",gap:3}}><span style={{width:4,height:4,borderRadius:"50%",background:T.sage,display:"inline-block"}}/><span style={{fontFamily:F.body,fontSize:9,color:T.sage,fontWeight:600}}>Connected</span></div>
-                    :<span style={{fontFamily:F.body,fontSize:9,color:T.stone2}}>Not connected</span>}
-                  </div>
-                  {!ok&&<div style={{display:"flex",gap:6}}><input value={keys[intg.id]||""} onChange={e=>setKeys(p=>({...p,[intg.id]:e.target.value}))} placeholder={intg.auth==="Feed URL"?"https://your-cal.ical":`Your ${intg.name} ${intg.auth}`} style={INP2} onFocus={onF} onBlur={onB}/><button onClick={()=>connect(intg)} disabled={!keys[intg.id]?.trim()||ing} style={{padding:"8px 14px",background:!keys[intg.id]?.trim()||ing?T.border:T.sage,color:!keys[intg.id]?.trim()||ing?T.stone:"#fff",border:"none",borderRadius:2,fontSize:10,fontFamily:F.body,fontWeight:600,cursor:!keys[intg.id]?.trim()||ing?"not-allowed":"pointer",whiteSpace:"nowrap"}}>{ing?"Connecting…":"Connect"}</button></div>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Payments */}
-      {tab==="payments"&&(
-        <div style={{display:"flex",flexDirection:"column",gap:13}}>
-          <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden"}}>
-            <div style={{padding:"11px 15px",borderBottom:`1px solid ${T.border}`}}><div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>Payout bank account</div></div>
-            <div style={{padding:"15px",display:"flex",flexDirection:"column",gap:11}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                <div style={{gridColumn:"1/-1"}}><FieldLabel>Account holder name</FieldLabel><input value={payout.accountName} onChange={e=>setPayout(p=>({...p,accountName:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                <div style={{gridColumn:"1/-1"}}><FieldLabel>IBAN</FieldLabel><input value={payout.iban} onChange={e=>setPayout(p=>({...p,iban:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                <div><FieldLabel>BIC / SWIFT</FieldLabel><input value={payout.bic} onChange={e=>setPayout(p=>({...p,bic:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-                <div><FieldLabel>VAT / CIF</FieldLabel><input value={payout.vatNumber} onChange={e=>setPayout(p=>({...p,vatNumber:e.target.value}))} style={INP3} onFocus={onF} onBlur={onB}/></div>
-              </div>
-              <button style={{alignSelf:"flex-start",padding:"7px 16px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer"}}>Save payout details</button>
-            </div>
-          </div>
-
-          {/* Payout history with invoice download */}
-          <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden"}}>
-            <div style={{padding:"11px 15px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>Recent payouts</div>
-              <span style={{fontFamily:F.body,fontSize:9,color:T.stone2,fontWeight:300}}>Click invoice to download as PDF</span>
-            </div>
-            <div style={{padding:"15px"}}>
-              {[
-                {date:"14 Mar 2026",credits:34,bookings:4,gross:306,commission:20,invNo:"WLO-2026-014"},
-                {date:"07 Mar 2026",credits:28,bookings:3,gross:252,commission:20,invNo:"WLO-2026-013"},
-                {date:"28 Feb 2026",credits:24,bookings:3,gross:216,commission:20,invNo:"WLO-2026-012"},
-              ].map((row)=>{
-                const commissionAmt=(row.gross*(row.commission/100)).toFixed(2);
-                const netPayout=(row.gross*(1-row.commission/100)).toFixed(2);
-                return (
-                  <div key={row.date} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:`1px solid ${T.border}`}}>
-                    <div style={{flex:1}}>
-                      <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{row.date}</div>
-                      <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>◈ {row.credits} credits · {row.bookings} bookings · {row.commission}% commission</div>
-                    </div>
-                    <div style={{textAlign:"right"}}>
-                      <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:14,color:T.ink,fontWeight:700,letterSpacing:"-0.3px"}}>€{netPayout}</div>
-                      <span style={{background:T.sageXL,color:T.sage,fontSize:8,padding:"2px 7px",borderRadius:2,fontFamily:F.body,fontWeight:700}}>Paid</span>
-                    </div>
-                    <button onClick={()=>printInvoice({
-                      invoiceNo:row.invNo, date:row.date,
-                      businessName:listing.name||"Your Venue",
-                      businessAddress:listing.address||"Mallorca, Spain",
-                      vatNo:payout.vatNumber||"—",
-                      iban:payout.iban||"—",
-                      credits:row.credits, bookings:row.bookings,
-                      grossValue:row.gross, commissionRate:row.commission,
-                      commissionAmt, netPayout,
-                    })} style={{padding:"6px 12px",background:T.ink,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer",flexShrink:0,letterSpacing:".3px"}}>
-                      ↓ Invoice
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:3,padding:"12px 14px"}}>
-            <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,lineHeight:1.6}}>Payouts processed every Friday · Commission deducted per credit redemption · VAT handled automatically for EU businesses · Your agreed rate is confirmed in your onboarding agreement</div>
-          </div>
-        </div>
-      )}
-
-      {/* Analytics */}
-      {tab==="analytics"&&(
-        <div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(148px,1fr))",gap:10,marginBottom:20}}>
-            {[["Total bookings","24","this month"],["Credits earned","86 ◈","all time"],["Occupancy rate","68%","avg across slots"],["Avg rating","4.8 ★","from 38 reviews"],["Listing views","312","this month"],["Saved by users","47","and growing"]].map(([l,v,s])=>(
-              <div key={l} style={{background:T.paper,borderRadius:3,border:`1px solid ${T.border}`,padding:"12px 13px"}}>
-                <Label>{l}</Label><div style={{fontFamily:F.display,fontSize:20,color:T.ink,fontWeight:400,lineHeight:1,marginBottom:3}}>{v}</div><div style={{fontFamily:F.body,fontSize:9,color:T.stone,fontWeight:300}}>{s}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"15px",marginBottom:13}}>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600,marginBottom:13}}>Bookings this month</div>
-            <div style={{display:"flex",alignItems:"flex-end",gap:5,height:80}}>
-              {[12,18,9,24,30,22,16,28,20,15,24,18,30,22].map((h,i)=>(
-                <div key={i} style={{flex:1,background:T.sageL,borderRadius:"2px 2px 0 0",height:`${(h/30)*100}%`,minWidth:6,transition:"height .3s"}} title={`${h} bookings`}/>
-              ))}
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span style={{fontFamily:F.body,fontSize:8,color:T.stone2}}>Mar 1</span><span style={{fontFamily:F.body,fontSize:8,color:T.stone2}}>Today</span></div>
-          </div>
-          <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"15px"}}>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600,marginBottom:11}}>Top performing classes</div>
-            {[["Sunrise Flow","◈2","92% avg occupancy"],["Sunset Vinyasa","◈2","78% avg occupancy"],["Reformer Intro","◈2","65% avg occupancy"]].map(([name,cr,occ])=>(
-              <div key={name} style={{display:"flex",alignItems:"center",gap:12,padding:"7px 0",borderBottom:`1px solid ${T.border}`}}>
-                <div style={{flex:1}}><div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{name}</div><div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{occ}</div></div>
-                <span style={{background:T.sageXL,color:T.sage,fontSize:9,padding:"2px 8px",borderRadius:2,fontFamily:F.body,fontWeight:600}}>{cr}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      <p style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300}}>Questions? Email us at <span style={{color:T.sage}}>hola@wello.es</span></p>
     </div>
   );
+
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2395,6 +1970,10 @@ export default function App() {
           <button onClick={()=>setBizPreview(v=>!v)}
             style={{padding:"4px 12px",background:bizPreview?T.sage:"transparent",color:bizPreview?"#fff":T.stone,border:`1px solid ${bizPreview?T.sage:T.stone2}`,borderRadius:2,fontFamily:F.body,fontSize:9,fontWeight:600,cursor:"pointer",letterSpacing:".5px"}}>
             {bizPreview?"✓ Viewing business console":"👁 Preview business console"}
+          </button>
+          <button onClick={()=>setAdminPreview(true)}
+            style={{padding:"4px 12px",background:"transparent",color:T.ochre,border:`1px solid ${T.ochre}`,borderRadius:2,fontFamily:F.body,fontSize:9,fontWeight:600,cursor:"pointer",letterSpacing:".5px"}}>
+            👁 Preview admin panel
           </button>
         </div>
       </div>
