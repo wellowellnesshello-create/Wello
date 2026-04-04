@@ -455,33 +455,33 @@ function HomePage({ listings, bookings, onSelect, savedIds, onToggleSave, onSetV
   return (
     <div>
       {/* ─ GREEN HERO ─ */}
-      <div style={{background:`linear-gradient(155deg,${T.sage2} 0%,${T.sage} 55%,#5a7a51 100%)`,minHeight:460,position:"relative",overflow:"hidden",display:"flex",flexDirection:"column",justifyContent:"flex-end",padding:"0 0 44px"}}>
+      <div style={{background:`linear-gradient(155deg,${T.sage2} 0%,${T.sage} 55%,#5a7a51 100%)`,minHeight:460,position:"relative",overflow:"hidden",display:"flex",flexDirection:"column",justifyContent:"center",padding:"60px 0 52px"}}>
         <div style={{position:"absolute",inset:0,backgroundImage:"url('https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=1400&q=65')",backgroundSize:"cover",backgroundPosition:"center top",opacity:.18}}/>
         <div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(60,82,51,.2) 0%,rgba(60,82,51,.82) 100%)"}}/>
-        <div style={{maxWidth:1140,margin:"0 auto",padding:"0 28px",position:"relative",width:"100%"}}>
-          {/* F1 hero wordmark — white name on sage, ochre descriptor */}
+        <div style={{maxWidth:680,margin:"0 auto",padding:"0 28px",position:"relative",width:"100%",textAlign:"center"}}>
+          {/* F1 hero wordmark */}
           <div style={{marginBottom:20}}>
             <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:"clamp(52px,7vw,88px)",fontWeight:700,color:"#fff",lineHeight:1,letterSpacing:"-3px"}}>wello</div>
             <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:11,fontWeight:400,color:T.ochreL,letterSpacing:"6px",marginTop:6,textTransform:"uppercase"}}>the wellness pass</div>
           </div>
-          <p style={{fontFamily:F.body,color:"rgba(255,255,255,.6)",fontSize:13,lineHeight:1.7,margin:"0 0 22px",maxWidth:360,fontWeight:300}}>
+          <p style={{fontFamily:F.body,color:"rgba(255,255,255,.7)",fontSize:14,lineHeight:1.7,margin:"0 auto 28px",maxWidth:420,fontWeight:300}}>
             Your pass to studios, gyms, hotels, spas and outdoor adventures across Mallorca.
           </p>
           {/* AI Search */}
-          <div style={{display:"flex",maxWidth:490,background:"rgba(250,248,244,.12)",backdropFilter:"blur(10px)",border:"1px solid rgba(255,255,255,.2)",borderRadius:3,overflow:"hidden",marginBottom:7}}>
+          <div style={{display:"flex",maxWidth:520,margin:"0 auto 8px",background:"rgba(250,248,244,.12)",backdropFilter:"blur(10px)",border:"1px solid rgba(255,255,255,.2)",borderRadius:3,overflow:"hidden"}}>
             <span style={{padding:"0 12px",display:"flex",alignItems:"center",color:"rgba(255,255,255,.55)",fontSize:12,flexShrink:0}}>✦</span>
             <input value={aiQ} onChange={e=>setAiQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runAI()}
               placeholder='Try "outdoor yoga under 2 credits" or "pool access Palma"…'
-              style={{flex:1,padding:"11px 0",border:"none",outline:"none",fontFamily:F.body,fontSize:11,background:"transparent",color:"#fff"}}/>
+              style={{flex:1,padding:"12px 0",border:"none",outline:"none",fontFamily:F.body,fontSize:11,background:"transparent",color:"#fff"}}/>
             {aiResults&&<button onClick={()=>{setAiResults(null);setAiQ("");setAiNote("");}} style={{padding:"0 10px",background:"transparent",color:"rgba(255,255,255,.6)",border:"none",cursor:"pointer",fontSize:11,fontFamily:F.body}}>✕</button>}
-            <button onClick={runAI} disabled={aiLoading||!aiQ.trim()} style={{padding:"0 16px",background:aiLoading?"rgba(255,255,255,.08)":"rgba(255,255,255,.22)",color:"#fff",border:"none",cursor:aiLoading||!aiQ.trim()?"not-allowed":"pointer",fontFamily:F.body,fontSize:11,fontWeight:600,flexShrink:0}}>
+            <button onClick={runAI} disabled={aiLoading||!aiQ.trim()} style={{padding:"0 18px",background:aiLoading?"rgba(255,255,255,.08)":"rgba(255,255,255,.22)",color:"#fff",border:"none",cursor:aiLoading||!aiQ.trim()?"not-allowed":"pointer",fontFamily:F.body,fontSize:11,fontWeight:600,flexShrink:0}}>
               {aiLoading?"…":"Search"}
             </button>
           </div>
-          {aiNote&&<div style={{display:"flex",alignItems:"center",gap:5,marginBottom:5}}><span style={{fontSize:9,color:T.ochreL}}>✦</span><span style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.65)",fontStyle:"italic"}}>{aiNote}</span></div>}
-          <div style={{display:"flex",gap:8,marginTop:22,flexWrap:"wrap"}}>
-            <button onClick={()=>onSetView("explore")} style={{padding:"10px 20px",background:"#fff",color:T.sage,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:".4px"}} onMouseEnter={e=>e.target.style.opacity=".88"} onMouseLeave={e=>e.target.style.opacity="1"}>Explore all →</button>
-            <button onClick={()=>onSetView("credits")} style={{padding:"10px 20px",background:"transparent",color:"#fff",border:"1px solid rgba(255,255,255,.35)",borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>◈ Buy Credits</button>
+          {aiNote&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:8}}><span style={{fontSize:9,color:T.ochreL}}>✦</span><span style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.65)",fontStyle:"italic"}}>{aiNote}</span></div>}
+          <div style={{display:"flex",gap:8,marginTop:22,flexWrap:"wrap",justifyContent:"center"}}>
+            <button onClick={()=>onSetView("explore")} style={{padding:"10px 22px",background:"#fff",color:T.sage,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:".4px"}} onMouseEnter={e=>e.target.style.opacity=".88"} onMouseLeave={e=>e.target.style.opacity="1"}>Explore all →</button>
+            <button onClick={()=>onSetView("credits")} style={{padding:"10px 22px",background:"transparent",color:"#fff",border:"1px solid rgba(255,255,255,.35)",borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>◈ Buy Credits</button>
           </div>
         </div>
       </div>
@@ -518,58 +518,6 @@ function HomePage({ listings, bookings, onSelect, savedIds, onToggleSave, onSetV
           )}
         </div>
 
-        {/* ─ BUSINESS CTA BANNER ─ */}
-        <div style={{marginBottom:48,background:T.paper,borderRadius:4,border:`1px solid ${T.border}`,overflow:"hidden",display:"flex",flexWrap:"wrap"}}>
-          {/* Left: pitch */}
-          <div style={{flex:"1 1 300px",padding:"32px 32px"}}>
-            <div style={{display:"inline-flex",alignItems:"center",gap:6,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:2,padding:"3px 9px",marginBottom:16}}>
-              <span style={{width:4,height:4,borderRadius:"50%",background:T.sage,display:"inline-block"}}/>
-              <span style={{fontFamily:F.body,fontSize:8,color:T.sage,letterSpacing:"2px",textTransform:"uppercase",fontWeight:600}}>Built for Mallorca businesses</span>
-            </div>
-            <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:24,color:T.ink,fontWeight:700,margin:"0 0 4px",lineHeight:1.15,letterSpacing:"-0.5px"}}>Fill your quiet hours.<br/>Reach more people.</h2>
-            <p style={{fontFamily:F.body,fontSize:11,color:T.ochre,letterSpacing:"3px",textTransform:"uppercase",margin:"8px 0 14px",fontWeight:400}}>the wellness pass</p>
-            <p style={{fontFamily:F.body,fontSize:13,color:T.stone,lineHeight:1.75,margin:"0 0 24px",fontWeight:300,maxWidth:360}}>Wello connects your studio, gym or pool to local fitness enthusiasts, expats and tourists who want flexibility while they're on the island — and can help fill some of your quieter hours.</p>
-            <div style={{display:"flex",flexDirection:"column",gap:13,marginBottom:26}}>
-              {[
-                ["Access a ready market","Locals, expats and tourists actively searching for classes and experiences across the island."],
-                ["Fill your off-peak slots","List your quieter sessions and turn empty spaces into real revenue without reducing your prices."],
-                ["Built here, for here","Wello is a Mallorca-first platform, built to connect the island's best wellness businesses with the people who want them."],
-              ].map(([title,desc])=>(
-                <div key={title} style={{display:"flex",alignItems:"flex-start",gap:10}}>
-                  <div style={{width:17,height:17,borderRadius:"50%",background:T.sageXL,border:`1px solid ${T.sageL}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2}}>
-                    <span style={{fontSize:8,color:T.sage,fontWeight:700}}>✓</span>
-                  </div>
-                  <div>
-                    <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600,marginBottom:2}}>{title}</div>
-                    <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.5}}>{desc}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div style={{display:"flex",gap:9,flexWrap:"wrap"}}>
-              <button onClick={()=>onSetView("biz-portal")} style={{padding:"11px 22px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:"pointer",letterSpacing:".4px",transition:"background .15s"}} onMouseEnter={e=>e.target.style.background=T.sage2} onMouseLeave={e=>e.target.style.background=T.sage}>
-                Register your interest →
-              </button>
-            </div>
-          </div>
-          {/* Right: social proof panel */}
-          <div style={{flex:"0 1 240px",background:T.sage,padding:"32px 28px",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
-            <div>
-              <div style={{fontFamily:F.body,fontSize:8,letterSpacing:"2px",textTransform:"uppercase",color:"rgba(255,255,255,.45)",marginBottom:16}}>Perfect for</div>
-              <div style={{display:"flex",flexDirection:"column",gap:11}}>
-                {[["Studios","Yoga, pilates, meditation & more"],["Gyms","Independent gyms & day passes"],["Hotels","Gym access, pool days & spa"],["Outdoor adventures","Guided activities & experiences"],["Fitness classes","HIIT, circuits & group sessions"],["Pool days","Lap lanes, leisure & clubs"],["Spa treatments","Massage, recovery & wellness"]].map(([cat,sub])=>(
-                  <div key={cat} style={{display:"flex",alignItems:"center",gap:9}}>
-                    <div style={{width:5,height:5,borderRadius:"50%",background:T.ochreL,flexShrink:0}}/>
-                    <div>
-                      <div style={{fontFamily:F.body,fontSize:11,color:"rgba(255,255,255,.85)",fontWeight:500}}>{cat}</div>
-                      <div style={{fontFamily:F.body,fontSize:9,color:"rgba(255,255,255,.4)",fontWeight:300}}>{sub}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
 
       </div>
     </div>
@@ -910,8 +858,8 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
   if (!registered) {
     const canSubmit = listing.name.trim() && listing.email.trim() && listing.phone.trim();
 
-    async function handleSubmit() {
-      const { data, error } = await supabase.from('businesses').insert({
+    function handleSubmit() {
+      supabase.from('businesses').insert({
         name: listing.name,
         category: listing.category,
         location: listing.location,
@@ -920,7 +868,6 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
         notes: listing.notes || '',
         status: 'pending',
       });
-      console.log('result:', data, error);
       setRegistered(true);
     }
 
@@ -956,10 +903,10 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
                 </select>
               </div>
               <div>
-                <FieldLabel>Location *</FieldLabel>
-                <select value={listing.location} onChange={e=>setListing(p=>({...p,location:e.target.value}))} style={INP3}>
-                  {LOCS.filter(l=>l!=="All Mallorca").map(l=><option key={l}>{l}</option>)}
-                </select>
+                <FieldLabel>Address *</FieldLabel>
+                <input placeholder="e.g. Carrer de la Rosa 12, 07001 Palma" value={listing.location}
+                  onChange={e=>setListing(p=>({...p,location:e.target.value}))}
+                  style={INP3} onFocus={onF} onBlur={onB}/>
               </div>
             </div>
 
@@ -1017,7 +964,7 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
       <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 28px"}}>Someone from the Wello team will be in touch within 2 working days to have a conversation about how it all works and agree the right setup for your venue.</p>
       <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:3,padding:"16px 20px",textAlign:"left",marginBottom:24}}>
         <div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600,marginBottom:10}}>What happens next</div>
-        {["We review your registration","We call or email to discuss your venue and how Wello works","We agree a commission rate together","You receive login details and can set up your full listing","Your listing goes live on the marketplace"].map((s,i)=>(
+        {["We review your registration","We call or email to introduce Wello and walk you through how it works","You receive your onboarding details and set up your full listing","Your listing goes live on the marketplace"].map((s,i)=>(
           <div key={i} style={{display:"flex",gap:10,marginBottom:8}}>
             <div style={{width:18,height:18,borderRadius:"50%",background:T.sage,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:700,flexShrink:0,marginTop:1}}>{i+1}</div>
             <span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.5}}>{s}</span>
