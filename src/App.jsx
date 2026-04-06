@@ -42,48 +42,30 @@ const T = {
 };
 
 // ─── Credit system ────────────────────────────────────────────────────────────
-// Credits expire 6 months from purchase. Booking fee: €2.99 per transaction.
-// 1 credit ≈ €8–10 real-world value based on Mallorca market research.
+// 1 credit = €5 face value. Service fee: €2.50 per booking.
+// Bundles sold at a discount — larger bundles = better value per credit.
+// Credits expire 6 months from purchase.
 const BUNDLES = [
-  { id:"taster",   name:"Taster",    cr:10, price:29,  desc:"New to Wello? Try a handful of classes",         badge:null,         popular:false },
-  { id:"explorer", name:"Explorer",  cr:24, price:59,  desc:"A week or two of varied island activity",        badge:"Most Popular",popular:true  },
-  { id:"local",    name:"Local",     cr:52, price:119, desc:"A full month of regular wellness",               badge:"Best Value",  popular:false },
-  { id:"islander", name:"Islander",  cr:110,price:229, desc:"Commit to the island lifestyle all season",      badge:null,         popular:false },
+  { id:"wellolife", name:"Wello Life", cr:50, price:237.50, fullPrice:250, desc:"For those who make wellness part of island life.", badge:"5% off", popular:true },
 ];
-const BOOKING_FEE = 2.99;
+const BOOKING_FEE = 2.50; // 10% of session value, max €5, charged per booking
 
-// Market-researched Mallorca pricing (2025):
-// Yoga drop-in: €18–20 · Pilates drop-in: €18–22 · Gym day pass: €15–20
-// Hotel spa+gym day pass: €25–80 · Guided hike: €30–50pp · Spa treatment (60min): €60–90
-// Pool day pass (resort): €30–60 · Fitness class drop-in: €15–18
-// At ~€9/credit, credit costs are calibrated to give venues fair value
+// Credit pricing — 1 credit = €5 face value.
+// Venues price sessions in €5 increments, converted to credits.
+// Market reference: Yoga €20 = 4cr · Gym day pass €15 = 3cr · Spa 60min €60 = 12cr
 const CREDIT_PRICING = [
-  { cat:"Yoga class",         offPeak:"2 credits  (≈€18)",  peak:"3 credits (≈€27)", example:"Drop-in classes, studios" },
-  { cat:"Pilates class",      offPeak:"2 credits  (≈€18)",  peak:"3 credits (≈€27)", example:"Reformer & mat classes" },
-  { cat:"Fitness class",      offPeak:"2 credits  (≈€18)",  peak:"2 credits (≈€18)", example:"HIIT, circuits, bootcamp" },
-  { cat:"Gym day pass",       offPeak:"2 credits  (≈€18)",  peak:"3 credits (≈€27)", example:"Independent gyms" },
-  { cat:"Hotel gym & pool",   offPeak:"3 credits  (≈€27)",  peak:"5 credits (≈€45)", example:"5-star hotel access" },
-  { cat:"Pool day pass",      offPeak:"3 credits  (≈€27)",  peak:"5 credits (≈€45)", example:"Resort & rooftop pools" },
-  { cat:"Outdoor adventure",  offPeak:"4 credits  (≈€36)",  peak:"5 credits (≈€45)", example:"Guided hikes, kayaking" },
-  { cat:"Spa treatment",      offPeak:"7 credits  (≈€63)",  peak:"9 credits (≈€81)", example:"60-min massage & wellness" },
+  { cat:"Yoga class",        offPeak:"3 credits (€15)",  peak:"4 credits (€20)",  example:"Drop-in classes, studios" },
+  { cat:"Pilates class",     offPeak:"3 credits (€15)",  peak:"4 credits (€20)",  example:"Reformer & mat classes" },
+  { cat:"Fitness class",     offPeak:"3 credits (€15)",  peak:"3 credits (€15)",  example:"HIIT, circuits, bootcamp" },
+  { cat:"Gym day pass",      offPeak:"3 credits (€15)",  peak:"4 credits (€20)",  example:"Independent gyms" },
+  { cat:"Hotel gym & pool",  offPeak:"5 credits (€25)",  peak:"8 credits (€40)",  example:"5-star hotel access" },
+  { cat:"Pool day pass",     offPeak:"5 credits (€25)",  peak:"8 credits (€40)",  example:"Resort & rooftop pools" },
+  { cat:"Outdoor adventure", offPeak:"6 credits (€30)",  peak:"8 credits (€40)",  example:"Guided hikes, kayaking" },
+  { cat:"Spa treatment",     offPeak:"12 credits (€60)", peak:"16 credits (€80)", example:"60-min massage & wellness" },
 ];
 
 // Commission — admin-set only, never visible to businesses during registration
-const COMMISSION_TIERS = [
-  { id:"standard", label:"Standard",  rate:20, desc:"Default for new venues" },
-  { id:"premium",  label:"Premium",   rate:18, desc:"Higher-volume venues" },
-  { id:"partner",  label:"Partner",   rate:15, desc:"Strategic partners" },
-];
 
-// Admin panel — mock registered businesses
-const ADMIN_BUSINESSES = [
-  { id:"b1", name:"Sol & Alma Yoga",      cat:"Yoga",         loc:"Sóller",   commission:"standard", status:"live",    monthlyBookings:24, monthlyCredits:86  },
-  { id:"b2", name:"Hospes Maricel",       cat:"Hotel Gym",    loc:"Palma",    commission:"partner",  status:"live",    monthlyBookings:18, monthlyCredits:90  },
-  { id:"b3", name:"Deià Mountain Yoga",   cat:"Yoga",         loc:"Deià",     commission:"standard", status:"live",    monthlyBookings:12, monthlyCredits:36  },
-  { id:"b4", name:"Olas Surf & Yoga",     cat:"Surfing",      loc:"Alcúdia",  commission:"premium",  status:"live",    monthlyBookings:9,  monthlyCredits:45  },
-  { id:"b5", name:"Pollença HIIT Lab",    cat:"Fitness Class",loc:"Pollença", commission:"standard", status:"pending", monthlyBookings:0,  monthlyCredits:0   },
-  { id:"b6", name:"Pure Palma Pool Club", cat:"Pool Access",  loc:"Palma",    commission:"premium",  status:"live",    monthlyBookings:31, monthlyCredits:155 },
-];
 const PAY = [
   { id:"card",   label:"Credit / Debit Card", sub:"Visa, Mastercard, Amex" },
   { id:"apple",  label:"Apple Pay",           sub:"Touch ID or Face ID" },
@@ -103,47 +85,47 @@ const LOCS = ["All Mallorca","Palma","Sóller","Deià","Pollença","Alcúdia","S
 const SYNC = {1:"Mindbody",2:"Acuity",3:"Acuity",4:"FareHarbor",5:"Custom API",6:"Mindbody",7:"Gympass",8:"iCal",9:"Custom API"};
 
 const LISTINGS = [
-  { id:1, name:"Sol & Alma Yoga", cat:"Yoga", loc:"Sóller", rating:4.9, reviews:127, cr:2,
+  { id:1, name:"Sol & Alma Yoga", cat:"Yoga", loc:"Sóller", rating:4.9, reviews:127, cr:4,
     desc:"Rooftop yoga overlooking the Tramuntana mountains. Sunrise & sunset sessions with certified instructors.",
     img:"https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80",
     tags:["Rooftop","All Levels","Mountain Views"],
     slots:[{id:"s1",date:"2026-03-22",time:"07:00",dur:"75 min",spots:8,booked:3,name:"Sunrise Flow"},{id:"s2",date:"2026-03-22",time:"18:30",dur:"90 min",spots:10,booked:7,name:"Sunset Vinyasa"},{id:"s3",date:"2026-03-23",time:"07:00",dur:"75 min",spots:8,booked:1,name:"Sunrise Flow"}] },
-  { id:2, name:"Hospes Maricel", cat:"Hotel Gym", loc:"Palma", rating:4.8, reviews:64, cr:3,
+  { id:2, name:"Hospes Maricel", cat:"Hotel Gym", loc:"Palma", rating:4.8, reviews:64, cr:8,
     desc:"Five-star hotel fitness centre with heated infinity pool and panoramic sea views. Day passes available.",
     img:"https://images.unsplash.com/photo-1540497077202-7c8a3999166f?w=600&q=80",
     tags:["5-Star","Infinity Pool","Sea Views"],
     slots:[{id:"s5",date:"2026-03-22",time:"06:30",dur:"Open",spots:15,booked:5,name:"Gym & Pool Pass"},{id:"s6",date:"2026-03-22",time:"16:00",dur:"Open",spots:15,booked:9,name:"Afternoon Access"},{id:"s7",date:"2026-03-23",time:"06:30",dur:"Open",spots:15,booked:2,name:"Gym & Pool Pass"}] },
-  { id:3, name:"Tramuntana Flow", cat:"Pilates", loc:"Valldemossa", rating:5.0, reviews:43, cr:2,
+  { id:3, name:"Tramuntana Flow", cat:"Pilates", loc:"Valldemossa", rating:5.0, reviews:43, cr:4,
     desc:"Reformer and mat Pilates inside a restored 18th-century farmhouse. Small groups, meticulous attention.",
     img:"https://images.unsplash.com/photo-1518611012118-696072aa579a?w=600&q=80",
     tags:["Reformer","Small Groups","Historic"],
     slots:[{id:"s8",date:"2026-03-22",time:"09:00",dur:"55 min",spots:6,booked:6,name:"Reformer"},{id:"s9",date:"2026-03-22",time:"11:00",dur:"55 min",spots:6,booked:2,name:"Mat Pilates"},{id:"s10",date:"2026-03-23",time:"09:00",dur:"55 min",spots:6,booked:0,name:"Intro Reformer"}] },
-  { id:4, name:"Olas Surf & Yoga", cat:"Surfing", loc:"Alcúdia", rating:4.7, reviews:89, cr:4,
+  { id:4, name:"Olas Surf & Yoga", cat:"Surfing", loc:"Alcúdia", rating:4.7, reviews:89, cr:8,
     desc:"North coast beach packages — paddle out at dawn, practice yoga as the sun rises over the bay.",
     img:"https://images.unsplash.com/photo-1515016886654-94c06b8a8c7d?w=600&q=80",
     tags:["Beach","Surf","Full Experience"],
     slots:[{id:"s12",date:"2026-03-22",time:"08:00",dur:"Half Day",spots:8,booked:5,name:"Surf + Yoga"},{id:"s13",date:"2026-03-23",time:"08:00",dur:"Half Day",spots:8,booked:1,name:"Surf + Yoga"}] },
-  { id:5, name:"Cap Rocat Wellness", cat:"Pool Access", loc:"Palma", rating:4.9, reviews:52, cr:3,
+  { id:5, name:"Cap Rocat Wellness", cat:"Pool Access", loc:"Palma", rating:4.9, reviews:52, cr:8,
     desc:"Fortress hotel — infinity pool carved into the cliffs, spa circuit and breathwork sessions. Extraordinary luxury.",
     img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=600&q=80",
     tags:["Luxury","Cliff Pool","Spa"],
     slots:[{id:"s15",date:"2026-03-22",time:"10:00",dur:"Full Day",spots:6,booked:2,name:"Pool & Spa Day"},{id:"s16",date:"2026-03-23",time:"10:00",dur:"Full Day",spots:6,booked:0,name:"Pool & Spa Day"}] },
-  { id:6, name:"Deià Mountain Yoga", cat:"Yoga", loc:"Deià", rating:4.8, reviews:71, cr:2,
+  { id:6, name:"Deià Mountain Yoga", cat:"Yoga", loc:"Deià", rating:4.8, reviews:71, cr:4,
     desc:"Open-air platform in the artist village of Deià. Iyengar practice surrounded by ancient olive groves.",
     img:"https://images.unsplash.com/photo-1508672019048-805c876b67e2?w=600&q=80",
     tags:["Outdoor","Iyengar","Olive Groves"],
     slots:[{id:"s18",date:"2026-03-22",time:"08:30",dur:"90 min",spots:10,booked:8,name:"Iyengar Morning"},{id:"s19",date:"2026-03-22",time:"17:00",dur:"90 min",spots:10,booked:4,name:"Restorative Evening"}] },
-  { id:7, name:"Pollença HIIT Lab", cat:"Fitness Class", loc:"Pollença", rating:4.6, reviews:110, cr:1,
+  { id:7, name:"Pollença HIIT Lab", cat:"Fitness Class", loc:"Pollença", rating:4.6, reviews:110, cr:3,
     desc:"High-intensity training in a converted mill. 45-minute sessions, expert coaching, maximum results.",
     img:"https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=600&q=80",
     tags:["HIIT","Small Groups","Expert Coaches"],
     slots:[{id:"s21",date:"2026-03-22",time:"07:30",dur:"45 min",spots:14,booked:10,name:"HIIT Express"},{id:"s22",date:"2026-03-22",time:"12:00",dur:"45 min",spots:14,booked:6,name:"Lunchtime"},{id:"s24",date:"2026-03-23",time:"07:30",dur:"45 min",spots:14,booked:4,name:"HIIT Express"}] },
-  { id:8, name:"Santanyí Sea Meditation", cat:"Meditation", loc:"Santanyí", rating:5.0, reviews:38, cr:2,
+  { id:8, name:"Santanyí Sea Meditation", cat:"Meditation", loc:"Santanyí", rating:5.0, reviews:38, cr:3,
     desc:"Cliffside meditation and breathwork with the Mediterranean as your backdrop. Intimate and transformative.",
     img:"https://images.unsplash.com/photo-1593811167562-9cef47bfc4d7?w=600&q=80",
     tags:["Cliffside","Breathwork","Sea Views"],
     slots:[{id:"s25",date:"2026-03-22",time:"06:00",dur:"60 min",spots:8,booked:5,name:"Dawn Breathwork"},{id:"s26",date:"2026-03-22",time:"19:30",dur:"60 min",spots:8,booked:2,name:"Sunset Meditation"}] },
-  { id:9, name:"Pure Palma Pool Club", cat:"Pool Access", loc:"Palma", rating:4.7, reviews:93, cr:2,
+  { id:9, name:"Pure Palma Pool Club", cat:"Pool Access", loc:"Palma", rating:4.7, reviews:93, cr:5,
     desc:"Rooftop pool at the heart of Palma. Lap lanes from 8am, day club all afternoon. Hotel gym access included.",
     img:"https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=600&q=80",
     tags:["Rooftop Pool","Lap Lanes","Day Pass"],
@@ -428,19 +410,8 @@ function SyncEngine({ listings, onUpdate }) {
 // PAGE: HOME
 // ═══════════════════════════════════════════════════════════════
 function HomePage({ listings, bookings, onSelect, savedIds, onToggleSave, onSetView, syncingIds }) {
-  const [recs,setRecs]=useState([]); const [recsLoading,setRecsLoading]=useState(true);
   const [aiQ,setAiQ]=useState(""); const [aiLoading,setAiLoading]=useState(false);
   const [aiNote,setAiNote]=useState(""); const [aiResults,setAiResults]=useState(null);
-
-  useEffect(()=>{
-    (async()=>{
-      const hist=bookings.length>0?bookings.map(b=>`${b.slot.name} at ${b.biz.name}`).join(", "):"New user";
-      const ls=listings.map(b=>`ID:${b.id} "${b.name}" ${b.cat} ${b.loc} ◈${b.cr}`).join("\n");
-      const r=await aiJSON(`Mallorca wellness concierge. Return ONLY JSON: {"recommendations":[{"id":1,"reason":"max 9 words"}]} — 3 items.`,`History:${hist}\nListings:\n${ls}`);
-      if(r?.recommendations) setRecs(r.recommendations.map(x=>({biz:listings.find(b=>b.id===x.id),reason:x.reason})).filter(x=>x.biz));
-      setRecsLoading(false);
-    })();
-  },[]);
 
   async function runAI() {
     if (!aiQ.trim()) return; setAiLoading(true);
@@ -486,38 +457,63 @@ function HomePage({ listings, bookings, onSelect, savedIds, onToggleSave, onSetV
         </div>
       </div>
 
-      <div style={{maxWidth:1140,margin:"0 auto",padding:"34px 28px 0"}}>
-        {/* ─ AI RECS ─ */}
-        <div style={{marginBottom:30}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:13}}>
-            <div style={{width:20,height:20,background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:T.ochre}}>✦</div>
-            <span style={{fontFamily:F.body,fontSize:14,fontWeight:600,color:T.ink,letterSpacing:"-0.3px"}}>For you</span>
-            <span style={{fontFamily:F.body,fontSize:8,color:T.stone2,letterSpacing:"1.5px",textTransform:"uppercase"}}>AI-powered</span>
-          </div>
-          {recsLoading?(
-            <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"12px 14px",display:"flex",alignItems:"center",gap:7}}>
-              <span style={{width:4,height:4,borderRadius:"50%",background:T.sage,display:"inline-block",animation:"pulse 1.2s infinite"}}/>
-              <span style={{fontFamily:F.body,fontSize:11,color:T.stone}}>Finding your perfect classes…</span>
+      <div style={{maxWidth:1140,margin:"0 auto",padding:"40px 28px 0"}}>
+
+        {/* ─ FEATURED PARTNERS ─ */}
+        <div style={{marginBottom:44}}>
+          <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:18,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:0}}>Featured on Wello</h2>
+              <span style={{fontFamily:F.body,fontSize:9,color:T.stone2,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:300}}>Mallorca's best wellness venues</span>
             </div>
-          ):(
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(244px,1fr))",gap:10}}>
-              {recs.map(({biz,reason})=>(
-                <div key={biz.id} onClick={()=>onSelect(biz)} style={{background:T.paper,borderRadius:3,overflow:"hidden",cursor:"pointer",border:`1.5px solid ${T.ochreL}`,display:"flex",transition:"all .15s"}}
-                  onMouseEnter={e=>{e.currentTarget.style.borderColor=T.ochre;e.currentTarget.style.boxShadow=`0 4px 16px rgba(184,146,92,.13)`}}
-                  onMouseLeave={e=>{e.currentTarget.style.borderColor=T.ochreL;e.currentTarget.style.boxShadow="none"}}>
-                  <img src={biz.img} style={{width:80,objectFit:"cover",flexShrink:0}} alt=""/>
-                  <div style={{padding:"9px 11px",flex:1}}>
-                    <div style={{fontFamily:F.body,fontSize:8,color:T.ochre,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:700,marginBottom:3}}>✦ AI Pick</div>
-                    <div style={{fontFamily:F.body,fontSize:13,fontWeight:600,color:T.ink,marginBottom:2,letterSpacing:"-0.3px"}}>{biz.name}</div>
-                    <div style={{fontFamily:F.body,fontSize:10,color:T.stone,lineHeight:1.4,marginBottom:5,fontWeight:300}}>{reason}</div>
+            <button onClick={()=>onSetView("explore")} style={{fontFamily:F.body,fontSize:11,color:T.sage,background:"transparent",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>See all →</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(244px,1fr))",gap:12}}>
+            {listings.slice(0,4).map(biz=>(
+              <div key={biz.id} onClick={()=>onSelect(biz)}
+                style={{background:T.paper,borderRadius:3,overflow:"hidden",cursor:"pointer",border:`1px solid ${T.border}`,transition:"all .15s"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=T.sageL;e.currentTarget.style.boxShadow=`0 4px 18px rgba(78,107,67,.10)`}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.boxShadow="none"}}>
+                <div style={{position:"relative"}}>
+                  <img src={biz.img} style={{width:"100%",height:148,objectFit:"cover",display:"block"}} alt={biz.name}/>
+                  <div style={{position:"absolute",top:8,left:8,background:T.sage,color:"#fff",fontSize:8,padding:"3px 8px",borderRadius:2,fontFamily:F.body,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase"}}>Featured</div>
+                  <button onClick={e=>{e.stopPropagation();onToggleSave(biz.id)}} style={{position:"absolute",top:8,right:8,width:28,height:28,borderRadius:"50%",background:"rgba(255,255,255,.9)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13}}>
+                    {savedIds.includes(biz.id)?"♥":"♡"}
+                  </button>
+                </div>
+                <div style={{padding:"12px 13px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                    <div style={{fontFamily:F.body,fontSize:13,fontWeight:600,color:T.ink,letterSpacing:"-0.2px"}}>{biz.name}</div>
                     <Cr n={biz.cr} size="sm"/>
                   </div>
+                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginBottom:6}}>{biz.cat} · {biz.loc}</div>
+                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,lineHeight:1.5}}>{biz.shortDesc||biz.tags?.slice(0,3).join(" · ")}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:4,marginTop:8}}>
+                    <span style={{fontSize:10,color:T.ochre}}>★</span>
+                    <span style={{fontFamily:F.body,fontSize:10,color:T.ink,fontWeight:600}}>{biz.rating}</span>
+                    <span style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300}}>({biz.reviews} reviews)</span>
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
+              </div>
+            ))}
+          </div>
         </div>
 
+        {/* ─ SUSTAINABILITY STRIP ─ */}
+        <div style={{marginBottom:48,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:4,padding:"24px 28px",display:"flex",alignItems:"flex-start",gap:20,flexWrap:"wrap"}}>
+          <div style={{width:42,height:42,background:T.sage,borderRadius:3,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🌊</div>
+          <div style={{flex:1,minWidth:260}}>
+            <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:15,fontWeight:700,color:T.sage,letterSpacing:"-0.3px",marginBottom:5}}>Rooted in Mallorca, committed to its future</div>
+            <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,lineHeight:1.75,margin:0,maxWidth:600}}>
+              Wello is built on the island, for the island. We believe that wellness tourism should give back to the place that makes it possible — the coastlines, the communities, and the natural environment that make Mallorca special. That's why giving back to the island is part of how we operate, not an afterthought.
+            </p>
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",alignSelf:"center"}}>
+            {["Beach clean-ups","Water conservation","Local charities","Mallorca-first"].map(t=>(
+              <span key={t} style={{fontFamily:F.body,fontSize:9,color:T.sage,background:"#fff",border:`1px solid ${T.sageL}`,borderRadius:2,padding:"4px 9px",fontWeight:600,letterSpacing:".3px"}}>✓ {t}</span>
+            ))}
+          </div>
+        </div>
 
       </div>
     </div>
@@ -735,7 +731,7 @@ function printInvoice({ invoiceNo, date, businessName, businessAddress, vatNo, i
   <hr class="rule">
   <div style="font-size:10px;color:#A89E8C;line-height:1.7;margin-bottom:24px;">
     Payouts are processed every Friday. This invoice serves as confirmation of credits redeemed at your venue during the stated period,
-    less the agreed Wello platform commission. Credit value is calculated at €9.00 per credit. If you have any queries regarding this
+    less the agreed Wello platform commission. Credit value is calculated at €5.00 per credit. If you have any queries regarding this
     invoice please contact hola@wello.es quoting invoice number ${invoiceNo}.
   </div>
 
@@ -978,25 +974,34 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // PAGE: ADD CREDITS
 // ═══════════════════════════════════════════════════════════════
 function CreditsPage({ credits, onPurchase }) {
-  const [sel,setSel]=useState("explorer");
-  const [pay,setPay]=useState("card");
-  const [step,setStep]=useState(1);
-  const [card,setCard]=useState({number:"",expiry:"",cvc:"",name:""});
-  const [showPricing,setShowPricing]=useState(false);
-  const bundle=BUNDLES.find(b=>b.id===sel);
+  const [customCr, setCustomCr] = useState(10);
+  const [pay,setPay]     = useState("card");
+  const [step,setStep]   = useState(1);
+  const [card,setCard]   = useState({number:"",expiry:"",cvc:"",name:""});
+  const [showPricing,setShowPricing] = useState(false);
+
   const fmtCard=v=>v.replace(/\D/g,"").slice(0,16).replace(/(.{4})/g,"$1 ").trim();
   const fmtExp=v=>{const d=v.replace(/\D/g,"").slice(0,4);return d.length>2?d.slice(0,2)+"/"+d.slice(2):d;};
   const expiryDate=()=>{const d=new Date();d.setMonth(d.getMonth()+6);return d.toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});};
 
+  function priceForCredits(n) {
+    return +(n * 5).toFixed(2);
+  }
+
+  const totalPrice = priceForCredits(customCr);
+  const perCredit  = (totalPrice / customCr).toFixed(2);
+  const saving = 0; // no blanket discounts — offers handled separately
+
   const StepBar=()=>(
     <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:24}}>
-      {[["1","Choose bundle"],["2","Payment"],["3","Done"]].map(([n,l],i)=>(
+      {[["1","Choose credits"],["2","Payment"],["3","Done"]].map(([n,l],i)=>(
         <div key={n} style={{display:"flex",alignItems:"center",gap:6}}>
           <div style={{display:"flex",alignItems:"center",gap:5}}>
-            <div style={{width:20,height:20,borderRadius:"50%",background:step>i?T.sage:step===i+1?T.sage:T.border,color:step>=i+1?"#fff":T.stone2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontFamily:F.body,fontWeight:600,transition:"background .2s"}}>{step>i+1?"✓":n}</div>
+            <div style={{width:20,height:20,borderRadius:"50%",background:step>i?T.sage:step===i+1?T.sage:T.border,color:step>=i+1?"#fff":T.stone2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontFamily:F.body,fontWeight:600,transition:"background .2s"}}>{step>i+1?"?":n}</div>
             <span style={{fontFamily:F.body,fontSize:10,color:step===i+1?T.sage:T.stone2,fontWeight:step===i+1?600:300}}>{l}</span>
           </div>
           {i<2&&<div style={{width:24,height:1,background:step>i+1?T.sage:T.border,transition:"background .2s"}}/>}
@@ -1006,9 +1011,8 @@ function CreditsPage({ credits, onPurchase }) {
   );
 
   return (
-    <div style={{maxWidth:660,margin:"0 auto",padding:"32px 28px 58px"}}>
+    <div style={{maxWidth:600,margin:"0 auto",padding:"32px 28px 58px"}}>
 
-      {/* ── STEP 1: Choose bundle ── */}
       {step===1&&(<>
         <StepBar/>
 
@@ -1017,17 +1021,55 @@ function CreditsPage({ credits, onPurchase }) {
           <div style={{position:"absolute",right:-10,top:-10,width:90,height:90,borderRadius:"50%",background:"rgba(255,255,255,.05)"}}/>
           <Label><span style={{color:"rgba(255,255,255,.5)"}}>Your balance</span></Label>
           <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:38,fontWeight:700,color:"#fff",lineHeight:1,letterSpacing:"-1px"}}>◈ {credits}</div>
-          <div style={{display:"flex",gap:16,marginTop:5,flexWrap:"wrap"}}>
-            <span style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:300}}>Credits expire 6 months from purchase</span>
-            <span style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:300}}>€{BOOKING_FEE.toFixed(2)} booking fee per session</span>
+          <div style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:300,marginTop:5}}>Credits expire 6 months · 10% service fee per booking (max €5)</div>
+        </div>
+
+        {/* Credit counter */}
+        <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:4,padding:"22px",marginBottom:16}}>
+          <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:14,fontWeight:700,color:T.ink,letterSpacing:"-0.3px",marginBottom:16}}>How many credits do you want?</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
+            <div style={{display:"flex",alignItems:"center",gap:0,border:`1.5px solid ${T.sage}`,borderRadius:3,overflow:"hidden"}}>
+              <button onClick={()=>setCustomCr(c=>Math.max(1,c-1))}
+                style={{width:44,height:44,background:T.sageXL,border:"none",color:T.sage,fontSize:20,fontFamily:F.body,cursor:"pointer",lineHeight:1}}
+                onMouseEnter={e=>e.target.style.background=T.sageL} onMouseLeave={e=>e.target.style.background=T.sageXL}>−</button>
+              <div style={{width:80,height:44,display:"flex",alignItems:"center",justifyContent:"center",borderLeft:`1px solid ${T.sageL}`,borderRight:`1px solid ${T.sageL}`}}>
+                <input
+                  type="number"
+                  min="1" max="200"
+                  value={customCr}
+                  onChange={e=>{const v=parseInt(e.target.value);if(!isNaN(v))setCustomCr(Math.min(200,Math.max(1,v)));}}
+                  style={{width:"100%",height:"100%",border:"none",outline:"none",textAlign:"center",fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,background:"transparent",letterSpacing:"-0.5px"}}
+                />
+              </div>
+              <button onClick={()=>setCustomCr(c=>Math.min(200,c+1))}
+                style={{width:44,height:44,background:T.sageXL,border:"none",color:T.sage,fontSize:20,fontFamily:F.body,cursor:"pointer",lineHeight:1}}
+                onMouseEnter={e=>e.target.style.background=T.sageL} onMouseLeave={e=>e.target.style.background=T.sageXL}>+</button>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:28,fontWeight:700,color:T.ink,letterSpacing:"-1px",lineHeight:1}}>€{totalPrice}</div>
+              <div style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,marginTop:3}}>€{perCredit} per credit</div>
+            </div>
+          </div>
+
+          {/* Quick add */}
+          <div style={{fontFamily:F.body,fontSize:9,color:T.stone2,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:8}}>Quick add</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {[1,5,10,25].map(n=>(
+              <button key={n} onClick={()=>setCustomCr(c=>Math.min(200,c+n))}
+                style={{padding:"5px 12px",background:T.bg,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:10,color:T.stone,cursor:"pointer",fontWeight:300}}
+                onMouseEnter={e=>{e.target.style.borderColor=T.sage;e.target.style.color=T.sage;}}
+                onMouseLeave={e=>{e.target.style.borderColor=T.border;e.target.style.color=T.stone;}}>+{n}</button>
+            ))}
+            <button onClick={()=>setCustomCr(1)}
+              style={{padding:"5px 12px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:10,color:T.stone2,cursor:"pointer",fontWeight:300}}>Reset</button>
           </div>
         </div>
 
-        {/* How credits work — collapsible pricing table */}
+        {/* How credits work */}
         <div style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:3,padding:"12px 14px",marginBottom:18}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontFamily:F.body,fontSize:10,color:T.ochre,fontWeight:600}}>How credits work · different sessions cost different amounts</span>
-            <button onClick={()=>setShowPricing(p=>!p)} style={{background:"transparent",border:"none",color:T.ochre,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer",padding:0,flexShrink:0,marginLeft:8}}>{showPricing?"Hide ↑":"See pricing ↓"}</button>
+            <span style={{fontFamily:F.body,fontSize:10,color:T.ochre,fontWeight:600}}>How credits work · 1 credit = €5 value</span>
+            <button onClick={()=>setShowPricing(p=>!p)} style={{background:"transparent",border:"none",color:T.ochre,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer",padding:0}}>{showPricing?"Hide ↑":"See pricing ↓"}</button>
           </div>
           {showPricing&&(
             <div style={{borderTop:`1px solid ${T.ochreL}`,marginTop:10,paddingTop:10}}>
@@ -1041,38 +1083,16 @@ function CreditsPage({ credits, onPurchase }) {
                   <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:400,alignSelf:"center"}}>{r.peak}</div>
                 </div>
               ))}
-              <div style={{marginTop:9,fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,lineHeight:1.5}}>Off-peak = before 9am or after 6pm on weekdays, or less popular slots set by the venue. A €{BOOKING_FEE.toFixed(2)} booking fee is charged per session booked, not per credit purchase.</div>
+              <div style={{marginTop:9,fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,lineHeight:1.5}}>A 10% service fee (max €5) is charged per booking. Credits expire 6 months from purchase.</div>
             </div>
           )}
         </div>
 
-        {/* Bundle grid */}
-        <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:15,fontWeight:600,color:T.ink,margin:"0 0 12px",letterSpacing:"-0.3px"}}>Choose a bundle</h2>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:9,marginBottom:18}}>
-          {BUNDLES.map(b=>{
-            const perCredit=(b.price/b.cr).toFixed(2);
-            return (
-              <div key={b.id} onClick={()=>setSel(b.id)} style={{border:`1.5px solid ${sel===b.id?T.sage:T.border}`,borderRadius:3,padding:"14px 13px",cursor:"pointer",background:sel===b.id?T.sageXL:T.paper,position:"relative",transition:"all .13s"}}
-                onMouseEnter={e=>{if(sel!==b.id)e.currentTarget.style.borderColor=T.border2;}}
-                onMouseLeave={e=>{if(sel!==b.id)e.currentTarget.style.borderColor=T.border;}}>
-                {b.badge&&<div style={{position:"absolute",top:-8,right:10,background:sel===b.id?T.sage:b.popular?T.ochre:T.stone2,color:"#fff",fontSize:7,fontFamily:F.body,fontWeight:700,padding:"2px 7px",borderRadius:2,letterSpacing:"1px",textTransform:"uppercase",transition:"background .13s"}}>{b.badge}</div>}
-                <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:14,fontWeight:600,color:T.ink,marginBottom:1,letterSpacing:"-0.3px"}}>{b.name}</div>
-                <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:sel===b.id?T.sage:T.stone,marginBottom:3,letterSpacing:"-0.5px"}}>◈ {b.cr}</div>
-                <div style={{fontFamily:F.body,fontSize:9,color:T.stone,marginBottom:8,lineHeight:1.4,fontWeight:300}}>{b.desc}</div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-                  <span style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:17,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>€{b.price}</span>
-                  <span style={{fontFamily:F.body,fontSize:8,color:T.stone2}}>€{perCredit}/credit</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Summary + expiry */}
+        {/* Summary */}
         <div style={{background:T.bg,borderRadius:3,padding:"12px 14px",marginBottom:18,border:`1px solid ${T.border}`}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <div><div style={{fontFamily:F.body,fontSize:9,color:T.stone,marginBottom:1,fontWeight:300}}>Credits after purchase</div><div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>◈ {credits+bundle.cr}</div></div>
-            <div style={{textAlign:"right"}}><div style={{fontFamily:F.body,fontSize:9,color:T.stone,marginBottom:1,fontWeight:300}}>Total</div><div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,letterSpacing:"-0.5px"}}>€{bundle.price}</div></div>
+            <div><div style={{fontFamily:F.body,fontSize:9,color:T.stone,marginBottom:1,fontWeight:300}}>Credits after purchase</div><div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>◈ {credits+customCr}</div></div>
+            <div style={{textAlign:"right"}}><div style={{fontFamily:F.body,fontSize:9,color:T.stone,marginBottom:1,fontWeight:300}}>Total</div><div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,letterSpacing:"-0.5px"}}>€{totalPrice}</div></div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:6,borderTop:`1px solid ${T.border}`,paddingTop:8}}>
             <span style={{width:5,height:5,borderRadius:"50%",background:T.ochre,display:"inline-block",flexShrink:0}}/>
@@ -1082,7 +1102,7 @@ function CreditsPage({ credits, onPurchase }) {
 
         <button onClick={()=>setStep(2)} style={{width:"100%",padding:12,background:T.sage,color:"#fff",border:"none",borderRadius:3,fontSize:12,fontFamily:F.body,fontWeight:600,cursor:"pointer",letterSpacing:".4px",transition:"background .15s"}}
           onMouseEnter={e=>e.target.style.background=T.sage2} onMouseLeave={e=>e.target.style.background=T.sage}>
-          Choose payment method →
+          Continue to payment →
         </button>
       </>)}
 
@@ -1092,10 +1112,15 @@ function CreditsPage({ credits, onPurchase }) {
         <button onClick={()=>setStep(1)} style={{display:"flex",alignItems:"center",gap:4,background:"transparent",border:"none",color:T.stone,fontFamily:F.body,fontSize:11,cursor:"pointer",marginBottom:18,padding:0,fontWeight:300}}>← Back</button>
         <div style={{background:`linear-gradient(138deg,${T.sage2},${T.sage})`,borderRadius:3,padding:"13px 16px",marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center",position:"relative",overflow:"hidden"}}>
           <div style={{position:"absolute",right:12,top:8,opacity:.08,fontSize:40,color:"#fff"}}>◈</div>
-          <div><Label><span style={{color:"rgba(255,255,255,.5)"}}>Order summary</span></Label>
-          <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:15,fontWeight:600,color:"#fff",letterSpacing:"-0.3px"}}>{bundle.name} · ◈ {bundle.cr} credits</div>
-          <div style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.5)",marginTop:2,fontWeight:300}}>Expires {expiryDate()}</div></div>
-          <div style={{textAlign:"right",flexShrink:0}}><div style={{fontFamily:F.body,fontSize:9,color:"rgba(255,255,255,.5)",marginBottom:2,fontWeight:300}}>Total</div><div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:"#fff",letterSpacing:"-0.5px"}}>€{bundle.price}</div></div>
+          <div>
+            <Label><span style={{color:"rgba(255,255,255,.5)"}}>Order summary</span></Label>
+            <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:15,fontWeight:600,color:"#fff",letterSpacing:"-0.3px"}}>◈ {customCr} credits</div>
+            <div style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.5)",marginTop:2,fontWeight:300}}>Expires {expiryDate()}</div>
+          </div>
+          <div style={{textAlign:"right",flexShrink:0}}>
+            <div style={{fontFamily:F.body,fontSize:9,color:"rgba(255,255,255,.5)",marginBottom:2,fontWeight:300}}>Total</div>
+            <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:"#fff",letterSpacing:"-0.5px"}}>€{totalPrice}</div>
+          </div>
         </div>
         <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:14,fontWeight:600,color:T.ink,margin:"0 0 11px",letterSpacing:"-0.3px"}}>Payment method</h2>
         <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8,marginBottom:18}}>
@@ -1106,7 +1131,7 @@ function CreditsPage({ credits, onPurchase }) {
             </div>
           ))}
         </div>
-        {pay==="card"?(
+        {pay==="card"&&(
           <div style={{background:T.paper,borderRadius:3,border:`1px solid ${T.border}`,padding:"15px",display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
             {[{l:"Cardholder Name",k:"name",p:"Jane Smith",tf:v=>v},{l:"Card Number",k:"number",p:"4242 4242 4242 4242",tf:fmtCard}].map(f=>(
               <div key={f.k}><FieldLabel>{f.l}</FieldLabel><input placeholder={f.p} value={card[f.k]} onChange={e=>setCard(p=>({...p,[f.k]:f.tf(e.target.value)}))} style={INP} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=T.border}/></div>
@@ -1117,334 +1142,28 @@ function CreditsPage({ credits, onPurchase }) {
               ))}
             </div>
           </div>
-        ):(
-          <div style={{background:T.paper,borderRadius:3,border:`1px solid ${T.border}`,padding:"16px",marginBottom:14,textAlign:"center"}}>
-            <div style={{fontSize:22,marginBottom:6}}>{pay==="apple"?"🍎":pay==="google"?"G":"🅿"}</div>
-            <div style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300}}>You'll be redirected to {PAY.find(p=>p.id===pay)?.label} to complete payment</div>
-          </div>
         )}
-        <button onClick={()=>{onPurchase(bundle);setStep(3);}} style={{width:"100%",padding:12,background:T.sage,color:"#fff",border:"none",borderRadius:3,fontSize:12,fontFamily:F.body,fontWeight:600,cursor:"pointer",letterSpacing:".4px",marginBottom:8,transition:"background .15s"}}
-          onMouseEnter={e=>e.target.style.background=T.sage2} onMouseLeave={e=>e.target.style.background=T.sage}>
-          Pay €{bundle.price} · Get ◈ {bundle.cr} credits
+        <button onClick={()=>{onPurchase({cr:customCr,price:totalPrice});setStep(3);}} style={{width:"100%",padding:12,background:T.sage,color:"#fff",border:"none",borderRadius:3,fontSize:12,fontFamily:F.body,fontWeight:600,cursor:"pointer",letterSpacing:".4px"}}>
+          Pay €{totalPrice} →
         </button>
-        <div style={{textAlign:"center"}}><span style={{fontSize:9,color:T.stone2,fontFamily:F.body,fontWeight:300}}>🔒 Secured by Stripe · Credits expire in 6 months · €{BOOKING_FEE.toFixed(2)} booking fee per session</span></div>
       </>)}
 
       {/* ── STEP 3: Confirmation ── */}
       {step===3&&(
-        <div style={{textAlign:"center",padding:"52px 20px"}}>
-          <div style={{width:52,height:52,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:20,color:T.sage}}>✓</div>
-          <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,margin:"0 0 6px",letterSpacing:"-0.5px"}}>Credits added</h2>
-          <p style={{fontFamily:F.body,color:T.stone,fontSize:12,marginBottom:2,fontWeight:300}}>◈ {bundle.cr} {bundle.name} credits added to your wallet</p>
-          <p style={{fontFamily:F.body,color:T.stone2,fontSize:11,marginBottom:2,fontWeight:300}}>New balance: <strong style={{color:T.ink,fontWeight:600}}>◈ {credits+bundle.cr}</strong></p>
-          <p style={{fontFamily:F.body,color:T.stone2,fontSize:10,fontWeight:300}}>These credits expire on {expiryDate()}</p>
-          <div style={{marginTop:18,background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:3,padding:"10px 14px",display:"inline-block",textAlign:"left"}}>
-            <div style={{fontFamily:F.body,fontSize:10,color:T.ochre,fontWeight:600,marginBottom:2}}>Remember</div>
-            <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>A €{BOOKING_FEE.toFixed(2)} booking fee applies each time you reserve a session.</div>
-          </div>
-          <br/><button onClick={()=>setStep(1)} style={{marginTop:20,padding:"8px 22px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontSize:11,fontFamily:F.body,fontWeight:600,cursor:"pointer"}}>Buy More</button>
+        <div style={{textAlign:"center",padding:"32px 0"}}>
+          <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:24}}>✓</div>
+          <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 10px"}}>Credits added!</h1>
+          <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 6px"}}>◈ {customCr} credits have been added to your account.</p>
+          <p style={{fontFamily:F.body,fontSize:12,color:T.stone2,fontWeight:300,margin:"0 0 28px"}}>They expire on {expiryDate()}.</p>
+          <button onClick={()=>setStep(1)} style={{padding:"10px 24px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:"pointer"}}>Buy more credits</button>
         </div>
       )}
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ADMIN PANEL — password protected, not in public nav
-// Access via: add ?admin=true to the URL, then enter password
-// ═══════════════════════════════════════════════════════════════
-const ADMIN_PASSWORD = "wello2026";
 
-function AdminPanel({ onExit, skipAuth=false }) {
-  const [auth, setAuth]           = useState(skipAuth);
-  const [pw, setPw]               = useState("");
-  const [pwErr, setPwErr]         = useState(false);
-  const [businesses, setBusinesses] = useState(ADMIN_BUSINESSES.map(b=>({...b})));
-  const [tab, setTab]             = useState("businesses");
-  const [editingId, setEditingId] = useState(null);
-  const [saved, setSaved]         = useState({});
 
-  function login() {
-    if (pw === ADMIN_PASSWORD) { setAuth(true); setPwErr(false); }
-    else { setPwErr(true); }
-  }
-
-  function setCommission(id, tier) {
-    setBusinesses(prev => prev.map(b => b.id===id ? {...b, commission:tier} : b));
-    setSaved(p=>({...p,[id]:true}));
-    setTimeout(()=>setSaved(p=>{const n={...p};delete n[id];return n;}), 1800);
-  }
-
-  function setStatus(id, status) {
-    setBusinesses(prev => prev.map(b => b.id===id ? {...b, status} : b));
-  }
-
-  const totalCredits = businesses.reduce((s,b)=>s+b.monthlyCredits,0);
-  const totalBookings = businesses.reduce((s,b)=>s+b.monthlyBookings,0);
-  const liveCount = businesses.filter(b=>b.status==="live").length;
-
-  const INP3={width:"100%",padding:"8px 10px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:11,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",boxSizing:"border-box"};
-
-  if (!auth) return (
-    <div style={{minHeight:"100vh",background:T.ink,display:"flex",alignItems:"center",justifyContent:"center",padding:28}}>
-      <div style={{background:T.paper,borderRadius:4,padding:"36px 32px",maxWidth:360,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,.4)"}}>
-        <div style={{marginBottom:24}}>
-          <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.sage,letterSpacing:"-0.5px"}}>wello</div>
-          <div style={{fontFamily:F.body,fontSize:8,color:T.ochre,letterSpacing:"4px",textTransform:"uppercase",marginTop:2}}>admin panel</div>
-        </div>
-        <FieldLabel>Password</FieldLabel>
-        <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setPwErr(false);}}
-          onKeyDown={e=>e.key==="Enter"&&login()}
-          placeholder="Enter admin password"
-          style={{...INP3,marginBottom:pwErr?6:14,borderColor:pwErr?T.clay:T.border}}/>
-        {pwErr&&<div style={{fontFamily:F.body,fontSize:10,color:T.clay,marginBottom:12}}>Incorrect password.</div>}
-        <button onClick={login} style={{width:"100%",padding:"10px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:"pointer"}}>Sign in →</button>
-        <button onClick={onExit} style={{width:"100%",marginTop:8,padding:"8px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>← Back to wello</button>
-      </div>
-    </div>
-  );
-
-  return (
-    <div style={{minHeight:"100vh",background:T.bg}}>
-      {/* Admin header */}
-      <header style={{background:T.ink,padding:"0 28px",display:"flex",alignItems:"center",justifyContent:"space-between",height:54}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:18,fontWeight:700,color:T.sage,letterSpacing:"-0.5px"}}>wello</div>
-          <div style={{width:1,height:18,background:T.ink2}}/>
-          <div style={{fontFamily:F.body,fontSize:9,color:T.stone2,letterSpacing:"2px",textTransform:"uppercase"}}>Admin Panel</div>
-          <div style={{background:"rgba(184,146,92,.15)",border:`1px solid ${T.ochre}`,borderRadius:2,padding:"2px 8px"}}>
-            <span style={{fontFamily:F.body,fontSize:8,color:T.ochre,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase"}}>Private</span>
-          </div>
-        </div>
-        <button onClick={onExit} style={{background:"transparent",border:`1px solid ${T.ink2}`,color:T.stone2,fontFamily:F.body,fontSize:10,cursor:"pointer",padding:"5px 12px",borderRadius:2}}>← Exit admin</button>
-      </header>
-
-      <div style={{maxWidth:960,margin:"0 auto",padding:"28px 28px 58px"}}>
-
-        {/* Stats row */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10,marginBottom:24}}>
-          {[["Live venues",liveCount],["Total bookings",totalBookings+" this month"],["Credits redeemed",totalCredits+" ◈ this month"],["Pending review",businesses.filter(b=>b.status==="pending").length]].map(([l,v])=>(
-            <div key={l} style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"12px 14px"}}>
-              <Label>{l}</Label>
-              <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>{v}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Tabs */}
-        <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,marginBottom:22}}>
-          {[["businesses","Businesses & Commission"],["applications","Applications"],["pricing","Credit Pricing"],["payouts","Payouts"]].map(([k,l])=>(
-            <button key={k} onClick={()=>setTab(k)} style={{padding:"7px 16px",border:"none",borderBottom:`2px solid ${tab===k?T.sage:"transparent"}`,background:"transparent",color:tab===k?T.sage:T.stone,fontFamily:F.body,fontSize:11,fontWeight:tab===k?600:300,cursor:"pointer",marginBottom:-1,transition:"all .13s",display:"flex",alignItems:"center",gap:5}}>
-              {l}
-              {k==="applications"&&MOCK_APPLICATIONS.filter(a=>a.status==="pending").length>0&&(
-                <span style={{background:T.ochre,color:"#fff",fontSize:8,fontWeight:700,padding:"1px 5px",borderRadius:10,fontFamily:F.body}}>{MOCK_APPLICATIONS.filter(a=>a.status==="pending").length}</span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* Applications tab */}
-        {tab==="applications"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,marginBottom:4}}>New business registrations waiting for your review. Approve to give them dashboard access and agree their commission rate.</div>
-            {MOCK_APPLICATIONS.length===0&&<div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"28px",textAlign:"center",fontFamily:F.body,fontSize:12,color:T.stone2}}>No applications yet.</div>}
-            {MOCK_APPLICATIONS.map(app=>(
-              <div key={app.id} style={{background:T.paper,border:`1px solid ${app.status==="approved"?T.sageL:app.status==="rejected"?T.clayL:T.border}`,borderRadius:3,overflow:"hidden",transition:"border-color .2s"}}>
-                <div style={{padding:"14px 16px",display:"flex",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
-                  <div style={{flex:1}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
-                      <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>{app.name}</div>
-                      <span style={{
-                        background:app.status==="approved"?T.sageXL:app.status==="rejected"?T.clayXL:T.ochreXL,
-                        color:app.status==="approved"?T.sage:app.status==="rejected"?T.clay:T.ochre,
-                        fontSize:8,padding:"2px 7px",borderRadius:2,fontFamily:F.body,fontWeight:700,textTransform:"uppercase",letterSpacing:"1px"
-                      }}>{app.status}</span>
-                    </div>
-                    <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
-                      {[[app.cat,null],[app.loc,null],[app.email,"📧"],[app.phone,"📞"]].map(([v,icon],i)=>v&&(
-                        <span key={i} style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{icon&&icon+" "}{v}</span>
-                      ))}
-                    </div>
-                    <div style={{fontFamily:F.body,fontSize:9,color:T.stone2,marginTop:5,fontWeight:300}}>Submitted {app.submittedAt}</div>
-                  </div>
-                  {app.status==="pending"&&(
-                    <div style={{display:"flex",gap:7,flexShrink:0}}>
-                      <button style={{padding:"8px 16px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer",transition:"background .15s"}}
-                        onMouseEnter={e=>e.target.style.background=T.sage2} onMouseLeave={e=>e.target.style.background=T.sage}>
-                        ✓ Approve
-                      </button>
-                      <button style={{padding:"8px 14px",background:"transparent",color:T.clay,border:`1px solid ${T.clayL}`,borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>
-                        Reject
-                      </button>
-                    </div>
-                  )}
-                  {app.status==="approved"&&(
-                    <span style={{fontFamily:F.body,fontSize:10,color:T.sage,fontWeight:600,alignSelf:"center"}}>✓ Approved — live on marketplace</span>
-                  )}
-                </div>
-                {app.status==="pending"&&(
-                  <div style={{padding:"9px 16px",borderTop:`1px solid ${T.border}`,background:T.bg,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
-                    <span style={{fontFamily:F.body,fontSize:9,color:T.stone,fontWeight:300}}>Set commission before approving:</span>
-                    <div style={{display:"flex",gap:6}}>
-                      {COMMISSION_TIERS.map(t=>(
-                        <button key={t.id} style={{padding:"4px 10px",background:T.paper,color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:9,cursor:"pointer",fontWeight:300}}>
-                          {t.rate}% {t.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Businesses & Commission tab */}
-        {tab==="businesses"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,marginBottom:4}}>Set the commission rate for each registered business. Businesses cannot see or change this value.</div>
-            {businesses.map(biz=>{
-              const tier = COMMISSION_TIERS.find(t=>t.id===biz.commission);
-              const monthlyPayout = biz.monthlyCredits * 9 * (1 - tier.rate/100);
-              const monthlyCommission = biz.monthlyCredits * 9 * (tier.rate/100);
-              return (
-                <div key={biz.id} style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden",transition:"border-color .15s"}}>
-                  <div style={{padding:"14px 16px",display:"flex",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
-                    {/* Business info */}
-                    <div style={{flex:"1 1 200px"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                        <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>{biz.name}</div>
-                        <span style={{background:biz.status==="live"?T.sageXL:T.ochreXL,color:biz.status==="live"?T.sage:T.ochre,fontSize:8,padding:"1px 6px",borderRadius:2,fontFamily:F.body,fontWeight:700,textTransform:"uppercase",letterSpacing:"1px"}}>{biz.status}</span>
-                      </div>
-                      <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{biz.cat} · {biz.loc}</div>
-                      {biz.status==="live"&&<div style={{fontFamily:F.body,fontSize:10,color:T.stone2,marginTop:3,fontWeight:300}}>{biz.monthlyBookings} bookings · ◈ {biz.monthlyCredits} credits this month</div>}
-                    </div>
-
-                    {/* Commission selector */}
-                    <div style={{flex:"0 1 340px"}}>
-                      <FieldLabel>Commission rate</FieldLabel>
-                      <div style={{display:"flex",gap:6}}>
-                        {COMMISSION_TIERS.map(t=>(
-                          <div key={t.id} onClick={()=>setCommission(biz.id, t.id)}
-                            style={{flex:1,padding:"7px 8px",borderRadius:2,border:`1.5px solid ${biz.commission===t.id?T.sage:T.border}`,background:biz.commission===t.id?T.sageXL:T.bg,cursor:"pointer",textAlign:"center",transition:"all .13s"}}>
-                            <div style={{fontFamily:F.body,fontSize:11,color:biz.commission===t.id?T.sage:T.ink,fontWeight:biz.commission===t.id?700:400}}>{t.rate}%</div>
-                            <div style={{fontFamily:F.body,fontSize:8,color:T.stone2,fontWeight:300}}>{t.label}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Payout calc */}
-                    <div style={{flex:"0 1 160px",textAlign:"right"}}>
-                      <div style={{fontFamily:F.body,fontSize:9,color:T.stone,fontWeight:300,marginBottom:2}}>Est. monthly payout</div>
-                      <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>€{monthlyPayout.toFixed(0)}</div>
-                      <div style={{fontFamily:F.body,fontSize:9,color:T.sage,fontWeight:300}}>Wello earns €{monthlyCommission.toFixed(0)}</div>
-                      {saved[biz.id]&&<div style={{fontFamily:F.body,fontSize:9,color:T.sage,fontWeight:600,marginTop:4}}>✓ Saved</div>}
-                    </div>
-                  </div>
-
-                  {/* Status controls */}
-                  <div style={{padding:"8px 16px",borderTop:`1px solid ${T.border}`,background:T.bg,display:"flex",gap:7,alignItems:"center"}}>
-                    <span style={{fontFamily:F.body,fontSize:9,color:T.stone,fontWeight:300}}>Status:</span>
-                    {["pending","live","suspended"].map(s=>(
-                      <button key={s} onClick={()=>setStatus(biz.id,s)} style={{padding:"3px 9px",background:biz.status===s?T.ink:T.paper,color:biz.status===s?"#fff":T.stone,border:`1px solid ${biz.status===s?T.ink:T.border}`,borderRadius:2,fontFamily:F.body,fontSize:9,cursor:"pointer",fontWeight:biz.status===s?600:300,textTransform:"capitalize"}}>{s}</button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Credit pricing tab */}
-        {tab==="pricing"&&(
-          <div>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,marginBottom:16,lineHeight:1.6}}>Credit pricing is based on Mallorca market research (2025). 1 credit ≈ €9 real-world value. Off-peak = before 9am or after 6pm weekdays.</div>
-            <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden"}}>
-              <div style={{display:"grid",gridTemplateColumns:"1.2fr 1.3fr 1.3fr 1.4fr",padding:"10px 16px",borderBottom:`1px solid ${T.border}`,background:T.bg}}>
-                {["Category","Off-peak","Peak","Market rate reference"].map(h=><div key={h} style={{fontFamily:F.body,fontSize:8,color:T.stone,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:600}}>{h}</div>)}
-              </div>
-              {CREDIT_PRICING.map((r,i)=>(
-                <div key={r.cat} style={{display:"grid",gridTemplateColumns:"1.2fr 1.3fr 1.3fr 1.4fr",padding:"12px 16px",borderBottom:i<CREDIT_PRICING.length-1?`1px solid ${T.border}`:"none",alignItems:"center"}}>
-                  <div><div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{r.cat}</div><div style={{fontFamily:F.body,fontSize:9,color:T.stone2,fontWeight:300}}>{r.example}</div></div>
-                  <div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600}}>{r.offPeak}</div>
-                  <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:400}}>{r.peak}</div>
-                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,lineHeight:1.4}}>
-                    {[
-                      "€18–20 drop-in (Sóller/Palma)",
-                      "€18–22 drop-in (Palma)",
-                      "€15–18 drop-in",
-                      "€15–20 day pass",
-                      "€25–80 hotel day pass",
-                      "€30–60 resort pool",
-                      "€30–50pp guided",
-                      "€60–90 per 60-min treatment",
-                    ][i]}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Payouts tab */}
-        {tab==="payouts"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,marginBottom:4}}>Estimated payouts based on this month's credit redemptions at €9/credit.</div>
-            <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden"}}>
-              <div style={{display:"grid",gridTemplateColumns:"1.4fr .8fr .8fr .8fr .8fr .8fr auto",padding:"10px 16px",borderBottom:`1px solid ${T.border}`,background:T.bg,gap:8}}>
-                {["Business","Bookings","Credits","Gross","Commission","Payout",""].map(h=><div key={h} style={{fontFamily:F.body,fontSize:8,color:T.stone,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:600}}>{h}</div>)}
-              </div>
-              {businesses.filter(b=>b.status==="live").map((biz,i,arr)=>{
-                const tier=COMMISSION_TIERS.find(t=>t.id===biz.commission);
-                const gross=biz.monthlyCredits*9;
-                const commission=gross*(tier.rate/100);
-                const payout=gross-commission;
-                const invNo=`WLO-2026-ADM-${biz.id.toUpperCase()}`;
-                return (
-                  <div key={biz.id} style={{display:"grid",gridTemplateColumns:"1.4fr .8fr .8fr .8fr .8fr .8fr auto",padding:"11px 16px",borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none",alignItems:"center",gap:8}}>
-                    <div><div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{biz.name}</div><div style={{fontFamily:F.body,fontSize:9,color:T.stone2,fontWeight:300}}>{tier.rate}% commission</div></div>
-                    <div style={{fontFamily:F.body,fontSize:11,color:T.stone}}>{biz.monthlyBookings}</div>
-                    <div style={{fontFamily:F.body,fontSize:11,color:T.stone}}>◈ {biz.monthlyCredits}</div>
-                    <div style={{fontFamily:F.body,fontSize:11,color:T.stone}}>€{gross}</div>
-                    <div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600}}>€{commission.toFixed(0)}</div>
-                    <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:12,color:T.ink,fontWeight:700,letterSpacing:"-0.3px"}}>€{payout.toFixed(0)}</div>
-                    <button onClick={()=>printInvoice({
-                      invoiceNo:invNo, date:"31 Mar 2026",
-                      businessName:biz.name, businessAddress:`${biz.loc}, Mallorca`,
-                      vatNo:"—", iban:"On file",
-                      credits:biz.monthlyCredits, bookings:biz.monthlyBookings,
-                      grossValue:gross, commissionRate:tier.rate,
-                      commissionAmt:commission.toFixed(2), netPayout:payout.toFixed(2),
-                    })} style={{padding:"5px 10px",background:T.ink,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:9,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>↓ PDF</button>
-                  </div>
-                );
-              })}
-              {/* Totals row */}
-              <div style={{display:"grid",gridTemplateColumns:"1.4fr .8fr .8fr .8fr .8fr .8fr",padding:"11px 16px",background:T.bg,borderTop:`2px solid ${T.border}`}}>
-                <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:700}}>Total</div>
-                <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:700}}>{totalBookings}</div>
-                <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:700}}>◈ {totalCredits}</div>
-                <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:700}}>€{totalCredits*9}</div>
-                <div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:700}}>€{businesses.filter(b=>b.status==="live").reduce((s,b)=>{const t=COMMISSION_TIERS.find(x=>x.id===b.commission);return s+b.monthlyCredits*9*(t.rate/100);},0).toFixed(0)}</div>
-                <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:12,color:T.ink,fontWeight:700}}>€{businesses.filter(b=>b.status==="live").reduce((s,b)=>{const t=COMMISSION_TIERS.find(x=>x.id===b.commission);return s+b.monthlyCredits*9*(1-t.rate/100);},0).toFixed(0)}</div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Mock applications store (shared across admin + portal) ──────────────────
-const MOCK_APPLICATIONS = [
-  { id:"app1", name:"Tramuntana Flow Yoga",  cat:"Yoga",         loc:"Valldemossa", email:"hola@tramuntanaflow.com", phone:"+34 971 123 456", submittedAt:"28 Mar 2026", status:"pending" },
-  { id:"app2", name:"Alcúdia Surf School",   cat:"Surfing",      loc:"Alcúdia",     email:"info@alcudiasurf.com",   phone:"+34 971 234 567", submittedAt:"29 Mar 2026", status:"pending" },
-  { id:"app3", name:"Palma Hot Yoga",        cat:"Yoga",         loc:"Palma",       email:"hello@palmhotyoga.com",  phone:"+34 971 345 678", submittedAt:"25 Mar 2026", status:"approved" },
-];
-
-// ─── Standalone business console preview (demo only) ─────────────────────────
 function BusinessPortalDashboard({ onExit }) {
   const bizData = { name:"Sol & Alma Yoga", cat:"Yoga", loc:"Soller", monthlyBookings:24, monthlyCredits:86 };
   const [tab, setTab] = useState("calendar");
@@ -1679,7 +1398,7 @@ function BusinessPortalDashboard({ onExit }) {
               </div>
             </div>
             <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:3,padding:"12px 14px"}}>
-              <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,lineHeight:1.6}}>Payouts every Friday · 9.00 per credit · Contact hola@wello.es</div>
+              <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,lineHeight:1.6}}>Payouts every Friday · 5.00 per credit · Contact hola@wello.es</div>
             </div>
           </div>
         )}
@@ -1846,7 +1565,7 @@ function BusinessPortal({ onSetView }) {
       </div>
       {/* Quick stats */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(148px,1fr))",gap:10,marginBottom:24}}>
-        {[["Bookings this month",bizData.monthlyBookings],["Credits redeemed","◈ "+bizData.monthlyCredits],["Payout due","€"+(bizData.monthlyCredits*9*0.8).toFixed(0)],["Avg rating","4.8 ★"]].map(([l,v])=>(
+        {[["Bookings this month",bizData.monthlyBookings],["Credits redeemed","◈ "+bizData.monthlyCredits],["Payout due","€"+(bizData.monthlyCredits*5*0.8).toFixed(0)],["Avg rating","4.8 ★"]].map(([l,v])=>(
           <div key={l} style={{background:T.paper,borderRadius:3,border:`1px solid ${T.border}`,padding:"12px 14px"}}>
             <Label>{l}</Label><div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>{v}</div>
           </div>
@@ -1913,11 +1632,6 @@ export default function App() {
   const [saved,setSaved]       = useState([1,5,9]);
   const [isBiz,setIsBiz]       = useState(false);
   const [toast,setToast]       = useState(null);
-  const [adminMode,setAdminMode]= useState(()=>typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("admin")==="true");
-
-  // Admin panel intercepts the whole app
-  if (adminMode) return <AdminPanel onExit={()=>setAdminMode(false)}/>;
-
   const showToast=(msg,type="info")=>{ setToast({msg,type}); setTimeout(()=>setToast(null),2600); };
 
   const onSyncUpdate=useCallback((bizId,slotId,delta)=>{
@@ -1934,17 +1648,10 @@ export default function App() {
     setListings(p=>p.map(b=>b.id!==biz.id?b:{...b,slots:b.slots.map(s=>s.id!==slot.id?s:{...s,booked:s.booked+form.guests})}));
     showToast(`Booked! ◈ ${cost} credits used.`,"success");
   }
-  function onPurchase(bundle){ setCredits(c=>c+bundle.cr); showToast(`◈ ${bundle.cr} credits added!`,"gold"); }
+  function onPurchase(purchase){ setCredits(c=>c+purchase.cr); showToast(`◈ ${purchase.cr} credits added!`,"gold"); }
   function toggleSave(id){ setSaved(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]); showToast(saved.includes(id)?"Removed from saved":"Saved!","success"); }
 
   const NAV=[{id:"home",l:"Home"},{id:"explore",l:"Explore"},{id:"credits",l:"Credits"},{id:"profile",l:"Profile"},{id:"biz-portal",l:"For Business"}];
-
-  // Demo shortcut state — lets you preview biz dashboard & admin without login
-  const [bizPreview, setBizPreview]   = useState(false);
-  const [adminPreview, setAdminPreview] = useState(false);
-
-  // Preview intercepts — show full pages without auth
-  if (adminPreview) return <AdminPanel onExit={()=>setAdminPreview(false)} skipAuth={true}/>;
 
   return (
     <>
@@ -1962,21 +1669,6 @@ export default function App() {
       `}</style>
 
       <Toast t={toast}/>
-
-      {/* ── DEMO PREVIEW BAR ── only shown in prototype, remove before launch */}
-      <div style={{background:T.ink,padding:"7px 28px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-        <span style={{fontFamily:F.body,fontSize:9,color:T.stone2,letterSpacing:"1px"}}>PROTOTYPE PREVIEW — demo shortcuts</span>
-        <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>setBizPreview(v=>!v)}
-            style={{padding:"4px 12px",background:bizPreview?T.sage:"transparent",color:bizPreview?"#fff":T.stone,border:`1px solid ${bizPreview?T.sage:T.stone2}`,borderRadius:2,fontFamily:F.body,fontSize:9,fontWeight:600,cursor:"pointer",letterSpacing:".5px"}}>
-            {bizPreview?"✓ Viewing business console":"👁 Preview business console"}
-          </button>
-          <button onClick={()=>setAdminPreview(true)}
-            style={{padding:"4px 12px",background:"transparent",color:T.ochre,border:`1px solid ${T.ochre}`,borderRadius:2,fontFamily:F.body,fontSize:9,fontWeight:600,cursor:"pointer",letterSpacing:".5px"}}>
-            👁 Preview admin panel
-          </button>
-        </div>
-      </div>
 
       <div style={{minHeight:"100vh",background:T.bg}}>
         {/* NAV — Wello brand identity */}
@@ -2015,13 +1707,12 @@ export default function App() {
         </header>
 
         {/* PAGES */}
-        {bizPreview          &&<BusinessPortalDashboard onExit={()=>setBizPreview(false)}/>}
-        {!bizPreview && view==="home"       &&<HomePage listings={listings} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds}/>}
-        {!bizPreview && view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds}/>}
-        {!bizPreview && view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
-        {!bizPreview && view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
-        {!bizPreview && view==="business"   &&<BusinessPage isBiz={true} onSetView={setView} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
-        {!bizPreview && view==="credits"    &&<CreditsPage credits={credits} onPurchase={onPurchase}/>}
+        {view==="home"       &&<HomePage listings={listings} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds}/>}
+        {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds}/>}
+        {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
+        {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
+        {view==="business"   &&<BusinessPage isBiz={true} onSetView={setView} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
+        {view==="credits"    &&<CreditsPage credits={credits} onPurchase={onPurchase}/>}
 
         <footer style={{background:T.ink,padding:"28px"}}>
           <div style={{maxWidth:1140,margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
