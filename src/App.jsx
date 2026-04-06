@@ -1434,26 +1434,52 @@ function BusinessPortalDashboard({ onExit }) {
 // PAGE: BUSINESS PORTAL  (separate login/register entry point)
 // ═══════════════════════════════════════════════════════════════
 function BusinessPortal({ onSetView }) {
-  const [screen, setScreen]   = useState("landing"); // landing | login | pending | dashboard
-  const [email,  setEmail]    = useState("");
-  const [pw,     setPw]       = useState("");
-  const [loginErr, setLoginErr] = useState(false);
-  const [bizData, setBizData] = useState(null);
+  const [screen, setScreen]     = useState("landing");
+  const [email,  setEmail]      = useState("");
+  const [pw,     setPw]         = useState("");
+  const [loginErr, setLoginErr] = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [bizData, setBizData]   = useState(null);
 
-  // Simulate login — in reality this hits your auth backend
-  function doLogin() {
-    setLoginErr(false);
-    // Demo: "approved@wello.es" / "demo" → approved dashboard
-    // "pending@wello.es" / "demo" → pending screen
-    if (email==="approved@wello.es" && pw==="demo") {
-      setBizData({ name:"Palma Hot Yoga", cat:"Yoga", loc:"Palma", status:"approved", commission:"standard", monthlyBookings:24, monthlyCredits:86 });
-      setScreen("dashboard");
-    } else if (email==="pending@wello.es" && pw==="demo") {
-      setBizData({ name:"Tramuntana Flow Yoga", submittedAt:"28 Mar 2026" });
-      setScreen("pending");
+  useEffect(()=>{
+    supabase.auth.getSession().then(({data:{session}})=>{
+      if(session) loadBizData(session.user.email);
+    });
+    const {data:{subscription}} = supabase.auth.onAuthStateChange((_event, session)=>{
+      if(session) loadBizData(session.user.email);
+    });
+    return ()=>subscription.unsubscribe();
+  },[]);
+
+  async function loadBizData(userEmail) {
+    const {data} = await supabase.from("businesses").select("*").eq("email", userEmail).single();
+    if(data) {
+      setBizData(data);
+      setScreen(data.status==="approved" ? "dashboard" : "pending");
     } else {
-      setLoginErr(true);
+      setScreen("pending");
     }
+  }
+
+  async function doLogin() {
+    setLoginErr(""); setLoading(true);
+    const {error} = await supabase.auth.signInWithPassword({email, password:pw});
+    setLoading(false);
+    if(error) setLoginErr("Email or password not recognised.");
+  }
+
+  async function doSignOut() {
+    await supabase.auth.signOut();
+    setScreen("landing"); setBizData(null); setEmail(""); setPw("");
+  }
+
+  async function doPasswordReset() {
+    setLoading(true);
+    await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: "https://wello-seven.vercel.app"
+    });
+    setLoading(false); setResetSent(true);
   }
 
   const INP3={width:"100%",padding:"10px 12px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:12,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",marginBottom:12,transition:"border-color .18s"};
@@ -1495,10 +1521,7 @@ function BusinessPortal({ onSetView }) {
           onMouseEnter={e=>{e.target.style.background=T.sageXL;}} onMouseLeave={e=>{e.target.style.background="transparent";}}>
           Register your business
         </button>
-        <div style={{marginTop:24,padding:"12px 14px",background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:2}}>
-          <div style={{fontFamily:F.body,fontSize:10,color:T.ochre,fontWeight:600,marginBottom:2}}>Demo credentials</div>
-          <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,lineHeight:1.6}}>Approved: approved@wello.es / demo<br/>Pending: pending@wello.es / demo</div>
-        </div>
+
       </div>
     </div>
   );
@@ -1510,18 +1533,46 @@ function BusinessPortal({ onSetView }) {
       <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:24,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>Business sign in</h1>
       <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,margin:"0 0 28px"}}>Sign in to your Wello business dashboard.</p>
       <FieldLabel>Email address</FieldLabel>
-      <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setLoginErr(false);}} placeholder="hello@yourstudio.com"
+      <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setLoginErr("");}} placeholder="hello@yourstudio.com"
         style={{...INP3,borderColor:loginErr?T.clay:T.border}} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=loginErr?T.clay:T.border}/>
       <FieldLabel>Password</FieldLabel>
-      <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setLoginErr(false);}} placeholder="••••••••"
+      <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setLoginErr("");}} placeholder="••••••••"
         style={{...INP3,borderColor:loginErr?T.clay:T.border}} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=loginErr?T.clay:T.border}
         onKeyDown={e=>e.key==="Enter"&&doLogin()}/>
-      {loginErr&&<div style={{fontFamily:F.body,fontSize:11,color:T.clay,marginTop:-8,marginBottom:12}}>Email or password not recognised.</div>}
-      <button onClick={doLogin} style={{width:"100%",padding:"11px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:"pointer",marginBottom:14,transition:"background .15s"}}
-        onMouseEnter={e=>e.target.style.background=T.sage2} onMouseLeave={e=>e.target.style.background=T.sage}>
-        Sign in →
+      {loginErr&&<div style={{fontFamily:F.body,fontSize:11,color:T.clay,marginTop:-8,marginBottom:12}}>{loginErr}</div>}
+      <button onClick={doLogin} disabled={loading} style={{width:"100%",padding:"11px",background:loading?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:loading?"not-allowed":"pointer",marginBottom:14,transition:"background .15s"}}
+        onMouseEnter={e=>{if(!loading)e.target.style.background=T.sage2;}} onMouseLeave={e=>{if(!loading)e.target.style.background=T.sage;}}>
+        {loading?"Signing in…":"Sign in →"}
       </button>
-      <div style={{textAlign:"center"}}><span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>Don't have an account? </span><button onClick={()=>onSetView("business")} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer",padding:0}}>Register your business</button></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div><span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>New to Wello? </span><button onClick={()=>onSetView("business")} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer",padding:0}}>Register interest</button></div>
+        <button onClick={()=>setScreen("reset")} style={{background:"transparent",border:"none",color:T.stone,fontFamily:F.body,fontSize:11,cursor:"pointer",padding:0,fontWeight:300}}>Forgot password?</button>
+      </div>
+    </div>
+  );
+
+  // ── Password reset ────────────────────────────────────────────
+  if (screen==="reset") return (
+    <div style={{maxWidth:420,margin:"80px auto",padding:"0 28px"}}>
+      <button onClick={()=>setScreen("login")} style={{background:"transparent",border:"none",color:T.stone,fontFamily:F.body,fontSize:11,cursor:"pointer",marginBottom:24,padding:0,fontWeight:300}}>← Back to sign in</button>
+      <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>Reset your password</h1>
+      <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,margin:"0 0 24px"}}>Enter the email address for your Wello business account and we'll send you a reset link.</p>
+      {resetSent ? (
+        <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:3,padding:"16px",textAlign:"center"}}>
+          <div style={{fontSize:24,marginBottom:8}}>✓</div>
+          <div style={{fontFamily:F.body,fontSize:13,color:T.sage,fontWeight:600,marginBottom:4}}>Reset link sent</div>
+          <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>Check your email and follow the link to set a new password.</div>
+        </div>
+      ) : (
+        <>
+          <FieldLabel>Email address</FieldLabel>
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="hello@yourstudio.com"
+            style={INP3} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=T.border}/>
+          <button onClick={doPasswordReset} disabled={loading||!email.trim()} style={{width:"100%",padding:"11px",background:email.trim()&&!loading?T.sage:T.border,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:email.trim()&&!loading?"pointer":"not-allowed",transition:"background .15s"}}>
+            {loading?"Sending…":"Send reset link →"}
+          </button>
+        </>
+      )}
     </div>
   );
 
@@ -1531,7 +1582,7 @@ function BusinessPortal({ onSetView }) {
       <div style={{width:56,height:56,background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:22}}>⏳</div>
       <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 10px"}}>Application under review</h1>
       <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 6px"}}>Thanks for registering <strong style={{fontWeight:600,color:T.ink}}>{bizData?.name}</strong>.</p>
-      <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 24px"}}>Your application was submitted on {bizData?.submittedAt}. The Wello team will review it and be in touch within 2 working days.</p>
+      <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 24px"}}>The Wello team will review your application and be in touch within 2 working days.</p>
       <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:3,padding:"14px 18px",textAlign:"left",marginBottom:24}}>
         <div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600,marginBottom:6}}>What happens next</div>
         {["We review your venue details and listing","We agree your commission rate with you directly","You receive an approval email and can log in to your dashboard","Your listing goes live on the marketplace"].map((s,i)=>(
@@ -1541,7 +1592,7 @@ function BusinessPortal({ onSetView }) {
           </div>
         ))}
       </div>
-      <button onClick={()=>setScreen("landing")} style={{padding:"9px 22px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>← Back to login</button>
+      <button onClick={doSignOut} style={{padding:"9px 22px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>Sign out</button>
     </div>
   );
 
@@ -1560,7 +1611,7 @@ function BusinessPortal({ onSetView }) {
         </div>
         <div style={{display:"flex",gap:8}}>
           <a href="#" style={{padding:"7px 14px",background:T.sageXL,color:T.sage,border:`1px solid ${T.sageL}`,borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,textDecoration:"none"}}>View listing ↗</a>
-          <button onClick={()=>setScreen("landing")} style={{padding:"7px 14px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:300}}>Sign out</button>
+          <button onClick={doSignOut} style={{padding:"7px 14px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:300}}>Sign out</button>
         </div>
       </div>
       {/* Quick stats */}
@@ -1623,6 +1674,7 @@ function BusinessPortal({ onSetView }) {
 // ═══════════════════════════════════════════════════════════════
 export default function App() {
   const [view,setView]         = useState("home");
+  const [bizPreview,setBizPreview] = useState(false);
   const [listings,setListings] = useState(LISTINGS);
   const [syncingIds,setSyncing]= useState({});
   const [selBiz,setSelBiz]     = useState(null);
@@ -1670,7 +1722,20 @@ export default function App() {
 
       <Toast t={toast}/>
 
-      <div style={{minHeight:"100vh",background:T.bg}}>
+      {/* PROTOTYPE PREVIEW BAR — remove before public launch */}
+      {!bizPreview&&<div style={{background:T.ink2,padding:"6px 20px",display:"flex",gap:10,alignItems:"center",justifyContent:"center",flexWrap:"wrap"}}>
+        <span style={{fontFamily:F.body,fontSize:9,color:T.stone2,letterSpacing:"1px",textTransform:"uppercase"}}>Demo</span>
+        <button onClick={()=>setBizPreview(true)} style={{padding:"4px 12px",background:"transparent",color:T.ochreL,border:`1px solid ${T.ochre}`,borderRadius:2,fontFamily:F.body,fontSize:9,cursor:"pointer",fontWeight:600,letterSpacing:".3px"}}>
+          👁 Preview business console
+        </button>
+      </div>}
+      {bizPreview&&<div style={{background:T.ink,padding:"5px 16px",display:"flex",gap:8,alignItems:"center",justifyContent:"flex-end"}}>
+        <span style={{fontFamily:F.body,fontSize:9,color:T.stone2}}>Business console preview</span>
+        <button onClick={()=>setBizPreview(false)} style={{padding:"3px 10px",background:"transparent",color:T.stone2,border:`1px solid ${T.border2}`,borderRadius:2,fontFamily:F.body,fontSize:9,cursor:"pointer"}}>✕ Exit preview</button>
+      </div>}
+      {bizPreview&&<BusinessPortalDashboard onExit={()=>setBizPreview(false)}/>}
+
+      <div style={{minHeight:"100vh",background:T.bg,display:bizPreview?"none":"block"}}>
         {/* NAV — Wello brand identity */}
         <header style={{background:T.paper,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,zIndex:200,boxShadow:"0 1px 12px rgba(0,0,0,.06)"}}>
           <div style={{maxWidth:1140,margin:"0 auto",padding:"0 28px",display:"flex",alignItems:"center",justifyContent:"space-between",height:58}}>
