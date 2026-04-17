@@ -326,39 +326,36 @@ function BizPanel({ biz, onClose, onBook }) {
 function Card({ biz, onSelect, syncing, saved, onToggleSave }) {
   const next=biz.slots.find(s=>s.booked<s.spots);
   return (
-    <div className="group cursor-pointer" onClick={()=>onSelect(biz)}>
-      <div className="relative aspect-[4/5] rounded-xl overflow-hidden mb-4 bg-surface-container-highest">
-        <img src={biz.img} alt={biz.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"/>
-        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"/>
-        <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-full shadow-sm">
-          <span className="text-xs font-extrabold text-primary">◈ {biz.cr}</span>
+    <div style={{background:T.bg2,borderRadius:12,overflow:"hidden",cursor:"pointer",transition:"transform .2s,box-shadow .2s"}}
+      onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-4px)";e.currentTarget.style.boxShadow="0 16px 40px rgba(27,28,25,.12)"}}
+      onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow="none"}}>
+      {/* 4:5 editorial image ratio */}
+      <div style={{position:"relative",paddingBottom:"125%",overflow:"hidden"}} onClick={()=>onSelect(biz)}>
+        <img src={biz.img} alt={biz.name} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",borderRadius:"12px 12px 0 0"}}/>
+        <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(27,28,25,.7) 0%,transparent 50%)",borderRadius:"12px 12px 0 0"}}/>
+        {/* Category badge — floating glass chip */}
+        <div style={{position:"absolute",top:10,left:10,background:"rgba(251,249,244,.88)",backdropFilter:"blur(8px)",borderRadius:20,padding:"3px 9px"}}>
+          <span style={{fontSize:9,color:T.sage,fontFamily:F.body,fontWeight:700,letterSpacing:"0.5px",textTransform:"uppercase"}}>{biz.cat}</span>
         </div>
-        <button onClick={e=>{e.stopPropagation();onToggleSave(biz.id);}}
-          className="absolute top-4 left-4 w-8 h-8 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center text-sm transition-transform hover:scale-110"
-          style={{color:saved?"#e05c5c":"#74796e"}}>
+        {/* Save button */}
+        <button onClick={e=>{e.stopPropagation();onToggleSave(biz.id);}} style={{position:"absolute",top:9,right:9,background:"rgba(251,249,244,.88)",backdropFilter:"blur(8px)",border:"none",width:28,height:28,borderRadius:"50%",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:saved?T.clay:T.stone}}>
           {saved?"♥":"♡"}
         </button>
-        {syncing&&(
-          <div className="absolute bottom-3 left-3 flex items-center gap-1 bg-black/50 backdrop-blur-sm rounded-full px-2 py-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
-            <span className="text-white text-[9px] font-medium">Live</span>
-          </div>
-        )}
-      </div>
-      <div className="space-y-1">
-        <div className="flex justify-between items-start">
-          <h3 className="text-base font-bold text-primary tracking-tight">{biz.name}</h3>
-          <div className="flex items-center gap-1">
-            <span className="text-secondary text-sm">★</span>
-            <span className="text-sm font-bold">{biz.rating}</span>
+        {/* Credits chip + live indicator */}
+        <div style={{position:"absolute",bottom:10,left:10,right:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          {syncing&&<div style={{display:"flex",alignItems:"center",gap:3,background:"rgba(27,28,25,.55)",backdropFilter:"blur(6px)",borderRadius:20,padding:"2px 7px"}}><span style={{width:5,height:5,borderRadius:"50%",background:"#9dd4a0",display:"inline-block"}}/><span style={{fontFamily:F.body,fontSize:8,color:"#fff"}}>Live</span></div>}
+          <div style={{marginLeft:"auto",background:"rgba(27,28,25,.65)",backdropFilter:"blur(8px)",borderRadius:20,padding:"3px 9px"}}>
+            <span style={{fontFamily:F.body,fontSize:10,color:"#fff",fontWeight:700}}>◈ {biz.cr}</span>
           </div>
         </div>
-        <p className="text-on-surface-variant text-sm flex items-center gap-1">
-          <span className="text-xs">📍</span> {biz.loc} · {biz.cat}
-        </p>
+      </div>
+      {/* Card body — no border, breathing room */}
+      <div style={{padding:"14px 14px 16px"}} onClick={()=>onSelect(biz)}>
+        <h3 style={{fontFamily:F.display,fontSize:14,color:T.ink,margin:"0 0 4px",fontWeight:700,lineHeight:1.2,letterSpacing:"-0.3px"}}>{biz.name}</h3>
+        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:8}}><Stars n={biz.rating}/><span style={{color:T.stone,fontSize:9,fontFamily:F.body}}>({biz.reviews}) · {biz.loc}</span></div>
         {next
-          ? <p className="text-xs text-primary font-medium">{next.spots-next.booked} spots left · {next.time}</p>
-          : <p className="text-xs text-outline">Fully booked · check back soon</p>}
+          ?<div style={{background:T.bg3,borderRadius:6,padding:"5px 8px",display:"flex",justifyContent:"space-between"}}><span style={{fontSize:9,color:T.stone,fontFamily:F.body}}>{fd(next.date)} · {next.time}</span><span style={{fontSize:9,color:T.sage,fontFamily:F.body,fontWeight:700}}>{next.spots-next.booked} left</span></div>
+          :<div style={{background:T.clayXL,borderRadius:6,padding:"5px 8px",textAlign:"center"}}><span style={{fontSize:9,color:T.clay,fontFamily:F.body}}>Fully booked · check back soon</span></div>}
       </div>
     </div>
   );
@@ -465,113 +462,106 @@ function HomePage({ listings, bookings, onSelect, savedIds, onToggleSave, onSetV
   async function runAI() {
     if (!aiQ.trim()) return; setAiLoading(true);
     const ls=listings.map(b=>`ID:${b.id} "${b.name}" ${b.cat} ${b.loc} ◈${b.cr} tags:${b.tags.join(",")}`).join("\n");
-    const r=await aiJSON(`Wellness search. Return ONLY JSON: {"ids":[1,2],"explanation":"short sentence max 12 words"}`,`Query:"${aiQ}"\nListings:\n${ls}`);
+    const r=await aiJSON(`Mallorca wellness search. Return ONLY JSON: {"ids":[1,2],"explanation":"short sentence max 12 words"}`,`Query:"${aiQ}"\nListings:\n${ls}`);
     if(r?.ids){setAiResults(listings.filter(b=>r.ids.includes(b.id)));setAiNote(r.explanation||"");}
     setAiLoading(false);
   }
 
-  const featured = aiResults || listings.slice(0,4);
+  const poolGym=listings.filter(b=>["Hotel Gym","Pool Access"].includes(b.cat)); // kept for explore page reference
 
   return (
     <div>
-      {/* ── IMMERSIVE HERO ── */}
-      <section className="relative min-h-screen flex flex-col items-center justify-center pt-20 px-6 overflow-hidden bg-gradient-to-b from-surface via-surface to-secondary-container/20">
-        {/* Background blobs */}
-        <div className="absolute top-0 left-0 w-full h-full opacity-30 pointer-events-none">
-          <div className="absolute top-[20%] left-[10%] w-96 h-96 rounded-full bg-primary-container/10 blur-[120px]"/>
-          <div className="absolute bottom-[20%] right-[10%] w-[500px] h-[500px] rounded-full bg-secondary-container/20 blur-[150px]"/>
-        </div>
-        <div className="relative z-10 max-w-4xl w-full text-center space-y-12">
-          <div className="space-y-6">
-            <h1 className="text-[clamp(80px,15vw,180px)] font-extrabold tracking-tighter text-primary leading-none select-none">wello</h1>
-            <p className="text-on-surface-variant max-w-xl mx-auto font-medium leading-relaxed tracking-tight text-lg">
-              Your curated pass for wellness and movement. Studios, gyms, spas and outdoor adventures.
-            </p>
+      {/* ─ GREEN HERO ─ */}
+      <div style={{background:`linear-gradient(155deg,${T.sage2} 0%,${T.sage} 55%,#5a7a51 100%)`,minHeight:460,position:"relative",overflow:"hidden",display:"flex",flexDirection:"column",justifyContent:"center",padding:"60px 0 52px"}}>
+        <div style={{position:"absolute",inset:0,backgroundImage:"url('https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=1400&q=65')",backgroundSize:"cover",backgroundPosition:"center top",opacity:.18}}/>
+        <div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(60,82,51,.2) 0%,rgba(60,82,51,.82) 100%)"}}/>
+        <div style={{maxWidth:680,margin:"0 auto",padding:"0 28px",position:"relative",width:"100%",textAlign:"center"}}>
+          {/* F1 hero wordmark */}
+          <div style={{marginBottom:20}}>
+            <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:"clamp(52px,7vw,88px)",fontWeight:700,color:"#fff",lineHeight:1,letterSpacing:"-3px"}}>wello</div>
+            <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:11,fontWeight:400,color:T.ochreL,letterSpacing:"6px",marginTop:6,textTransform:"uppercase"}}>the wellness pass</div>
           </div>
+          <p style={{fontFamily:F.body,color:"rgba(255,255,255,.7)",fontSize:14,lineHeight:1.7,margin:"0 auto 28px",maxWidth:420,fontWeight:300}}>
+            Your pass to studios, gyms, hotels, spas and outdoor adventures across Mallorca.
+          </p>
           {/* AI Search */}
-          <div className="relative max-w-2xl mx-auto group">
-            <div className="flex items-center bg-white rounded-full p-2 pl-6 shadow-sm border border-outline-variant/10 focus-within:border-primary/20 transition-all duration-500">
-              <span className="text-outline text-sm mr-2">✦</span>
-              <input value={aiQ} onChange={e=>setAiQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runAI()}
-                className="w-full bg-transparent border-none focus:ring-0 text-on-surface placeholder:text-outline/60 py-3 font-medium text-sm"
-                placeholder="Where do you want to find balance today?"/>
-              {aiResults&&<button onClick={()=>{setAiResults(null);setAiQ("");setAiNote("");}} className="px-3 text-outline text-sm bg-transparent border-none cursor-pointer">✕</button>}
-              <button onClick={runAI} disabled={aiLoading||!aiQ.trim()}
-                className="bg-primary text-on-primary px-8 py-3 rounded-full font-bold hover:scale-[1.02] active:scale-95 transition-all text-sm disabled:opacity-50">
-                {aiLoading?"…":"Search"}
-              </button>
-            </div>
-            {aiNote&&<p className="text-on-surface-variant text-xs mt-3 italic">✦ {aiNote}</p>}
-          </div>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-6 pt-4">
-            <button onClick={()=>onSetView("credits")}
-              className="group flex items-center gap-2 px-10 py-4 rounded-full bg-primary text-on-primary font-bold transition-all duration-300 hover:opacity-95 hover:scale-[1.02]">
-              Buy Credits <span className="transition-transform group-hover:translate-x-1">→</span>
-            </button>
-            <button onClick={()=>onSetView("explore")}
-              className="px-10 py-4 rounded-full border-2 border-primary text-primary font-bold transition-all duration-300 hover:bg-primary/5">
-              Explore all
+          <div style={{display:"flex",maxWidth:520,margin:"0 auto 8px",background:"rgba(250,248,244,.12)",backdropFilter:"blur(10px)",border:"1px solid rgba(255,255,255,.2)",borderRadius:3,overflow:"hidden"}}>
+            <span style={{padding:"0 12px",display:"flex",alignItems:"center",color:"rgba(255,255,255,.55)",fontSize:12,flexShrink:0}}>✦</span>
+            <input value={aiQ} onChange={e=>setAiQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runAI()}
+              placeholder='Try "outdoor yoga under 2 credits" or "pool access Palma"…'
+              style={{flex:1,padding:"12px 0",border:"none",outline:"none",fontFamily:F.body,fontSize:11,background:"transparent",color:"#fff"}}/>
+            {aiResults&&<button onClick={()=>{setAiResults(null);setAiQ("");setAiNote("");}} style={{padding:"0 10px",background:"transparent",color:"rgba(255,255,255,.6)",border:"none",cursor:"pointer",fontSize:11,fontFamily:F.body}}>✕</button>}
+            <button onClick={runAI} disabled={aiLoading||!aiQ.trim()} style={{padding:"0 18px",background:aiLoading?"rgba(255,255,255,.08)":"rgba(255,255,255,.22)",color:"#fff",border:"none",cursor:aiLoading||!aiQ.trim()?"not-allowed":"pointer",fontFamily:F.body,fontSize:11,fontWeight:600,flexShrink:0}}>
+              {aiLoading?"…":"Search"}
             </button>
           </div>
+          {aiNote&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:8}}><span style={{fontSize:9,color:T.ochreL}}>✦</span><span style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.65)",fontStyle:"italic"}}>{aiNote}</span></div>}
+          <div style={{display:"flex",gap:8,marginTop:22,flexWrap:"wrap",justifyContent:"center"}}>
+            <button onClick={()=>onSetView("explore")} style={{padding:"10px 22px",background:"#fff",color:T.sage,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:".4px"}} onMouseEnter={e=>e.target.style.opacity=".88"} onMouseLeave={e=>e.target.style.opacity="1"}>Explore all →</button>
+            <button onClick={()=>onSetView("credits")} style={{padding:"10px 22px",background:"transparent",color:"#fff",border:"1px solid rgba(255,255,255,.35)",borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>◈ Buy Credits</button>
+          </div>
         </div>
-      </section>
+      </div>
 
-      {/* ── FEATURED SECTION ── */}
-      <section className="py-20 px-8 max-w-7xl mx-auto">
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
-          <div className="space-y-3">
-            <span className="text-primary font-bold tracking-widest text-xs uppercase">Curated Collections</span>
-            <h2 className="text-5xl font-bold tracking-tighter text-on-background">Featured on Wello</h2>
-          </div>
-          <div className="flex items-center gap-4">
-            <p className="text-on-surface-variant max-w-xs text-base leading-relaxed hidden md:block">
-              Hand-picked spaces and experiences for your wellbeing.
-            </p>
-            <button onClick={()=>onSetView("explore")} className="bg-transparent border-none text-primary font-bold text-sm cursor-pointer whitespace-nowrap hover:underline">See all →</button>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-          {featured.slice(0,4).map((biz,i)=>(
-            <div key={biz.id} className={i===1?"md:mt-12":""}>
-              <Card biz={biz} onSelect={onSelect} syncing={!!syncingIds[biz.id]} saved={savedIds.includes(biz.id)} onToggleSave={onToggleSave}/>
-            </div>
-          ))}
-        </div>
-      </section>
+      <div style={{maxWidth:1140,margin:"0 auto",padding:"40px 28px 0"}}>
 
-      {/* ── VALUES SECTION ── */}
-      <section className="bg-surface-container-low py-24">
-        <div className="max-w-7xl mx-auto px-8 grid grid-cols-1 md:grid-cols-2 gap-20 items-center">
-          <div className="relative">
-            <div className="aspect-square rounded-full overflow-hidden border-8 border-white/50 shadow-2xl">
-              <img src="https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80" alt="Wellness" className="w-full h-full object-cover"/>
+        {/* ─ FEATURED PARTNERS ─ */}
+        <div style={{marginBottom:44}}>
+          <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:18,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:0}}>Featured on Wello</h2>
+              <span style={{fontFamily:F.body,fontSize:9,color:T.stone2,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:300}}>Mallorca's best wellness venues</span>
             </div>
-            <div className="absolute -bottom-8 -right-8 bg-white p-6 rounded-2xl shadow-xl max-w-[220px] space-y-2">
-              <span className="text-3xl">🌿</span>
-              <h4 className="font-bold text-lg text-primary">Sustainably Minded</h4>
-              <p className="text-sm text-on-surface-variant">We partner with venues that prioritise ethical practices and ecological balance.</p>
-            </div>
+            <button onClick={()=>onSetView("explore")} style={{fontFamily:F.body,fontSize:11,color:T.sage,background:"transparent",border:"none",cursor:"pointer",fontWeight:600,padding:0}}>See all →</button>
           </div>
-          <div className="space-y-8">
-            <h2 className="text-5xl font-bold tracking-tighter text-primary">The Wellness Pass for Island Living</h2>
-            <div className="space-y-6">
-              {[
-                {icon:"🔓",title:"Unlimited Access",desc:"No memberships required. Pure, flexible access to the best wellness venues."},
-                {icon:"⭐",title:"Vetted Quality",desc:"Every venue on Wello is personally visited and verified for quality and experience."},
-                {icon:"🌊",title:"Rooted in Community",desc:"We give back to the places we operate — coastlines, communities and natural environments."},
-              ].map(({icon,title,desc})=>(
-                <div key={title} className="flex gap-5 items-start">
-                  <div className="w-12 h-12 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0 text-xl">{icon}</div>
-                  <div>
-                    <h4 className="font-bold text-lg mb-1">{title}</h4>
-                    <p className="text-on-surface-variant leading-relaxed">{desc}</p>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(244px,1fr))",gap:12}}>
+            {listings.slice(0,4).map(biz=>(
+              <div key={biz.id} onClick={()=>onSelect(biz)}
+                style={{background:T.paper,borderRadius:3,overflow:"hidden",cursor:"pointer",border:`1px solid ${T.border}`,transition:"all .15s"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=T.sageL;e.currentTarget.style.boxShadow=`0 4px 18px rgba(78,107,67,.10)`}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.boxShadow="none"}}>
+                <div style={{position:"relative"}}>
+                  <img src={biz.img} style={{width:"100%",height:148,objectFit:"cover",display:"block"}} alt={biz.name}/>
+                  <div style={{position:"absolute",top:8,left:8,background:T.sage,color:"#fff",fontSize:8,padding:"3px 8px",borderRadius:2,fontFamily:F.body,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase"}}>Featured</div>
+                  <button onClick={e=>{e.stopPropagation();onToggleSave(biz.id)}} style={{position:"absolute",top:8,right:8,width:28,height:28,borderRadius:"50%",background:"rgba(255,255,255,.9)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13}}>
+                    {savedIds.includes(biz.id)?"♥":"♡"}
+                  </button>
+                </div>
+                <div style={{padding:"12px 13px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+                    <div style={{fontFamily:F.body,fontSize:13,fontWeight:600,color:T.ink,letterSpacing:"-0.2px"}}>{biz.name}</div>
+                    <Cr n={biz.cr} size="sm"/>
+                  </div>
+                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginBottom:6}}>{biz.cat} · {biz.loc}</div>
+                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,lineHeight:1.5}}>{biz.shortDesc||biz.tags?.slice(0,3).join(" · ")}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:4,marginTop:8}}>
+                    <span style={{fontSize:10,color:T.ochre}}>★</span>
+                    <span style={{fontFamily:F.body,fontSize:10,color:T.ink,fontWeight:600}}>{biz.rating}</span>
+                    <span style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300}}>({biz.reviews} reviews)</span>
                   </div>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
         </div>
-      </section>
+
+        {/* ─ SUSTAINABILITY STRIP ─ */}
+        <div style={{marginBottom:48,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:4,padding:"24px 28px",display:"flex",alignItems:"flex-start",gap:20,flexWrap:"wrap"}}>
+          <div style={{width:42,height:42,background:T.sage,borderRadius:3,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🌊</div>
+          <div style={{flex:1,minWidth:260}}>
+            <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:15,fontWeight:700,color:T.sage,letterSpacing:"-0.3px",marginBottom:5}}>Rooted in Mallorca, committed to its future</div>
+            <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,lineHeight:1.75,margin:0,maxWidth:600}}>
+              Wello is built on the island, for the island. We believe that wellness tourism should give back to the place that makes it possible — the coastlines, the communities, and the natural environment that make Mallorca special. That's why giving back to the island is part of how we operate, not an afterthought.
+            </p>
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",alignSelf:"center"}}>
+            {["Beach clean-ups","Water conservation","Local charities","Mallorca-first"].map(t=>(
+              <span key={t} style={{fontFamily:F.body,fontSize:9,color:T.sage,background:"#fff",border:`1px solid ${T.sageL}`,borderRadius:2,padding:"4px 9px",fontWeight:600,letterSpacing:".3px"}}>✓ {t}</span>
+            ))}
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }
@@ -590,66 +580,27 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
     return mC&&mL&&mS;
   });
   return (
-    <div className="pt-8 pb-24 px-8 max-w-7xl mx-auto">
-      {/* Header */}
-      <header className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
-        <div className="max-w-2xl">
-          <span className="text-secondary font-semibold tracking-widest text-xs uppercase mb-2 block">Curated Sanctuary</span>
-          <h1 className="text-4xl font-extrabold tracking-tighter text-primary leading-tight">Find your flow.</h1>
-        </div>
-        <div className="flex items-center gap-2 text-on-surface-variant text-sm">
-          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"/>
-          <span className="font-medium">{filtered.length} experiences · Live sync</span>
-        </div>
-      </header>
-
-      {/* Filter bar — sticky */}
-      <div className="sticky top-[76px] z-40 bg-surface/95 backdrop-blur-sm py-4 -mx-8 px-8">
-        <div className="flex items-center gap-3 overflow-x-auto pb-1" style={{scrollbarWidth:"none"}}>
-          {CATS.slice(0,12).map(c=>(
-            <button key={c} onClick={()=>setActiveCat(c)}
-              className={`px-5 py-2.5 rounded-full font-semibold text-sm whitespace-nowrap transition-colors ${activeCat===c?"bg-primary text-on-primary":"bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest"}`}>
-              {c}
-            </button>
-          ))}
-          <div className="ml-auto flex items-center gap-2 pl-4 border-l border-outline-variant/30">
-            <div className="flex items-center bg-surface-container rounded-full px-4 py-2 gap-2">
-              <span className="text-outline text-sm">⌕</span>
-              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..."
-                className="bg-transparent border-none focus:ring-0 text-sm w-32 outline-none text-on-surface placeholder:text-outline/60"/>
-            </div>
-          </div>
-        </div>
-        {/* Location pills */}
-        <div className="flex items-center gap-2 overflow-x-auto pt-3" style={{scrollbarWidth:"none"}}>
-          {LOCS.map(l=>(
-            <button key={l} onClick={()=>setActiveLoc(l)}
-              className={`px-4 py-1.5 rounded-full font-medium text-xs whitespace-nowrap transition-colors border ${activeLoc===l?"bg-primary text-on-primary border-primary":"border-outline-variant/30 text-on-surface-variant hover:border-primary/40"}`}>
-              {l}
-            </button>
-          ))}
-        </div>
+    <div style={{maxWidth:1140,margin:"0 auto",padding:"32px 28px 58px"}}>
+      <h1 style={{fontFamily:F.display,fontSize:24,color:T.ink,fontWeight:400,margin:"0 0 18px"}}>Explore</h1>
+      <div style={{display:"flex",gap:0,background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"8px 12px",alignItems:"center",marginBottom:14,boxShadow:"0 2px 8px rgba(0,0,0,.04)"}}>
+        <span style={{color:T.stone2,fontSize:11,marginRight:9}}>⌕</span>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name, location or category…"
+          style={{flex:1,border:"none",outline:"none",fontFamily:F.body,fontSize:12,background:"transparent",color:T.ink,fontWeight:300}}/>
+        {search&&<button onClick={()=>setSearch("")} style={{background:"transparent",border:"none",color:T.stone2,cursor:"pointer",fontSize:11,fontFamily:F.body}}>✕</button>}
       </div>
-
-      {/* Grid */}
+      <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:7,marginBottom:5,scrollbarWidth:"none"}}>
+        {CATS.map(c=><Pill key={c} label={c} active={activeCat===c} onClick={()=>setActiveCat(c)}/>)}
+      </div>
+      <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:13,marginBottom:16,scrollbarWidth:"none"}}>
+        {LOCS.map(l=><Pill key={l} label={l} active={activeLoc===l} onClick={()=>setActiveLoc(l)} color={T.clay}/>)}
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>{filtered.length} listing{filtered.length!==1?"s":""}</span>
+        <div style={{display:"flex",alignItems:"center",gap:4,fontFamily:F.body,fontSize:9,color:T.stone2}}><span style={{width:4,height:4,borderRadius:"50%",background:T.moss,display:"inline-block",animation:"pulse 2s infinite"}}/>Live sync</div>
+      </div>
       {filtered.length===0
-        ? <div className="text-center py-24">
-            <div className="text-4xl mb-4 text-outline">∅</div>
-            <h3 className="text-xl font-bold text-primary mb-2">No results</h3>
-            <p className="text-on-surface-variant">Try adjusting your filters</p>
-          </div>
-        : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mt-6">
-            {filtered.map(b=><Card key={b.id} biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave}/>)}
-          </div>
-      }
-
-      {filtered.length>8&&(
-        <div className="mt-16 flex justify-center">
-          <button className="px-10 py-4 rounded-full border border-primary text-primary font-bold hover:bg-primary hover:text-on-primary transition-all duration-300">
-            Load more experiences
-          </button>
-        </div>
-      )}
+        ?<div style={{textAlign:"center",padding:"78px 20px"}}><div style={{fontSize:24,marginBottom:10,color:T.stone2}}>∅</div><h3 style={{fontFamily:F.display,fontSize:17,color:T.ink,fontWeight:400,marginBottom:6}}>No results</h3><p style={{fontFamily:F.body,color:T.stone,fontSize:11,fontWeight:300}}>Try adjusting your filters</p></div>
+        :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(258px,1fr))",gap:14}}>{filtered.map(b=><Card key={b.id} biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave}/>)}</div>}
     </div>
   );
 }
@@ -664,201 +615,108 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
   const TABS=[["reservations","Reservations"],["saved","Saved"],["friends","Friends"],["settings","Settings"]];
 
   return (
-    <div className="pt-8 pb-24 px-6 max-w-7xl mx-auto">
-
-      {/* Hero profile header */}
-      <header className="flex flex-col md:flex-row items-end gap-8 mb-12 pt-4">
-        <div className="relative group">
-          <div className="w-28 h-28 md:w-36 md:h-36 rounded-xl overflow-hidden bg-surface-container-high flex items-center justify-center bg-primary">
-            <span className="text-white text-5xl font-bold">J</span>
-          </div>
-          <button className="absolute -bottom-3 -right-3 bg-primary text-on-primary p-2 rounded-full shadow-lg hover:scale-105 transition-transform">
-            <span className="text-xs">✏</span>
-          </button>
-        </div>
-        <div className="flex-1 space-y-2">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-4xl font-extrabold tracking-tight text-primary">Jane Smith</h1>
-            <span className="bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase">Member</span>
-          </div>
-          <p className="text-on-surface-variant max-w-md leading-relaxed">Exploring wellness across the island.</p>
-          <div className="flex gap-6 pt-2 flex-wrap">
-            <div className="flex items-center gap-2 text-sm font-semibold text-primary">
-              <span>📍</span><span>Mallorca</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm font-semibold text-primary">
-              <span>◈</span><span>{credits} credits</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm font-semibold text-primary">
-              <span>📅</span><span>{bookings.length} bookings</span>
-            </div>
+    <div style={{maxWidth:760,margin:"0 auto",padding:"32px 28px 58px"}}>
+      {/* Account header */}
+      <div style={{display:"flex",alignItems:"center",gap:15,marginBottom:24,padding:"19px 20px",background:T.paper,borderRadius:4,border:`1px solid ${T.border}`}}>
+        <div style={{width:52,height:52,borderRadius:"50%",background:T.sage,display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,color:"#fff",fontFamily:F.display,flexShrink:0}}>J</div>
+        <div style={{flex:1}}>
+          <h2 style={{fontFamily:F.display,fontSize:18,color:T.ink,margin:"0 0 2px",fontWeight:400}}>Jane Smith</h2>
+          <p style={{fontFamily:F.body,fontSize:11,color:T.stone,margin:"0 0 7px",fontWeight:300}}>jane@example.com · Member since 2026</p>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <span style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:2,padding:"3px 8px",fontSize:10,color:T.sage,fontFamily:F.body,fontWeight:600}}>◈ {credits}</span>
+            <span style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:2,padding:"3px 8px",fontSize:10,color:T.stone,fontFamily:F.body}}>{bookings.length} booking{bookings.length!==1?"s":""}</span>
+            {isBiz&&<span style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:2,padding:"3px 8px",fontSize:10,color:T.ochre,fontFamily:F.body,fontWeight:600}}>Business</span>}
           </div>
         </div>
-        <button onClick={()=>onSetView("credits")}
-          className="bg-primary text-on-primary px-6 py-3 rounded-full font-bold hover:scale-[1.02] transition-transform shadow-lg">
-          + Add Credits
-        </button>
-      </header>
+        <button onClick={()=>onSetView("credits")} style={{padding:"6px 13px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Credits</button>
+      </div>
 
-      {/* Navigation tabs */}
-      <div className="flex items-center gap-8 border-b border-outline-variant/20 mb-10 overflow-x-auto whitespace-nowrap">
-        {TABS.map(([k,l])=>(
-          <button key={k} onClick={()=>setTab(k)}
-            className={`pb-4 px-1 font-medium transition-all border-b-2 -mb-px ${tab===k?"text-primary border-primary font-bold":"text-on-surface-variant border-transparent hover:text-primary"}`}>
-            {l}
-          </button>
-        ))}
+      {/* Tabs */}
+      <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,marginBottom:19}}>
+        {TABS.map(([k,l])=><button key={k} onClick={()=>setTab(k)} style={{padding:"7px 14px",border:"none",borderBottom:`2px solid ${tab===k?T.sage:"transparent"}`,background:"transparent",color:tab===k?T.sage:T.stone,fontFamily:F.body,fontSize:11,fontWeight:tab===k?600:300,cursor:"pointer",marginBottom:-1,transition:"all .13s"}}>{l}</button>)}
       </div>
 
       {/* Reservations */}
-      {tab==="reservations"&&(
-        bookings.length===0
-          ? <div className="bg-surface-container-low rounded-2xl p-16 text-center">
-              <div className="text-4xl mb-4">📅</div>
-              <h3 className="text-xl font-bold text-primary mb-3">No reservations yet</h3>
-              <button onClick={()=>onSetView("explore")}
-                className="bg-primary text-on-primary px-8 py-3 rounded-full font-bold hover:scale-[1.02] transition-transform">
-                Explore Classes
-              </button>
-            </div>
-          : <div className="space-y-4">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-primary tracking-tight">Upcoming Bookings</h2>
+      {tab==="reservations"&&(bookings.length===0
+        ?<div style={{textAlign:"center",padding:"55px",background:T.paper,borderRadius:3,border:`1px solid ${T.border}`}}><div style={{fontSize:24,marginBottom:9,color:T.stone2}}>📅</div><h3 style={{fontFamily:F.display,fontSize:17,color:T.ink,fontWeight:400,marginBottom:6}}>No reservations yet</h3><button onClick={()=>onSetView("explore")} style={{padding:"6px 17px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontWeight:600,cursor:"pointer",fontSize:10}}>Explore Classes</button></div>
+        :<div style={{display:"flex",flexDirection:"column",gap:7}}>{bookings.map(bk=>(
+          <div key={bk.id} style={{background:T.paper,borderRadius:3,border:`1px solid ${T.border}`,display:"flex",overflow:"hidden"}}>
+            <div style={{width:78,flexShrink:0}}><img src={bk.biz.img} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
+            <div style={{padding:"11px 13px",flex:1}}>
+              <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:5}}>
+                <div><div style={{fontFamily:F.display,fontSize:13,color:T.ink,fontWeight:400,marginBottom:1}}>{bk.slot.name}</div><div style={{fontFamily:F.body,color:T.stone,fontSize:10,fontWeight:300}}>{bk.biz.name} · {bk.biz.loc}</div></div>
+                <span style={{background:T.sageXL,color:T.sage,fontSize:8,padding:"2px 7px",borderRadius:2,fontFamily:F.body,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",alignSelf:"flex-start"}}>Confirmed</span>
               </div>
-              {bookings.map(bk=>(
-                <div key={bk.id} className="group bg-surface-container-low rounded-xl overflow-hidden flex flex-col md:flex-row hover:bg-surface-container-high transition-colors duration-300">
-                  <div className="w-full md:w-48 h-36 md:h-auto overflow-hidden flex-shrink-0">
-                    <img src={bk.biz.img} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"/>
-                  </div>
-                  <div className="flex-1 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div className="space-y-1">
-                      <span className="text-xs font-bold text-secondary uppercase tracking-widest">{bk.biz.cat}</span>
-                      <h3 className="text-xl font-bold text-primary">{bk.slot.name}</h3>
-                      <p className="text-on-surface-variant font-medium text-sm">📅 {fd(bk.slot.date)} · {bk.slot.time}</p>
-                      <p className="text-on-surface-variant font-medium text-sm">📍 {bk.biz.name}, {bk.biz.loc}</p>
-                    </div>
-                    <div className="flex flex-col items-end gap-3">
-                      <span className="bg-primary-container text-on-primary-container px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-primary animate-pulse"/>Confirmed
-                      </span>
-                      <span className="text-sm font-bold text-primary">◈ {bk.cost} credits</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
+              <div style={{display:"flex",gap:10,marginTop:8,flexWrap:"wrap"}}>{[["📅",fd(bk.slot.date)],["⏰",bk.slot.time],["👤",`${bk.form.guests} guest${bk.form.guests>1?"s":""}`],["◈",`${bk.cost} credits`]].map(([ic,v])=><span key={v} style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{ic} {v}</span>)}</div>
             </div>
+          </div>
+        ))}</div>
       )}
 
       {/* Saved */}
-      {tab==="saved"&&(
-        saved.length===0
-          ? <div className="bg-surface-container-low rounded-2xl p-16 text-center">
-              <div className="text-4xl mb-4">♡</div>
-              <h3 className="text-xl font-bold text-primary mb-3">Nothing saved yet</h3>
-              <p className="text-on-surface-variant mb-6">Tap ♡ on any listing to save it</p>
-              <button onClick={()=>onSetView("explore")} className="bg-primary text-on-primary px-8 py-3 rounded-full font-bold">Explore</button>
-            </div>
-          : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {saved.map(b=>(
-                <div key={b.id} className="group cursor-pointer" onClick={()=>onSelect(b)}>
-                  <div className="relative aspect-[4/5] rounded-xl overflow-hidden mb-3 bg-surface-container-highest">
-                    <img src={b.img} alt={b.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"/>
-                  </div>
-                  <h3 className="font-bold text-primary text-sm">{b.name}</h3>
-                  <p className="text-on-surface-variant text-xs">📍 {b.loc}</p>
-                </div>
-              ))}
-            </div>
+      {tab==="saved"&&(saved.length===0
+        ?<div style={{textAlign:"center",padding:"55px",background:T.paper,borderRadius:3,border:`1px solid ${T.border}`}}><div style={{fontSize:24,marginBottom:9,color:T.stone2}}>♡</div><h3 style={{fontFamily:F.display,fontSize:17,color:T.ink,fontWeight:400,marginBottom:5}}>Nothing saved yet</h3><p style={{fontFamily:F.body,color:T.stone,fontSize:11,marginBottom:12,fontWeight:300}}>Tap ♡ on any listing</p><button onClick={()=>onSetView("explore")} style={{padding:"6px 17px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontWeight:600,cursor:"pointer",fontSize:10}}>Explore</button></div>
+        :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10}}>{saved.map(b=>(
+          <div key={b.id} onClick={()=>onSelect(b)} style={{background:T.paper,borderRadius:3,overflow:"hidden",cursor:"pointer",border:`1px solid ${T.border}`,transition:"all .14s"}} onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,.08)"} onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
+            <img src={b.img} style={{width:"100%",height:112,objectFit:"cover"}} alt=""/>
+            <div style={{padding:"8px 10px"}}><div style={{fontFamily:F.display,fontSize:12,color:T.ink,fontWeight:400,marginBottom:1}}>{b.name}</div><div style={{fontFamily:F.body,fontSize:9,color:T.stone,fontWeight:300}}>📍 {b.loc}</div></div>
+          </div>
+        ))}</div>
       )}
 
       {/* Friends */}
       {tab==="friends"&&(
         <div>
-          <div className="flex justify-between items-center mb-6">
-            <span className="text-on-surface-variant text-sm">{friends.length} friends</span>
-            <button className="bg-primary text-on-primary px-5 py-2 rounded-full text-xs font-bold">+ Invite</button>
-          </div>
-          <div className="space-y-3">
-            {friends.map(f=>(
-              <div key={f.id} className="flex items-center gap-4 p-5 bg-surface-container-low rounded-xl hover:bg-surface-container transition-colors">
-                <div className="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center font-bold text-sm text-on-surface-variant flex-shrink-0">{f.init}</div>
-                <div className="flex-1">
-                  <p className="font-bold text-sm text-on-background">{f.name}</p>
-                  <p className="text-on-surface-variant text-xs">📍 {f.loc} · {f.bio}</p>
-                </div>
-                <button className="border border-outline-variant/30 text-primary px-4 py-1.5 rounded-full text-xs font-bold hover:bg-surface transition-colors">View</button>
-              </div>
-            ))}
-          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>{friends.length} friends</span><button style={{padding:"4px 11px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontSize:9,fontFamily:F.body,fontWeight:600,cursor:"pointer"}}>+ Invite</button></div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>{friends.map(f=>(
+            <div key={f.id} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 13px",background:T.paper,borderRadius:3,border:`1px solid ${T.border}`}}>
+              <div style={{width:34,height:34,borderRadius:"50%",background:T.bg3,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:600,flexShrink:0}}>{f.init}</div>
+              <div style={{flex:1}}><div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>{f.name}</div><div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>📍 {f.loc} · {f.bio}</div></div>
+              <button style={{padding:"4px 10px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontSize:9,fontFamily:F.body,cursor:"pointer"}}>View</button>
+            </div>
+          ))}</div>
         </div>
       )}
 
       {/* Settings */}
       {tab==="settings"&&(
-        <div className="space-y-4 max-w-lg">
-          <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/10">
-            <h3 className="font-bold text-primary mb-4">Account Details</h3>
-            <div className="space-y-4">
-              {[{l:"Full Name",v:"Jane Smith"},{l:"Email",v:"jane@example.com"},{l:"Location",v:"Mallorca"}].map(f=>(
-                <div key={f.l}>
-                  <label className="text-xs font-bold uppercase tracking-widest text-outline mb-1 block">{f.l}</label>
-                  <input defaultValue={f.v} className="w-full border border-outline-variant/30 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-primary transition-colors bg-surface"/>
+        <div style={{display:"flex",flexDirection:"column",gap:13}}>
+          {[{title:"Account Details",body:(
+            <div style={{padding:"15px"}}>
+              <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:12}}>
+                {[{l:"Full Name",v:"Jane Smith"},{l:"Email",v:"jane@example.com"},{l:"Location",v:"Palma, Mallorca"}].map(f=>(
+                  <div key={f.l}><FieldLabel>{f.l}</FieldLabel><input defaultValue={f.v} style={INP} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=T.border}/></div>
+                ))}
+              </div>
+              <button style={{padding:"6px 16px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer"}}>Save</button>
+            </div>
+          )},{title:"Account Type",body:(
+            <div style={{padding:"15px"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:9}}>
+                <div><div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600,marginBottom:2}}>Business Account</div><div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>List your venue and manage integrations.</div></div>
+                <div onClick={onToggleBiz} style={{width:36,height:20,borderRadius:10,background:isBiz?T.sage:T.border2,cursor:"pointer",position:"relative",transition:"background .2s",flexShrink:0}}>
+                  <div style={{position:"absolute",top:2,left:isBiz?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.18)"}}/>
                 </div>
-              ))}
-              <button className="bg-primary text-on-primary px-6 py-2.5 rounded-full font-bold text-sm hover:scale-[1.02] transition-transform">Save changes</button>
-            </div>
-          </div>
-          <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/10">
-            <h3 className="font-bold text-primary mb-4">Account Type</h3>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold text-sm text-on-background mb-1">Business Account</p>
-                <p className="text-on-surface-variant text-xs">List your venue and manage integrations.</p>
               </div>
-              <div onClick={onToggleBiz} className={`w-12 h-6 rounded-full cursor-pointer relative transition-colors ${isBiz?"bg-primary":"bg-surface-container-highest"}`}>
-                <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${isBiz?"left-7":"left-1"}`}/>
-              </div>
+              {isBiz&&<button onClick={()=>onSetView("business")} style={{padding:"6px 13px",background:T.ochreXL,color:T.ochre,border:`1px solid ${T.ochreL}`,borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer"}}>Manage Business →</button>}
             </div>
-            {isBiz&&<button onClick={()=>onSetView("business")} className="mt-4 bg-secondary-container text-on-secondary-container px-5 py-2 rounded-full font-bold text-xs hover:scale-[1.02] transition-transform">Manage Business →</button>}
-          </div>
-          <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/10">
-            <h3 className="font-bold text-primary mb-4">Notifications</h3>
-            <div className="space-y-4">
+          )},{title:"Notifications",body:(
+            <div style={{padding:"15px",display:"flex",flexDirection:"column",gap:9}}>
               {["Booking confirmations","Availability reminders","Weekly recommendations","New venues nearby"].map(l=>(
-                <div key={l} className="flex justify-between items-center">
-                  <span className="text-sm text-on-background">{l}</span>
-                  <div className="w-10 h-6 rounded-full bg-primary relative cursor-pointer flex-shrink-0">
-                    <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-white shadow"/>
-                  </div>
+                <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:300}}>{l}</span>
+                  <div style={{width:30,height:17,borderRadius:9,background:T.sage,cursor:"pointer",position:"relative",flexShrink:0}}><div style={{position:"absolute",top:1.5,right:1.5,width:14,height:14,borderRadius:"50%",background:"#fff",boxShadow:"0 1px 3px rgba(0,0,0,.18)"}}/></div>
                 </div>
               ))}
             </div>
-          </div>
+          )}].map(s=>(
+            <div key={s.title} style={{background:T.paper,borderRadius:3,border:`1px solid ${T.border}`,overflow:"hidden"}}>
+              <div style={{padding:"10px 15px",borderBottom:`1px solid ${T.border}`}}><Label>{s.title}</Label></div>
+              {s.body}
+            </div>
+          ))}
         </div>
       )}
-
-      {/* Insights section */}
-      <section className="mt-16 grid grid-cols-1 md:grid-cols-12 gap-6">
-        <div className="md:col-span-4 bg-primary text-on-primary p-10 rounded-2xl flex flex-col justify-between">
-          <div className="space-y-2">
-            <span className="text-4xl opacity-50">✦</span>
-            <h4 className="text-3xl font-bold leading-tight">Your Wellness Journey</h4>
-            <p className="text-on-primary/70">Keep exploring to build your wellness habit.</p>
-          </div>
-          <div className="pt-8">
-            <div className="text-5xl font-black">{bookings.length > 0 ? `${bookings.length}` : "0"}</div>
-            <div className="text-sm font-bold uppercase tracking-widest opacity-60">Sessions booked</div>
-          </div>
-        </div>
-        <div className="md:col-span-8 bg-surface-container-highest p-10 rounded-2xl relative overflow-hidden">
-          <div className="relative z-10 space-y-4">
-            <h4 className="text-2xl font-bold text-primary">Recommended for you</h4>
-            <p className="text-on-surface-variant max-w-sm">Discover new experiences based on what you've enjoyed so far.</p>
-            <button onClick={()=>onSetView("explore")} className="bg-white text-primary px-8 py-3 rounded-full font-bold shadow-sm hover:shadow-md transition-shadow">Explore Matches</button>
-          </div>
-          <div className="absolute -right-12 -bottom-12 w-64 h-64 bg-primary/5 rounded-full blur-3xl"/>
-        </div>
-      </section>
     </div>
   );
 }
@@ -1167,236 +1025,183 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
 // ═══════════════════════════════════════════════════════════════
 function CreditsPage({ credits, onPurchase }) {
   const [customCr, setCustomCr] = useState(10);
-  const [pay, setPay]   = useState("card");
-  const [step, setStep] = useState(1);
-  const [card, setCard] = useState({number:"",expiry:"",cvc:"",name:""});
-  const [showPricing, setShowPricing] = useState(false);
+  const [pay,setPay]     = useState("card");
+  const [step,setStep]   = useState(1);
+  const [card,setCard]   = useState({number:"",expiry:"",cvc:"",name:""});
+  const [showPricing,setShowPricing] = useState(false);
 
   const fmtCard=v=>v.replace(/\D/g,"").slice(0,16).replace(/(.{4})/g,"$1 ").trim();
   const fmtExp=v=>{const d=v.replace(/\D/g,"").slice(0,4);return d.length>2?d.slice(0,2)+"/"+d.slice(2):d;};
   const expiryDate=()=>{const d=new Date();d.setMonth(d.getMonth()+6);return d.toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});};
-  const totalPrice = +(customCr * 5).toFixed(2);
-  const serviceFee = +(Math.min(totalPrice * 0.1, 5)).toFixed(2);
 
-  // Step indicator
-  const StepBar = () => (
-    <div className="flex items-center gap-2 mb-8">
+  function priceForCredits(n) {
+    return +(n * 5).toFixed(2);
+  }
+
+  const totalPrice = priceForCredits(customCr);
+  const perCredit  = (totalPrice / customCr).toFixed(2);
+  const saving = 0; // no blanket discounts — offers handled separately
+
+  const StepBar=()=>(
+    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:24}}>
       {[["1","Choose credits"],["2","Payment"],["3","Done"]].map(([n,l],i)=>(
-        <div key={n} className="flex items-center gap-2">
-          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${step>i?"bg-primary text-white":step===i+1?"bg-primary text-white":"bg-surface-container text-outline"}`}>{step>i+1?"✓":n}</div>
-          <span className={`text-xs font-medium ${step===i+1?"text-primary":"text-outline"}`}>{l}</span>
-          {i<2&&<div className={`w-8 h-px ${step>i+1?"bg-primary":"bg-outline-variant"}`}/>}
+        <div key={n} style={{display:"flex",alignItems:"center",gap:6}}>
+          <div style={{display:"flex",alignItems:"center",gap:5}}>
+            <div style={{width:20,height:20,borderRadius:"50%",background:step>i?T.sage:step===i+1?T.sage:T.border,color:step>=i+1?"#fff":T.stone2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontFamily:F.body,fontWeight:600,transition:"background .2s"}}>{step>i+1?"?":n}</div>
+            <span style={{fontFamily:F.body,fontSize:10,color:step===i+1?T.sage:T.stone2,fontWeight:step===i+1?600:300}}>{l}</span>
+          </div>
+          {i<2&&<div style={{width:24,height:1,background:step>i+1?T.sage:T.border,transition:"background .2s"}}/>}
         </div>
       ))}
     </div>
   );
 
   return (
-    <div className="pt-8 pb-24 px-6 max-w-5xl mx-auto">
-      {step===1&&(
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+    <div style={{maxWidth:600,margin:"0 auto",padding:"32px 28px 58px"}}>
 
-          {/* Left column */}
-          <div className="lg:col-span-7 space-y-6">
-            <header className="space-y-2">
-              <span className="text-xs font-bold tracking-widest uppercase text-primary">Wellness Wallet</span>
-              <h1 className="text-4xl font-extrabold tracking-tighter text-primary leading-none">Add Wello Credits</h1>
-              <p className="text-on-surface-variant text-base max-w-md leading-relaxed">Credits can be used for any class, gym, spa or adventure in the Wello marketplace. 1 credit = €5 value.</p>
-            </header>
+      {step===1&&(<>
+        <StepBar/>
 
-            {/* Current balance */}
-            <div className="bg-primary rounded-2xl p-6 relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full -mr-16 -mt-16"/>
-              <div className="relative z-10">
-                <p className="text-white/50 text-xs font-semibold tracking-widest uppercase mb-2">Your balance</p>
-                <p className="text-white text-5xl font-extrabold tracking-tighter leading-none">◈ {credits}</p>
-                <p className="text-white/40 text-xs mt-3">10% service fee per booking · max €5</p>
+        {/* Balance card */}
+        <div style={{background:`linear-gradient(138deg,${T.sage2},${T.sage})`,borderRadius:4,padding:"18px 22px",marginBottom:22,position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",right:-10,top:-10,width:90,height:90,borderRadius:"50%",background:"rgba(255,255,255,.05)"}}/>
+          <Label><span style={{color:"rgba(255,255,255,.5)"}}>Your balance</span></Label>
+          <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:38,fontWeight:700,color:"#fff",lineHeight:1,letterSpacing:"-1px"}}>◈ {credits}</div>
+          <div style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:300,marginTop:5}}>Credits expire 6 months · 10% service fee per booking (max €5)</div>
+        </div>
+
+        {/* Credit counter */}
+        <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:4,padding:"22px",marginBottom:16}}>
+          <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:14,fontWeight:700,color:T.ink,letterSpacing:"-0.3px",marginBottom:16}}>How many credits do you want?</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
+            <div style={{display:"flex",alignItems:"center",gap:0,border:`1.5px solid ${T.sage}`,borderRadius:3,overflow:"hidden"}}>
+              <button onClick={()=>setCustomCr(c=>Math.max(1,c-1))}
+                style={{width:44,height:44,background:T.sageXL,border:"none",color:T.sage,fontSize:20,fontFamily:F.body,cursor:"pointer",lineHeight:1}}
+                onMouseEnter={e=>e.target.style.background=T.sageL} onMouseLeave={e=>e.target.style.background=T.sageXL}>−</button>
+              <div style={{width:80,height:44,display:"flex",alignItems:"center",justifyContent:"center",borderLeft:`1px solid ${T.sageL}`,borderRight:`1px solid ${T.sageL}`}}>
+                <input
+                  type="number"
+                  min="1" max="200"
+                  value={customCr}
+                  onChange={e=>{const v=parseInt(e.target.value);if(!isNaN(v))setCustomCr(Math.min(200,Math.max(1,v)));}}
+                  style={{width:"100%",height:"100%",border:"none",outline:"none",textAlign:"center",fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,background:"transparent",letterSpacing:"-0.5px"}}
+                />
               </div>
+              <button onClick={()=>setCustomCr(c=>Math.min(200,c+1))}
+                style={{width:44,height:44,background:T.sageXL,border:"none",color:T.sage,fontSize:20,fontFamily:F.body,cursor:"pointer",lineHeight:1}}
+                onMouseEnter={e=>e.target.style.background=T.sageL} onMouseLeave={e=>e.target.style.background=T.sageXL}>+</button>
             </div>
-
-            {/* Credit counter */}
-            <div className="bg-surface-container-low p-8 rounded-2xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-48 h-48 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl"/>
-              <div className="relative z-10 flex flex-col items-center text-center">
-                <label className="text-on-surface-variant font-medium text-sm mb-6">How many credits?</label>
-                <div className="flex items-center gap-6 mb-8">
-                  <button onClick={()=>setCustomCr(c=>Math.max(1,c-1))}
-                    className="w-14 h-14 rounded-full bg-white flex items-center justify-center text-primary hover:scale-105 transition-transform shadow-sm text-2xl font-light border border-outline-variant/20">−</button>
-                  <div className="flex flex-col items-center">
-                    <input
-                      type="number" min="1" max="200" value={customCr}
-                      onChange={e=>{const v=parseInt(e.target.value);if(!isNaN(v))setCustomCr(Math.min(200,Math.max(1,v)));}}
-                      className="text-7xl font-extrabold text-primary tracking-tighter leading-none text-center w-32 bg-transparent border-none outline-none"/>
-                    <span className="text-primary/60 font-semibold tracking-widest uppercase text-xs mt-1">Credits</span>
-                  </div>
-                  <button onClick={()=>setCustomCr(c=>Math.min(200,c+1))}
-                    className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-white hover:scale-105 transition-transform shadow-lg text-2xl font-light">+</button>
-                </div>
-                {/* Quick add pills */}
-                <div className="flex flex-wrap justify-center gap-2">
-                  {[1,5,10,25].map(n=>(
-                    <button key={n} onClick={()=>setCustomCr(c=>Math.min(200,c+n))}
-                      className="px-5 py-2 rounded-full border border-outline-variant/30 text-on-surface-variant text-sm font-medium hover:bg-primary hover:text-white hover:border-primary transition-all">+{n}</button>
-                  ))}
-                  <button onClick={()=>setCustomCr(1)}
-                    className="px-5 py-2 rounded-full border border-outline-variant/20 text-outline text-sm hover:bg-surface-container transition-all">Reset</button>
-                </div>
-              </div>
-            </div>
-
-            {/* Info cards */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-surface-container-highest/50 p-5 rounded-xl">
-                <div className="text-primary text-xl mb-2">⏱</div>
-                <h4 className="font-bold text-primary text-sm mb-1">6 Month Validity</h4>
-                <p className="text-xs text-on-surface-variant">Credits expire 6 months from purchase date.</p>
-              </div>
-              <div className="bg-surface-container-highest/50 p-5 rounded-xl">
-                <div className="text-primary text-xl mb-2">◈</div>
-                <h4 className="font-bold text-primary text-sm mb-1">Flexible Booking</h4>
-                <p className="text-xs text-on-surface-variant">Use across any venue, class or experience.</p>
-              </div>
-            </div>
-
-            {/* How credits work — collapsible */}
-            <div className="bg-secondary-container/40 rounded-xl p-4">
-              <button onClick={()=>setShowPricing(p=>!p)} className="w-full flex justify-between items-center bg-transparent border-none cursor-pointer">
-                <span className="text-sm font-semibold text-on-secondary-container">How credits work · 1 credit = €5 value</span>
-                <span className="text-on-secondary-container text-sm">{showPricing?"↑":"↓"}</span>
-              </button>
-              {showPricing&&(
-                <div className="mt-4 pt-4 border-t border-outline-variant/20 space-y-2">
-                  {CREDIT_PRICING.map(r=>(
-                    <div key={r.cat} className="grid grid-cols-3 gap-2 py-2 border-b border-outline-variant/10 last:border-0">
-                      <div>
-                        <div className="text-xs font-semibold text-on-background">{r.cat}</div>
-                        <div className="text-xs text-outline">{r.example}</div>
-                      </div>
-                      <div className="text-xs font-semibold text-primary">{r.offPeak}</div>
-                      <div className="text-xs text-on-surface-variant">{r.peak}</div>
-                    </div>
-                  ))}
-                  <p className="text-xs text-outline mt-2">A 10% service fee (max €5) is charged per booking. Credits expire 6 months from purchase.</p>
-                </div>
-              )}
+            <div style={{textAlign:"right"}}>
+              <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:28,fontWeight:700,color:T.ink,letterSpacing:"-1px",lineHeight:1}}>€{totalPrice}</div>
+              <div style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,marginTop:3}}>€{perCredit} per credit</div>
             </div>
           </div>
 
-          {/* Right column — sticky order summary */}
-          <div className="lg:col-span-5 lg:sticky lg:top-28">
-            <div className="bg-white rounded-2xl p-8 shadow-[0_12px_32px_rgba(27,28,25,0.06)] border border-outline-variant/10">
-              <h3 className="text-xl font-bold text-primary mb-6 tracking-tight">Order Summary</h3>
-              <div className="space-y-5">
-                <div className="flex justify-between items-end">
-                  <div>
-                    <p className="text-on-surface-variant text-sm">Credits</p>
-                    <p className="text-primary font-semibold">{customCr} Wello Credits</p>
-                  </div>
-                  <p className="text-primary font-bold">€{totalPrice}</p>
-                </div>
-                <div className="flex justify-between items-center py-4 border-y border-outline-variant/10">
-                  <div>
-                    <p className="text-on-surface-variant text-sm">Unit price</p>
-                    <p className="text-primary text-sm italic">1 Credit = €5.00</p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-on-surface-variant">Service fee (10%, max €5)</span>
-                    <span className="text-primary font-medium">charged per booking</span>
-                  </div>
-                </div>
-                <div className="pt-5 border-t-2 border-primary/5">
-                  <div className="flex justify-between items-baseline mb-6">
-                    <span className="text-xl font-bold text-primary tracking-tight">Total</span>
-                    <div className="text-right">
-                      <span className="text-4xl font-extrabold text-primary tracking-tighter">€{totalPrice}</span>
-                      <p className="text-xs uppercase tracking-widest text-on-surface-variant mt-1">{customCr} credits</p>
-                    </div>
-                  </div>
-                  <button onClick={()=>setStep(2)}
-                    className="w-full bg-primary text-white py-4 rounded-full font-bold text-base hover:scale-[1.02] active:scale-95 transition-transform shadow-lg flex items-center justify-center gap-2">
-                    <span>Continue to Payment</span>
-                    <span>→</span>
-                  </button>
-                  <div className="mt-4 flex items-center justify-center gap-2 text-on-surface-variant text-xs">
-                    <span>🔒</span>
-                    <span>Secure encrypted checkout</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="mt-5 px-2">
-              <p className="text-xs text-on-surface-variant text-center">Credits expire on <strong className="text-primary">{expiryDate()}</strong></p>
-            </div>
+          {/* Quick add */}
+          <div style={{fontFamily:F.body,fontSize:9,color:T.stone2,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:8}}>Quick add</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {[1,5,10,25].map(n=>(
+              <button key={n} onClick={()=>setCustomCr(c=>Math.min(200,c+n))}
+                style={{padding:"5px 12px",background:T.bg,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:10,color:T.stone,cursor:"pointer",fontWeight:300}}
+                onMouseEnter={e=>{e.target.style.borderColor=T.sage;e.target.style.color=T.sage;}}
+                onMouseLeave={e=>{e.target.style.borderColor=T.border;e.target.style.color=T.stone;}}>+{n}</button>
+            ))}
+            <button onClick={()=>setCustomCr(1)}
+              style={{padding:"5px 12px",background:"transparent",border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:10,color:T.stone2,cursor:"pointer",fontWeight:300}}>Reset</button>
           </div>
         </div>
-      )}
 
-      {/* Step 2 — Payment */}
-      {step===2&&(
-        <div className="max-w-lg mx-auto">
-          <StepBar/>
-          <button onClick={()=>setStep(1)} className="flex items-center gap-1 text-outline text-sm mb-6 bg-transparent border-none cursor-pointer hover:text-primary transition-colors">← Back</button>
-          <div className="bg-primary rounded-2xl p-5 mb-6 flex justify-between items-center relative overflow-hidden">
-            <div className="absolute right-4 top-3 text-white/5 text-5xl font-bold">◈</div>
-            <div>
-              <p className="text-white/50 text-xs uppercase tracking-widest">Order summary</p>
-              <p className="text-white font-bold text-base mt-1">◈ {customCr} credits · Expires {expiryDate()}</p>
-            </div>
-            <p className="text-white text-2xl font-extrabold tracking-tighter">€{totalPrice}</p>
+        {/* How credits work */}
+        <div style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:3,padding:"12px 14px",marginBottom:18}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontFamily:F.body,fontSize:10,color:T.ochre,fontWeight:600}}>How credits work · 1 credit = €5 value</span>
+            <button onClick={()=>setShowPricing(p=>!p)} style={{background:"transparent",border:"none",color:T.ochre,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer",padding:0}}>{showPricing?"Hide ↑":"See pricing ↓"}</button>
           </div>
-          <h2 className="text-sm font-bold text-primary uppercase tracking-widest mb-4">Payment method</h2>
-          <div className="grid grid-cols-2 gap-3 mb-5">
-            {PAY.map(pm=>(
-              <div key={pm.id} onClick={()=>setPay(pm.id)}
-                className={`border rounded-xl p-4 cursor-pointer flex items-center gap-3 transition-all ${pay===pm.id?"border-primary bg-primary-fixed/30":"border-outline-variant/30 hover:border-primary/40"}`}>
-                <span className={`text-base font-bold ${pay===pm.id?"text-primary":"text-outline"}`}>{pm.id==="card"?"▬":pm.id==="apple"?"⌘":pm.id==="google"?"G":"₱"}</span>
-                <div>
-                  <p className={`text-sm font-semibold ${pay===pm.id?"text-primary":"text-on-background"}`}>{pm.label}</p>
-                  <p className="text-xs text-outline">{pm.sub}</p>
-                </div>
+          {showPricing&&(
+            <div style={{borderTop:`1px solid ${T.ochreL}`,marginTop:10,paddingTop:10}}>
+              <div style={{display:"grid",gridTemplateColumns:"1.4fr .8fr .8fr",gap:0,marginBottom:6}}>
+                {["","Off-peak","Peak"].map((h,i)=><div key={i} style={{fontFamily:F.body,fontSize:8,color:T.ochre,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",padding:"2px 0"}}>{h}</div>)}
               </div>
-            ))}
-          </div>
-          {pay==="card"&&(
-            <div className="bg-white rounded-2xl border border-outline-variant/20 p-6 space-y-4 mb-5">
-              {[{l:"Cardholder Name",k:"name",p:"Jane Smith",tf:v=>v},{l:"Card Number",k:"number",p:"4242 4242 4242 4242",tf:fmtCard}].map(f=>(
-                <div key={f.k}>
-                  <label className="text-xs font-bold uppercase tracking-widest text-outline mb-1 block">{f.l}</label>
-                  <input placeholder={f.p} value={card[f.k]} onChange={e=>setCard(p=>({...p,[f.k]:f.tf(e.target.value)}))}
-                    className="w-full border border-outline-variant/30 rounded-lg px-4 py-3 text-sm font-medium focus:outline-none focus:border-primary transition-colors bg-surface"/>
+              {CREDIT_PRICING.map(r=>(
+                <div key={r.cat} style={{display:"grid",gridTemplateColumns:"1.4fr .8fr .8fr",gap:0,padding:"6px 0",borderTop:`1px solid rgba(184,146,92,.15)`}}>
+                  <div><div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{r.cat}</div><div style={{fontFamily:F.body,fontSize:9,color:T.stone2,fontWeight:300}}>{r.example}</div></div>
+                  <div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600,alignSelf:"center"}}>{r.offPeak}</div>
+                  <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:400,alignSelf:"center"}}>{r.peak}</div>
                 </div>
               ))}
-              <div className="grid grid-cols-2 gap-4">
-                {[{l:"Expiry",k:"expiry",p:"MM/YY",tf:fmtExp},{l:"CVC",k:"cvc",p:"123",tf:v=>v.replace(/\D/g,"").slice(0,3)}].map(f=>(
-                  <div key={f.k}>
-                    <label className="text-xs font-bold uppercase tracking-widest text-outline mb-1 block">{f.l}</label>
-                    <input placeholder={f.p} value={card[f.k]} onChange={e=>setCard(p=>({...p,[f.k]:f.tf(e.target.value)}))}
-                      className="w-full border border-outline-variant/30 rounded-lg px-4 py-3 text-sm font-medium focus:outline-none focus:border-primary transition-colors bg-surface"/>
-                  </div>
-                ))}
-              </div>
+              <div style={{marginTop:9,fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,lineHeight:1.5}}>A 10% service fee (max €5) is charged per booking. Credits expire 6 months from purchase.</div>
             </div>
           )}
-          <button onClick={()=>{onPurchase({cr:customCr,price:totalPrice});setStep(3);}}
-            className="w-full bg-primary text-white py-4 rounded-full font-bold text-base hover:scale-[1.02] active:scale-95 transition-transform shadow-lg">
-            Pay €{totalPrice} →
-          </button>
         </div>
-      )}
 
-      {/* Step 3 — Confirmation */}
+        {/* Summary */}
+        <div style={{background:T.bg,borderRadius:3,padding:"12px 14px",marginBottom:18,border:`1px solid ${T.border}`}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div><div style={{fontFamily:F.body,fontSize:9,color:T.stone,marginBottom:1,fontWeight:300}}>Credits after purchase</div><div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>◈ {credits+customCr}</div></div>
+            <div style={{textAlign:"right"}}><div style={{fontFamily:F.body,fontSize:9,color:T.stone,marginBottom:1,fontWeight:300}}>Total</div><div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,letterSpacing:"-0.5px"}}>€{totalPrice}</div></div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:6,borderTop:`1px solid ${T.border}`,paddingTop:8}}>
+            <span style={{width:5,height:5,borderRadius:"50%",background:T.ochre,display:"inline-block",flexShrink:0}}/>
+            <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>These credits expire on <strong style={{fontWeight:600,color:T.ink}}>{expiryDate()}</strong></span>
+          </div>
+        </div>
+
+        <button onClick={()=>setStep(2)} style={{width:"100%",padding:12,background:T.sage,color:"#fff",border:"none",borderRadius:3,fontSize:12,fontFamily:F.body,fontWeight:600,cursor:"pointer",letterSpacing:".4px",transition:"background .15s"}}
+          onMouseEnter={e=>e.target.style.background=T.sage2} onMouseLeave={e=>e.target.style.background=T.sage}>
+          Continue to payment →
+        </button>
+      </>)}
+
+      {/* ── STEP 2: Payment ── */}
+      {step===2&&(<>
+        <StepBar/>
+        <button onClick={()=>setStep(1)} style={{display:"flex",alignItems:"center",gap:4,background:"transparent",border:"none",color:T.stone,fontFamily:F.body,fontSize:11,cursor:"pointer",marginBottom:18,padding:0,fontWeight:300}}>← Back</button>
+        <div style={{background:`linear-gradient(138deg,${T.sage2},${T.sage})`,borderRadius:3,padding:"13px 16px",marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center",position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",right:12,top:8,opacity:.08,fontSize:40,color:"#fff"}}>◈</div>
+          <div>
+            <Label><span style={{color:"rgba(255,255,255,.5)"}}>Order summary</span></Label>
+            <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:15,fontWeight:600,color:"#fff",letterSpacing:"-0.3px"}}>◈ {customCr} credits</div>
+            <div style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.5)",marginTop:2,fontWeight:300}}>Expires {expiryDate()}</div>
+          </div>
+          <div style={{textAlign:"right",flexShrink:0}}>
+            <div style={{fontFamily:F.body,fontSize:9,color:"rgba(255,255,255,.5)",marginBottom:2,fontWeight:300}}>Total</div>
+            <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:"#fff",letterSpacing:"-0.5px"}}>€{totalPrice}</div>
+          </div>
+        </div>
+        <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:14,fontWeight:600,color:T.ink,margin:"0 0 11px",letterSpacing:"-0.3px"}}>Payment method</h2>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8,marginBottom:18}}>
+          {PAY.map(pm=>(
+            <div key={pm.id} onClick={()=>setPay(pm.id)} style={{border:`1.5px solid ${pay===pm.id?T.sage:T.border}`,borderRadius:3,padding:"11px 13px",cursor:"pointer",background:pay===pm.id?T.sageXL:T.paper,display:"flex",alignItems:"center",gap:9,transition:"all .13s"}}>
+              <div style={{width:18,textAlign:"center",fontFamily:F.body,fontSize:pm.id==="google"?12:14,color:pay===pm.id?T.sage:T.stone,fontWeight:600,flexShrink:0}}>{pm.id==="card"?"▬":pm.id==="apple"?"⌘":pm.id==="google"?"G":"₱"}</div>
+              <div><div style={{fontFamily:F.body,fontSize:11,color:pay===pm.id?T.sage:T.ink,fontWeight:pay===pm.id?600:400}}>{pm.label}</div><div style={{fontFamily:F.body,fontSize:9,color:T.stone2,fontWeight:300}}>{pm.sub}</div></div>
+            </div>
+          ))}
+        </div>
+        {pay==="card"&&(
+          <div style={{background:T.paper,borderRadius:3,border:`1px solid ${T.border}`,padding:"15px",display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
+            {[{l:"Cardholder Name",k:"name",p:"Jane Smith",tf:v=>v},{l:"Card Number",k:"number",p:"4242 4242 4242 4242",tf:fmtCard}].map(f=>(
+              <div key={f.k}><FieldLabel>{f.l}</FieldLabel><input placeholder={f.p} value={card[f.k]} onChange={e=>setCard(p=>({...p,[f.k]:f.tf(e.target.value)}))} style={INP} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=T.border}/></div>
+            ))}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {[{l:"Expiry",k:"expiry",p:"MM/YY",tf:fmtExp},{l:"CVC",k:"cvc",p:"123",tf:v=>v.replace(/\D/g,"").slice(0,3)}].map(f=>(
+                <div key={f.k}><FieldLabel>{f.l}</FieldLabel><input placeholder={f.p} value={card[f.k]} onChange={e=>setCard(p=>({...p,[f.k]:f.tf(e.target.value)}))} style={INP} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=T.border}/></div>
+              ))}
+            </div>
+          </div>
+        )}
+        <button onClick={()=>{onPurchase({cr:customCr,price:totalPrice});setStep(3);}} style={{width:"100%",padding:12,background:T.sage,color:"#fff",border:"none",borderRadius:3,fontSize:12,fontFamily:F.body,fontWeight:600,cursor:"pointer",letterSpacing:".4px"}}>
+          Pay €{totalPrice} →
+        </button>
+      </>)}
+
+      {/* ── STEP 3: Confirmation ── */}
       {step===3&&(
-        <div className="max-w-md mx-auto text-center py-16">
-          <div className="w-16 h-16 bg-primary-fixed rounded-full flex items-center justify-center mx-auto mb-6 text-3xl">✓</div>
-          <h1 className="text-3xl font-extrabold tracking-tighter text-primary mb-3">Credits added!</h1>
-          <p className="text-on-surface-variant mb-1">◈ {customCr} credits added to your account.</p>
-          <p className="text-outline text-sm mb-8">They expire on {expiryDate()}.</p>
-          <button onClick={()=>setStep(1)}
-            className="bg-primary text-white px-8 py-3 rounded-full font-bold hover:scale-105 transition-transform">
-            Buy more credits
-          </button>
+        <div style={{textAlign:"center",padding:"32px 0"}}>
+          <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:24}}>✓</div>
+          <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 10px"}}>Credits added!</h1>
+          <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 6px"}}>◈ {customCr} credits have been added to your account.</p>
+          <p style={{fontFamily:F.body,fontSize:12,color:T.stone2,fontWeight:300,margin:"0 0 28px"}}>They expire on {expiryDate()}.</p>
+          <button onClick={()=>setStep(1)} style={{padding:"10px 24px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:"pointer"}}>Buy more credits</button>
         </div>
       )}
     </div>
@@ -2197,35 +2002,41 @@ export default function App() {
       </div>}
       {bizPreview&&<BusinessPortalDashboard onExit={()=>setBizPreview(false)}/>}
 
-      <div className={`min-h-screen bg-surface${bizPreview?" hidden":""}`}>
+      <div style={{minHeight:"100vh",background:T.bg,display:bizPreview?"none":"block"}}>
+        {/* NAV — Wello brand identity */}
+        <header style={{background:"rgba(251,249,244,0.82)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:`1px solid rgba(195,200,188,0.25)`,position:"sticky",top:0,zIndex:200}}>
+          <div style={{maxWidth:1140,margin:"0 auto",padding:"0 28px",display:"flex",alignItems:"center",justifyContent:"space-between",height:58}}>
 
-        {/* NAV — Stitch glassmorphism */}
-        <nav className="fixed top-0 w-full z-50 bg-[#FBF9F4]/80 backdrop-blur-xl transition-all duration-300" style={{borderBottom:"1px solid rgba(195,200,188,0.2)"}}>
-          <div className="flex justify-between items-center px-8 py-4 max-w-7xl mx-auto">
-            <div className="flex items-center gap-12">
-              <a onClick={()=>setView("home")} className="text-2xl font-bold tracking-tighter text-primary cursor-pointer select-none">wello</a>
-              <div className="hidden md:flex items-center gap-8">
-                {[{id:"explore",l:"Explore"},{id:"credits",l:"Credits"},{id:"biz-portal",l:"For Business"}].map(n=>(
-                  <a key={n.id} onClick={()=>setView(n.id)}
-                    className={`font-medium tracking-tight cursor-pointer transition-colors duration-300 ${view===n.id?"text-primary font-bold border-b-2 border-primary pb-1":"text-on-surface-variant hover:text-primary"}`}>
-                    {n.l}
-                  </a>
-                ))}
-              </div>
+            {/* F1 wordmark — sage name, ochre descriptor */}
+            <div onClick={()=>setView("home")} style={{cursor:"pointer",userSelect:"none",flexShrink:0}}>
+              <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:24,fontWeight:800,color:T.sage,lineHeight:1,letterSpacing:"-2px",fontFamily:"'Manrope',sans-serif"}}>wello</div>
+              <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:7,fontWeight:400,color:T.sageL,letterSpacing:"4px",marginTop:1,textTransform:"uppercase"}}>the wellness pass</div>
             </div>
-            <div className="flex items-center gap-5">
-              <div className="hidden lg:flex items-center bg-surface-container rounded-full px-4 py-2 gap-2 text-on-surface-variant">
-                <span className="text-sm">🔍</span>
-                <span className="text-sm font-medium">Search</span>
+
+            {/* Nav links */}
+            <nav style={{display:"flex",alignItems:"center",gap:2}}>
+              {NAV.map(n=>(
+                <button key={n.id} onClick={()=>setView(n.id)}
+                  style={{padding:"5px 13px",border:"none",background:view===n.id?T.sageXL:"transparent",color:view===n.id?T.sage:T.stone,borderRadius:2,fontFamily:"'Jost',system-ui,sans-serif",fontSize:11,cursor:"pointer",fontWeight:view===n.id?600:300,letterSpacing:".3px",transition:"all .13s",outline:view===n.id?`1px solid ${T.sageL}`:"1px solid transparent"}}>
+                  {n.l}
+                </button>
+              ))}
+
+              {/* G1 pill credit chip — sage pill, ochre token badge */}
+              <div onClick={()=>setView("credits")} style={{position:"relative",marginLeft:8,cursor:"pointer"}}>
+                <div style={{display:"flex",alignItems:"center",gap:5,background:T.sage,borderRadius:50,padding:"6px 14px 6px 12px",transition:"background .15s"}}
+                  onMouseEnter={e=>e.currentTarget.style.background=T.sage2}
+                  onMouseLeave={e=>e.currentTarget.style.background=T.sage}>
+                  <span style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:12,color:"#fff",fontWeight:700}}>◈ {credits}</span>
+                </div>
+                {/* ochre token badge */}
+                <div style={{position:"absolute",top:-5,right:-5,width:16,height:16,borderRadius:"50%",background:T.ochre,display:"flex",alignItems:"center",justifyContent:"center",border:`1.5px solid ${T.paper}`}}>
+                  <span style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:7,fontWeight:700,color:"#fff"}}>+</span>
+                </div>
               </div>
-              <button onClick={()=>setView("profile")} className="text-primary hover:opacity-80 transition-opacity text-xl">🔔</button>
-              <div onClick={()=>setView("credits")} className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-full cursor-pointer hover:opacity-90 transition-opacity">
-                <span className="font-bold text-sm">◈ {credits}</span>
-              </div>
-              <div onClick={()=>setView("profile")} className="w-9 h-9 rounded-full bg-surface-container-highest flex items-center justify-center cursor-pointer font-bold text-sm text-primary">J</div>
-            </div>
+            </nav>
           </div>
-        </nav>
+        </header>
 
         {/* PAGES */}
         {view==="home"       &&<HomePage listings={listings} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds}/>}
@@ -2235,20 +2046,32 @@ export default function App() {
         {view==="business"   &&<BusinessPage isBiz={true} onSetView={setView} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
         {view==="credits"    &&<CreditsPage credits={credits} onPurchase={onPurchase}/>}
 
-        {/* FOOTER — Stitch style */}
-        <footer className="w-full py-12 bg-[#F5F3EE] border-t border-[#C3C8BC]/20">
-          <div className="flex flex-col md:flex-row justify-between items-start px-12 max-w-7xl mx-auto gap-8">
-            <div className="flex flex-col gap-3">
-              <span className="font-bold text-[#213C18] text-xl tracking-tighter">wello</span>
-              <p className="text-[#43483F] text-sm leading-relaxed max-w-xs">© 2026 Wello. Our Sustainability Commitment.</p>
+        <footer style={{background:"#1B1C19",padding:"40px 28px 28px"}}>
+          <div style={{maxWidth:1140,margin:"0 auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:24,marginBottom:32}}>
+              <div>
+                <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:22,fontWeight:800,color:T.sage,lineHeight:1,letterSpacing:"-1px"}}>wello</div>
+                <div style={{fontFamily:F.body,fontSize:7,fontWeight:400,color:T.sageL,letterSpacing:"4px",marginTop:4,textTransform:"uppercase"}}>the wellness pass</div>
+                <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,marginTop:12,maxWidth:240,lineHeight:1.7}}>Your pass to the best wellness experiences. Committed to giving back to the places we operate.</p>
+              </div>
+              <div style={{display:"flex",gap:48,flexWrap:"wrap"}}>
+                <div>
+                  <div style={{fontFamily:F.body,fontSize:9,color:T.stone2,letterSpacing:"2px",textTransform:"uppercase",marginBottom:12,fontWeight:600}}>Platform</div>
+                  {["Explore","Credits","For Business","Our Mission"].map(l=>(
+                    <div key={l} style={{fontFamily:F.body,fontSize:11,color:T.stone,cursor:"pointer",fontWeight:300,marginBottom:8,letterSpacing:".2px"}}>{l}</div>
+                  ))}
+                </div>
+                <div>
+                  <div style={{fontFamily:F.body,fontSize:9,color:T.stone2,letterSpacing:"2px",textTransform:"uppercase",marginBottom:12,fontWeight:600}}>Legal</div>
+                  {["Privacy","Terms","Cookie Policy","Contact"].map(l=>(
+                    <div key={l} style={{fontFamily:F.body,fontSize:11,color:T.stone,cursor:"pointer",fontWeight:300,marginBottom:8,letterSpacing:".2px"}}>{l}</div>
+                  ))}
+                </div>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-8">
-              {["Privacy","Terms","Marketplace","Our Mission","Contact"].map(l=>(
-                <a key={l} className="text-[#43483F] text-sm hover:underline decoration-2 underline-offset-4 opacity-80 hover:opacity-100 transition-opacity cursor-pointer">{l}</a>
-              ))}
-            </div>
-            <div className="flex gap-4">
-              <button className="w-10 h-10 rounded-full border border-outline-variant/30 flex items-center justify-center hover:bg-surface-container transition-colors text-sm">🌐</button>
+            <div style={{borderTop:"1px solid rgba(195,200,188,0.15)",paddingTop:20,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+              <div style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300}}>© 2026 Wello. Our Sustainability Commitment.</div>
+              <div style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300}}>hello@wello-wellness.com</div>
             </div>
           </div>
         </footer>
@@ -2259,17 +2082,24 @@ export default function App() {
       <SyncEngine listings={listings} onUpdate={onSyncUpdate}/>
       <Chatbot listings={listings} credits={credits} bookings={bookings} onSelectBiz={onSelect}/>
 
-      {/* Mobile bottom nav — Stitch Destination Rule */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-surface/95 backdrop-blur-lg border-t border-outline-variant/10 px-6 py-3 z-50">
-        <div className="flex justify-between items-center">
-          {[{id:"home",icon:"🏠",l:"Home"},{id:"explore",icon:"🧭",l:"Explore"},{id:"credits",icon:"◈",l:"Credits"},{id:"profile",icon:"👤",l:"Profile"}].map(({id,icon,l})=>(
-            <button key={id} onClick={()=>setView(id)} className={`flex flex-col items-center gap-1 bg-transparent border-none cursor-pointer ${view===id?"text-primary":"text-on-surface-variant"}`}>
-              <span className="text-xl">{icon}</span>
-              <span className={`text-[10px] font-medium ${view===id?"font-bold":""}`}>{l}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      {/* Mobile bottom nav — Stitch "Destination Rule" */}
+      <nav style={{position:"fixed",bottom:0,left:0,right:0,zIndex:300,background:"rgba(251,249,244,0.92)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"1px solid rgba(195,200,188,0.25)",padding:"8px 0 calc(8px + env(safe-area-inset-bottom))",display:"flex",justifyContent:"space-around",alignItems:"center"}}
+        className="md-hide">
+        <style>{`.md-hide { display: flex; } @media (min-width: 768px) { .md-hide { display: none !important; } }`}</style>
+        {[
+          {id:"home",    icon:"⌂", label:"Home"},
+          {id:"explore", icon:"⊞", label:"Explore"},
+          {id:"credits", icon:"◈", label:"Credits"},
+          {id:"profile", icon:"○", label:"Profile"},
+          {id:"biz-portal", icon:"⊕", label:"Business"},
+        ].map(({id,icon,label})=>(
+          <button key={id} onClick={()=>setView(id)}
+            style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,background:"transparent",border:"none",cursor:"pointer",padding:"4px 12px",minWidth:56}}>
+            <span style={{fontSize:18,color:view===id?T.sage:T.stone2,lineHeight:1}}>{icon}</span>
+            <span style={{fontFamily:F.body,fontSize:9,color:view===id?T.sage:T.stone2,fontWeight:view===id?700:400,letterSpacing:".3px"}}>{label}</span>
+          </button>
+        ))}
+      </nav>
     </>
   );
 }
