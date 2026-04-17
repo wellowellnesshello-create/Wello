@@ -11,7 +11,7 @@ function SEO({ title, description, path="" }) {
       if(!el){ el=document.createElement("meta"); prop?el.setAttribute("property",name):el.setAttribute("name",name); document.head.appendChild(el); }
       el.setAttribute("content", content);
     };
-    const desc = description || "Wello is the wellness pass for island living. Book studio classes, gym access, hotel pools, spa treatments and outdoor adventures wherever you are.";
+    const desc = description || "Wello is your wellness pass. Book studio classes, gym access, hotel pools, spa treatments and outdoor adventures wherever you are.";
     const url = "https://wello-seven.vercel.app" + path;
     setMeta("description", desc);
     setMeta("keywords", "wellness pass, studio classes, yoga, pilates, gym day pass, spa, outdoor adventures, hotel pool, island wellness, ClassPass alternative");
@@ -30,7 +30,7 @@ function SEO({ title, description, path="" }) {
       "@context":"https://schema.org",
       "@type":"WebSite",
       "name":"Wello",
-      "description":"Mallorca\'s first wellness credit pass",
+      "description":"Your wellness pass for the good life",
       "url":"https://wello-seven.vercel.app",
       "potentialAction":{ "@type":"SearchAction", "target":"https://wello-seven.vercel.app/?q={search_term_string}", "query-input":"required name=search_term_string" }
     });
@@ -81,7 +81,7 @@ const T = {
 // ─── Credit system ────────────────────────────────────────────────────────────
 // 1 credit = €5 face value. Service fee: €2.50 per booking.
 // Bundles sold at a discount — larger bundles = better value per credit.
-// Credits expire 6 months from purchase.
+// Your pass is valid for 6 months from top-up.
 const BUNDLES = [
   { id:"wellolife", name:"Wello Life", cr:50, price:237.50, fullPrice:250, desc:"For those who make wellness part of island life.", badge:"5% off", popular:true },
 ];
@@ -117,7 +117,7 @@ const INTEGRATIONS = [
   { id:"ical",       name:"iCal Feed",   desc:"Any calendar, 15-min sync",    auth:"Feed URL",    col:T.ochre },
   { id:"custom",     name:"Custom API",  desc:"Your own booking system",      auth:"Bearer Token",col:T.stone },
 ];
-const CATS = ["All","Yoga","Pilates","Surfing","Paddle Surfing","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","HIIT","Crossfit","Tennis","Padel","Horse Riding","Meditation","Sound Healing","Massage & Spa","Cold Water Therapy","Breathwork","Nutrition & Wellness","Dance","Martial Arts","Other"];
+const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","HIIT","Crossfit","Tennis","Padel","Horse Riding","Meditation","Sound Healing","Massage & Spa","Cold Water Therapy","Breathwork","Nutrition & Wellness","Dance","Martial Arts","Other"];
 const LOCS = ["All Mallorca","Palma","Sóller","Deià","Pollença","Alcúdia","Santanyí","Valldemossa"];
 const SYNC = {1:"Mindbody",2:"Acuity",3:"Acuity",4:"FareHarbor",5:"Custom API",6:"Mindbody",7:"Gympass",8:"iCal",9:"Custom API"};
 
@@ -206,64 +206,176 @@ const INP = {width:"100%",padding:"9px 11px",border:`1px solid ${T.border}`,bord
 
 // ─── Booking Modal ────────────────────────────────────────────────────────────
 function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) {
-  const [step,setSt]=useState(1);
-  const [form,setForm]=useState({name:"",email:"",guests:1});
-  const cost = biz.cr * form.guests, canAfford = credits >= cost, avail = slot.spots - slot.booked;
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  const [step, setSt] = useState(1);
+  const [myName, setMyName] = useState("");
+  const [myEmail, setMyEmail] = useState("");
+  const [guests, setGuests] = useState([]); // [{type:"friend"|"new", id, name, email}]
+  const [newEmail, setNewEmail] = useState("");
+  const avail = slot.spots - slot.booked;
+  const totalPeople = 1 + guests.length;
+  const cost = biz.cr * totalPeople;
+  const canAfford = credits >= cost;
+  const canAddMore = totalPeople < avail;
+
+  const FRIENDS_LIST = [
+    { id:1, init:"AK", name:"Anna K.",   email:"anna@example.com" },
+    { id:2, init:"MT", name:"Marcus T.", email:"marcus@example.com" },
+    { id:3, init:"LM", name:"Léa M.",    email:"lea@example.com" },
+  ];
+
+  function addFriend(f) {
+    if (guests.find(g=>g.id===f.id)) return;
+    if (!canAddMore) return;
+    setGuests(p=>[...p, {type:"friend", id:f.id, name:f.name, email:f.email}]);
+  }
+
+  function addNewGuest() {
+    if (!newEmail.trim() || !canAddMore) return;
+    setGuests(p=>[...p, {type:"new", id:Date.now(), name:newEmail, email:newEmail}]);
+    setNewEmail("");
+  }
+
+  function removeGuest(id) {
+    setGuests(p=>p.filter(g=>g.id!==id));
+  }
+
   return (
-    <div style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(30,27,21,.72)",backdropFilter:"blur(5px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
-      <div style={{background:T.paper,borderRadius:5,maxWidth:430,width:"100%",overflow:"hidden",boxShadow:"0 28px 70px rgba(0,0,0,.22)",animation:"su .28s ease"}} onClick={e=>e.stopPropagation()}>
-        <div style={{background:T.sage,padding:"18px 22px"}}>
-          <div style={{display:"flex",justifyContent:"space-between"}}>
-            <div><Label><span style={{color:"rgba(255,255,255,.5)"}}>Reserve</span></Label>
-              <h2 style={{color:"#fff",margin:0,fontFamily:F.display,fontSize:19,fontWeight:400}}>{slot.name}</h2>
-              <p style={{color:"rgba(255,255,255,.65)",margin:"2px 0 0",fontSize:11,fontFamily:F.body,fontWeight:300}}>{biz.name} · {fd(slot.date)} · {slot.time}</p>
-            </div>
-            <button onClick={onClose} style={{background:"rgba(255,255,255,.15)",border:"none",color:"#fff",width:28,height:28,borderRadius:3,cursor:"pointer",fontSize:17,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-          </div>
-          <div style={{display:"flex",gap:16,marginTop:12}}>
-            {[["Cost",null],["Available",`${avail} spots`],["Duration",slot.dur]].map(([k,v])=>(
-              <div key={k}><div style={{color:"rgba(255,255,255,.45)",fontSize:8,textTransform:"uppercase",letterSpacing:"1.5px",fontFamily:F.body,marginBottom:3}}>{k}</div>
-              {k==="Cost"?<Cr n={biz.cr} size="sm"/>:<div style={{color:"#fff",fontSize:12,fontWeight:600,fontFamily:F.body}}>{v}</div>}</div>
-            ))}
-          </div>
-        </div>
-        {step===1?(
-          <div style={{padding:"16px 22px"}}>
-            <div style={{background:canAfford?T.sageXL:T.clayXL,border:`1px solid ${canAfford?T.sageL:T.clayL}`,borderRadius:2,padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:13}}>
-              <div><div style={{fontFamily:F.body,fontSize:8,letterSpacing:"1.5px",textTransform:"uppercase",color:canAfford?T.sage:T.clay,marginBottom:2}}>Balance</div>
-              <div style={{fontFamily:F.display,fontSize:17,color:T.ink,fontWeight:400}}>◈ {credits}</div></div>
-              {!canAfford&&<button onClick={onBuyCredits} style={{padding:"5px 12px",background:T.ochre,color:"#fff",border:"none",borderRadius:2,fontSize:10,fontFamily:F.body,fontWeight:600,cursor:"pointer"}}>Add Credits</button>}
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:10}}>
-              {[{l:"Name",k:"name",t:"text",p:"Your full name"},{l:"Email",k:"email",t:"email",p:"you@example.com"}].map(f=>(
-                <div key={f.k}><FieldLabel>{f.l}</FieldLabel><input type={f.t} placeholder={f.p} value={form[f.k]} onChange={e=>setForm(p=>({...p,[f.k]:e.target.value}))} style={INP} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=T.border}/></div>
-              ))}
-              <div>
-                <FieldLabel>Guests (including yourself)</FieldLabel>
-                <select value={form.guests} onChange={e=>setForm(p=>({...p,guests:+e.target.value}))} style={{...INP}}>
-                  {Array.from({length:Math.min(avail,4)},(_,i)=>i+1).map(n=>(
-                    <option key={n} value={n}>{n===1?"Just me":`Me + ${n-1} friend${n>2?"s":""}`}</option>
-                  ))}
-                </select>
-                {form.guests>1&&<p style={{fontFamily:F.body,fontSize:10,color:T.stone,margin:"4px 0 0",fontWeight:300}}>You can share your booking confirmation with friends to coordinate.</p>}
+    <div style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(27,28,25,0.75)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
+      <div style={{background:"#fff",borderRadius:20,maxWidth:460,width:"100%",overflow:"hidden",boxShadow:"0 32px 80px rgba(0,0,0,0.22)",animation:"su .28s ease"}} onClick={e=>e.stopPropagation()}>
+
+        {step===1&&(
+          <>
+            {/* Header */}
+            <div style={{background:"#213C18",padding:"20px 24px",position:"relative"}}>
+              <button onClick={onClose} style={{position:"absolute",top:14,right:14,background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",width:28,height:28,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+              <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",letterSpacing:"2px",textTransform:"uppercase",margin:"0 0 6px",fontWeight:600}}>Reserve your spot</p>
+              <h2 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.5px"}}>{slot.name}</h2>
+              <p style={{fontFamily:F2,fontSize:13,color:"rgba(255,255,255,0.65)",margin:"0 0 14px"}}>{biz.name} · {fd(slot.date)} · {slot.time} · {slot.dur}</p>
+              <div style={{display:"flex",gap:16}}>
+                {[["Pass",`◈ ${biz.cr} per person`],["Available",`${avail} spots`]].map(([k,v])=>(
+                  <div key={k}>
+                    <p style={{fontFamily:F2,fontSize:9,color:"rgba(255,255,255,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>{k}</p>
+                    <p style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{v}</p>
+                  </div>
+                ))}
               </div>
             </div>
-            <div style={{marginTop:11,background:T.bg,borderRadius:2,padding:"9px 12px",border:`1px solid ${T.border}`}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}><span style={{fontFamily:F.body,fontSize:11,color:T.stone}}>{form.guests} × ◈ {biz.cr}</span><span style={{fontFamily:F.display,fontSize:17,color:T.ink,fontWeight:400}}>◈ {cost}</span></div>
-              <div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontFamily:F.body,fontSize:10,color:T.stone}}>Remaining</span><span style={{fontFamily:F.body,fontSize:11,color:canAfford?T.sage:T.clay,fontWeight:600}}>{canAfford?`◈ ${credits-cost}`:"Insufficient"}</span></div>
+
+            <div style={{padding:"20px 24px",maxHeight:"65vh",overflowY:"auto"}}>
+              {/* Balance */}
+              <div style={{background:canAfford?"#F5F3EE":"#FFF5F5",borderRadius:10,padding:"10px 14px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <p style={{fontFamily:F2,fontSize:9,color:"#74796E",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>Your balance</p>
+                  <p style={{fontFamily:F2,fontSize:18,fontWeight:800,color:"#213C18",margin:0,letterSpacing:"-0.5px"}}>◈ {credits}</p>
+                </div>
+                {!canAfford
+                  ? <button onClick={onBuyCredits} style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"8px 16px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>Add Credits</button>
+                  : <p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:0}}>◈ {credits-cost} remaining</p>
+                }
+              </div>
+
+              {/* Your details */}
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Your details</p>
+              <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:20}}>
+                {[{l:"Name",v:myName,set:setMyName,p:"Your full name"},{l:"Email",v:myEmail,set:setMyEmail,p:"you@example.com",t:"email"}].map(f=>(
+                  <div key={f.l}>
+                    <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:4}}>{f.l}</label>
+                    <input type={f.t||"text"} placeholder={f.p} value={f.v} onChange={e=>f.set(e.target.value)}
+                      style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s"}}
+                      onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  </div>
+                ))}
+              </div>
+
+              {/* Add friends */}
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Bring friends <span style={{fontFamily:F2,fontSize:10,color:"#74796E",fontWeight:400,letterSpacing:0,textTransform:"none"}}>— optional</span></p>
+
+              {/* Friends list */}
+              <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+                {FRIENDS_LIST.map(f=>{
+                  const added = guests.find(g=>g.id===f.id);
+                  return (
+                    <div key={f.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:added?"rgba(33,60,24,0.06)":"#F5F3EE",borderRadius:10,border:added?"1px solid rgba(33,60,24,0.15)":"1px solid transparent",transition:"all .15s"}}>
+                      <div style={{width:32,height:32,borderRadius:"50%",background:"#213C18",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:11,fontWeight:700,color:"#fff",flexShrink:0}}>{f.init}</div>
+                      <div style={{flex:1}}>
+                        <p style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#1B1C19",margin:0}}>{f.name}</p>
+                        <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>{f.email}</p>
+                      </div>
+                      <button onClick={()=>added?removeGuest(f.id):addFriend(f)}
+                        style={{width:28,height:28,borderRadius:"50%",border:"none",background:added?"#213C18":"rgba(33,60,24,0.1)",color:added?"#fff":"#213C18",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,transition:"all .15s"}}>
+                        {added?"−":"+"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Add by email */}
+              <div style={{display:"flex",gap:8,marginBottom:20}}>
+                <input type="email" placeholder="Friend's email address" value={newEmail} onChange={e=>setNewEmail(e.target.value)}
+                  onKeyDown={e=>e.key==="Enter"&&addNewGuest()}
+                  style={{flex:1,border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:13,color:"#1B1C19",outline:"none",background:"#FBF9F4",transition:"border-color .15s"}}
+                  onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                <button onClick={addNewGuest} disabled={!newEmail.trim()||!canAddMore}
+                  style={{padding:"10px 16px",background:newEmail.trim()&&canAddMore?"#213C18":"#E4E2DD",color:newEmail.trim()&&canAddMore?"#fff":"#74796E",border:"none",borderRadius:8,fontFamily:F2,fontSize:13,fontWeight:700,cursor:newEmail.trim()&&canAddMore?"pointer":"not-allowed",transition:"all .15s",whiteSpace:"nowrap"}}>
+                  + Add
+                </button>
+              </div>
+
+              {/* Added guests list */}
+              {guests.length>0&&(
+                <div style={{background:"#F5F3EE",borderRadius:10,padding:"10px 14px",marginBottom:16}}>
+                  <p style={{fontFamily:F2,fontSize:10,color:"#74796E",fontWeight:600,margin:"0 0 8px",letterSpacing:"1px",textTransform:"uppercase"}}>Booking for {totalPeople} people</p>
+                  {guests.filter(g=>g.type==="new").map(g=>(
+                    <div key={g.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                      <p style={{fontFamily:F2,fontSize:12,color:"#1B1C19",margin:0}}>📧 {g.email} <span style={{color:"#74796E",fontSize:11}}>(invite will be sent)</span></p>
+                      <button onClick={()=>removeGuest(g.id)} style={{background:"transparent",border:"none",color:"#74796E",cursor:"pointer",fontSize:16}}>×</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Order summary */}
+              <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 14px",marginBottom:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                  <span style={{fontFamily:F2,fontSize:13,color:"#74796E"}}>{totalPeople} × ◈ {biz.cr} credits</span>
+                  <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>◈ {cost}</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid rgba(195,200,188,0.3)",paddingTop:6}}>
+                  <span style={{fontFamily:F2,fontSize:13,color:"#74796E"}}>Balance after</span>
+                  <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:canAfford?"#213C18":"#e05c5c"}}>{canAfford?`◈ ${credits-cost}`:"Insufficient credits"}</span>
+                </div>
+              </div>
+
+              <button onClick={()=>{if(myName&&myEmail&&canAfford){onConfirm({biz,slot,form:{name:myName,email:myEmail,guests:totalPeople},cost});setSt(2);}}}
+                disabled={!myName||!myEmail||!canAfford}
+                style={{width:"100%",padding:"16px 0",borderRadius:999,background:myName&&myEmail&&canAfford?"#213C18":"#E4E2DD",color:myName&&myEmail&&canAfford?"#fff":"#74796E",border:"none",fontFamily:F2,fontSize:15,fontWeight:700,cursor:myName&&myEmail&&canAfford?"pointer":"not-allowed",transition:"all .15s",boxShadow:myName&&myEmail&&canAfford?"0 4px 14px rgba(33,60,24,0.2)":"none"}}>
+                {!canAfford?"Insufficient Credits":`Confirm · ◈ ${cost} credits`}
+              </button>
             </div>
-            <button onClick={()=>{onConfirm({biz,slot,form,cost});setSt(2);}} disabled={!form.name||!form.email||!canAfford}
-              style={{width:"100%",marginTop:11,padding:11,background:!form.name||!form.email||!canAfford?T.border:T.sage,color:!form.name||!form.email||!canAfford?T.stone:"#fff",border:"none",borderRadius:3,fontSize:12,fontFamily:F.body,fontWeight:600,cursor:!form.name||!form.email||!canAfford?"not-allowed":"pointer",letterSpacing:".4px"}}>
-              {!canAfford?"Insufficient Credits":"Confirm · ◈ "+cost}
-            </button>
-          </div>
-        ):(
-          <div style={{padding:"42px 22px",textAlign:"center"}}>
-            <div style={{width:48,height:48,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:20,color:T.sage}}>✓</div>
-            <h2 style={{fontFamily:F.display,fontSize:19,color:T.ink,margin:"0 0 4px",fontWeight:400}}>Booking confirmed</h2>
-            <p style={{fontFamily:F.body,color:T.stone,fontSize:12,fontWeight:300}}>{slot.name} · {biz.name}</p>
-            <div style={{marginTop:11,background:T.bg,borderRadius:2,padding:"7px 13px",display:"inline-block",border:`1px solid ${T.border}`}}><span style={{fontFamily:F.body,fontSize:11,color:T.stone}}>◈ {cost} used · balance ◈ {credits-cost}</span></div>
-            <br/><button onClick={onClose} style={{marginTop:16,padding:"8px 22px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontSize:11,fontFamily:F.body,fontWeight:600,cursor:"pointer"}}>Done</button>
+          </>
+        )}
+
+        {step===2&&(
+          <div style={{padding:"48px 32px",textAlign:"center"}}>
+            <div style={{width:64,height:64,background:"#CAECBA",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>✓</div>
+            <h2 style={{fontFamily:F2,fontSize:22,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.5px"}}>Booking confirmed!</h2>
+            <p style={{fontFamily:F2,fontSize:14,color:"#74796E",margin:"0 0 4px"}}>{slot.name} · {biz.name}</p>
+            <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 20px"}}>{fd(slot.date)} · {slot.time}</p>
+            {guests.filter(g=>g.type==="new").length>0&&(
+              <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 16px",marginBottom:20,textAlign:"left"}}>
+                <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#213C18",margin:"0 0 6px"}}>📧 Invite emails sent to:</p>
+                {guests.filter(g=>g.type==="new").map(g=>(
+                  <p key={g.id} style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:"0 0 2px"}}>{g.email}</p>
+                ))}
+              </div>
+            )}
+            <div style={{background:"#F5F3EE",borderRadius:10,padding:"10px 16px",marginBottom:24,display:"inline-block"}}>
+              <span style={{fontFamily:F2,fontSize:13,color:"#74796E"}}>◈ {cost} used · balance ◈ {credits-cost}</span>
+            </div>
+            <br/>
+            <button onClick={onClose} style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"12px 32px",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
           </div>
         )}
       </div>
@@ -273,57 +385,128 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) 
 
 // ─── Business Panel ───────────────────────────────────────────────────────────
 function BizPanel({ biz, onClose, onBook }) {
-  const [selDate,setSel]=useState(null);
-  const dates=[...new Set(biz.slots.map(s=>s.date))].sort();
-  const slots=selDate?biz.slots.filter(s=>s.date===selDate):biz.slots;
-  const sys=SYNC[biz.id];
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  const dates = [...new Set(biz.slots.map(s=>s.date))].sort();
+  const [selDate, setSel] = useState(dates[0]||null);
+  const sys = SYNC[biz.id];
+  const slotsForDate = biz.slots.filter(s=>s.date===selDate);
+
+  // Build calendar — show 7 days starting from first slot date
+  const allDates = dates;
+
   return (
-    <div style={{position:"fixed",inset:0,zIndex:900,background:"rgba(30,27,21,.58)",backdropFilter:"blur(4px)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"28px 20px",overflowY:"auto"}} onClick={onClose}>
-      <div style={{background:T.paper,borderRadius:5,maxWidth:620,width:"100%",overflow:"hidden",boxShadow:"0 28px 68px rgba(0,0,0,.18)",animation:"su .24s ease",marginBottom:40}} onClick={e=>e.stopPropagation()}>
-        <div style={{position:"relative",height:216}}>
+    <div style={{position:"fixed",inset:0,zIndex:900,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 20px",overflowY:"auto"}} onClick={onClose}>
+      <div style={{background:"#fff",borderRadius:20,maxWidth:640,width:"100%",overflow:"hidden",boxShadow:"0 32px 80px rgba(0,0,0,0.2)",animation:"su .24s ease",marginBottom:40}} onClick={e=>e.stopPropagation()}>
+
+        {/* Hero image */}
+        <div style={{position:"relative",height:220}}>
           <img src={biz.img} alt={biz.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-          <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(30,27,21,.85) 0%,rgba(30,27,21,.04) 60%)"}}/>
-          <button onClick={onClose} style={{position:"absolute",top:12,right:12,background:"rgba(250,248,244,.15)",backdropFilter:"blur(8px)",border:"none",color:"#fff",width:28,height:28,borderRadius:3,cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-          {sys&&<div style={{position:"absolute",top:12,left:12,background:"rgba(30,27,21,.55)",backdropFilter:"blur(8px)",borderRadius:2,padding:"3px 8px",display:"flex",alignItems:"center",gap:4}}><span style={{width:4,height:4,borderRadius:"50%",background:"#9dd4a0",display:"inline-block"}}/><span style={{fontFamily:F.body,fontSize:8,color:"rgba(255,255,255,.8)"}}>Live · {sys}</span></div>}
-          <div style={{position:"absolute",bottom:14,left:18,right:18}}>
-            <div style={{display:"flex",gap:4,marginBottom:5,flexWrap:"wrap"}}>
-              <span style={{background:T.sage,color:"#fff",fontSize:8,padding:"2px 7px",borderRadius:2,fontFamily:F.body,letterSpacing:"1px",textTransform:"uppercase"}}>{biz.cat}</span>
-              {biz.tags.map(t=><span key={t} style={{background:"rgba(250,248,244,.18)",color:"rgba(255,255,255,.85)",fontSize:8,padding:"2px 7px",borderRadius:2,fontFamily:F.body}}>{t}</span>)}
+          <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(27,28,25,0.88) 0%,rgba(27,28,25,0.05) 55%)"}}/>
+          <button onClick={onClose} style={{position:"absolute",top:14,right:14,background:"rgba(255,255,255,0.15)",backdropFilter:"blur(8px)",border:"none",color:"#fff",width:32,height:32,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+          {sys&&<div style={{position:"absolute",top:14,left:14,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(8px)",borderRadius:999,padding:"4px 10px",display:"flex",alignItems:"center",gap:5}}>
+            <span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
+            <span style={{fontFamily:F2,fontSize:10,color:"#fff",fontWeight:500}}>Live · {sys}</span>
+          </div>}
+          <div style={{position:"absolute",bottom:16,left:20,right:20}}>
+            {/* Category pills */}
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+              <span style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#fff",background:"#213C18",padding:"3px 10px",borderRadius:999}}>{biz.cat}</span>
+              {biz.tags?.slice(0,3).map(t=>(
+                <span key={t} style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.85)",background:"rgba(255,255,255,0.15)",backdropFilter:"blur(4px)",padding:"3px 10px",borderRadius:999}}>{t}</span>
+              ))}
             </div>
-            <h2 style={{color:"#fff",fontFamily:F.display,fontSize:21,margin:"0 0 4px",fontWeight:400}}>{biz.name}</h2>
-            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><Stars n={biz.rating}/><span style={{color:"rgba(255,255,255,.5)",fontSize:10,fontFamily:F.body}}>({biz.reviews}) · 📍 {biz.loc}</span><Cr n={biz.cr} size="sm"/></div>
+            <h2 style={{fontFamily:F2,fontSize:22,fontWeight:700,color:"#fff",margin:"0 0 6px",letterSpacing:"-0.5px"}}>{biz.name}</h2>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <Stars n={biz.rating}/>
+              <span style={{fontFamily:F2,fontSize:12,color:"rgba(255,255,255,0.6)"}}>({biz.reviews} reviews)</span>
+              <span style={{fontFamily:F2,fontSize:12,color:"rgba(255,255,255,0.6)"}}>📍 {biz.loc}</span>
+              <span style={{background:"rgba(255,255,255,0.15)",backdropFilter:"blur(4px)",borderRadius:999,padding:"3px 10px",fontFamily:F2,fontSize:11,fontWeight:700,color:"#fff"}}>◈ {biz.cr} per person</span>
+            </div>
           </div>
         </div>
-        <div style={{padding:"16px 20px 0"}}>
-          <p style={{fontFamily:F.body,color:T.stone,lineHeight:1.7,margin:"0 0 13px",fontSize:12,fontWeight:300}}>{biz.desc}</p>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:13}}>
-            <Pill label="All" active={!selDate} onClick={()=>setSel(null)}/>
-            {dates.map(d=><Pill key={d} label={fd(d)} active={selDate===d} onClick={()=>setSel(d)}/>)}
+
+        <div style={{padding:"20px 24px"}}>
+          <p style={{fontFamily:F2,fontSize:14,color:"#74796E",lineHeight:1.7,margin:"0 0 20px"}}>{biz.desc}</p>
+
+          {/* Calendar date pills */}
+          <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>Available dates</p>
+          <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4,marginBottom:20,scrollbarWidth:"none"}}>
+            {allDates.map(d=>{
+              const hasSlots = biz.slots.filter(s=>s.date===d&&s.booked<s.spots).length>0;
+              const isSelected = selDate===d;
+              return (
+                <button key={d} onClick={()=>setSel(d)}
+                  style={{flexShrink:0,padding:"10px 16px",borderRadius:12,border:"none",cursor:"pointer",textAlign:"center",transition:"all .15s",
+                    background:isSelected?"#213C18":hasSlots?"#F5F3EE":"#F0EDEA",
+                    opacity:hasSlots?1:0.5}}>
+                  <p style={{fontFamily:F2,fontSize:10,fontWeight:600,color:isSelected?"rgba(255,255,255,0.7)":"#74796E",margin:"0 0 2px",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                    {new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short"})}
+                  </p>
+                  <p style={{fontFamily:F2,fontSize:16,fontWeight:800,color:isSelected?"#fff":"#213C18",margin:"0 0 2px",letterSpacing:"-0.5px"}}>
+                    {new Date(d+"T00:00:00").getDate()}
+                  </p>
+                  <p style={{fontFamily:F2,fontSize:10,color:isSelected?"rgba(255,255,255,0.6)":"#74796E",margin:0}}>
+                    {new Date(d+"T00:00:00").toLocaleDateString("en-GB",{month:"short"})}
+                  </p>
+                  {hasSlots&&!isSelected&&<div style={{width:4,height:4,borderRadius:"50%",background:"#213C18",margin:"4px auto 0"}}/>}
+                </button>
+              );
+            })}
           </div>
-        </div>
-        <div style={{padding:"0 20px 20px",display:"flex",flexDirection:"column",gap:7}}>
-          {slots.map(sl=>{
-            const avail=sl.spots-sl.booked,full=avail===0,pct=(sl.booked/sl.spots)*100;
-            return (
-              <div key={sl.id} style={{border:`1px solid ${full?T.border2:T.border}`,borderRadius:3,padding:"10px 12px",display:"flex",alignItems:"center",gap:10,background:full?T.bg2:T.paper,opacity:full?.6:1,transition:"box-shadow .14s"}}
-                onMouseEnter={e=>{if(!full)e.currentTarget.style.boxShadow="0 3px 14px rgba(0,0,0,.07)"}} onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
-                <div style={{textAlign:"center",minWidth:40}}><div style={{fontFamily:F.display,fontSize:15,color:T.ink,lineHeight:1,fontWeight:400}}>{sl.time}</div><div style={{fontSize:8,color:T.stone2,fontFamily:F.body,marginTop:1}}>{sl.dur}</div></div>
-                <div style={{width:1,height:26,background:T.border}}/>
-                <div style={{flex:1}}>
-                  <div style={{fontFamily:F.body,fontWeight:600,fontSize:11,color:T.ink,marginBottom:3}}>{sl.name} <span style={{color:T.stone,fontWeight:300}}>· {fd(sl.date)}</span></div>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:68,height:3,background:T.border,borderRadius:2}}><div style={{width:`${pct}%`,height:"100%",background:pct>80?T.clay:T.moss,borderRadius:2}}/></div><span style={{fontSize:9,color:full?T.clay:T.stone,fontFamily:F.body}}>{full?"Full":`${avail} left`}</span></div>
-                </div>
-                <div style={{display:"flex",alignItems:"center",gap:6}}>
-                  <Cr n={biz.cr} size="sm"/>
-                  <button onClick={()=>!full&&onBook(biz,sl)} disabled={full}
-                    style={{padding:"5px 12px",background:full?T.border:T.sage,color:full?T.stone:"#fff",border:"none",borderRadius:2,fontSize:10,fontFamily:F.body,fontWeight:600,cursor:full?"not-allowed":"pointer",transition:"background .14s",whiteSpace:"nowrap"}}
-                    onMouseEnter={e=>{if(!full)e.target.style.background=T.sage2}} onMouseLeave={e=>{if(!full)e.target.style.background=T.sage}}>
-                    {full?"Full":"Book"}
-                  </button>
-                </div>
+
+          {/* Slots for selected date */}
+          {selDate&&(
+            <>
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>
+                Classes on {fd(selDate)}
+              </p>
+              <div style={{display:"flex",flexDirection:"column",gap:8,paddingBottom:8}}>
+                {slotsForDate.length===0
+                  ? <p style={{fontFamily:F2,fontSize:13,color:"#74796E",padding:"20px 0",textAlign:"center"}}>No classes on this day</p>
+                  : slotsForDate.map(sl=>{
+                      const avail = sl.spots - sl.booked;
+                      const full = avail===0;
+                      const pct = (sl.booked/sl.spots)*100;
+                      return (
+                        <div key={sl.id} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 16px",background:full?"#F5F3EE":"#FBF9F4",borderRadius:12,border:`1px solid ${full?"rgba(195,200,188,0.3)":"rgba(195,200,188,0.5)"}`,opacity:full?0.6:1,transition:"all .15s"}}
+                          onMouseEnter={e=>{if(!full)e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.06)"}}
+                          onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
+                          {/* Time */}
+                          <div style={{textAlign:"center",minWidth:48,flexShrink:0}}>
+                            <p style={{fontFamily:F2,fontSize:16,fontWeight:800,color:"#213C18",margin:0,letterSpacing:"-0.5px"}}>{sl.time}</p>
+                            <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>{sl.dur}</p>
+                          </div>
+                          <div style={{width:1,height:32,background:"rgba(195,200,188,0.5)",flexShrink:0}}/>
+                          {/* Info */}
+                          <div style={{flex:1}}>
+                            <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#1B1C19",margin:"0 0 4px"}}>{sl.name}</p>
+                            {/* Capacity bar */}
+                            <div style={{display:"flex",alignItems:"center",gap:8}}>
+                              <div style={{width:80,height:4,background:"#E4E2DD",borderRadius:999}}>
+                                <div style={{width:`${pct}%`,height:"100%",background:pct>80?"#B8925C":"#213C18",borderRadius:999,transition:"width .3s"}}/>
+                              </div>
+                              <span style={{fontFamily:F2,fontSize:11,color:full?"#e05c5c":pct>80?"#B8925C":"#213C18",fontWeight:600}}>
+                                {full?"Full":`${avail} of ${sl.spots} left`}
+                              </span>
+                            </div>
+                          </div>
+                          {/* Book button */}
+                          <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+                            <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18"}}>◈ {biz.cr}</span>
+                            <button onClick={()=>!full&&onBook(biz,sl)} disabled={full}
+                              style={{padding:"10px 20px",background:full?"#E4E2DD":"#213C18",color:full?"#74796E":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:full?"not-allowed":"pointer",transition:"all .15s",whiteSpace:"nowrap"}}
+                              onMouseEnter={e=>{if(!full)e.currentTarget.style.opacity="0.85"}}
+                              onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                              {full?"Full":"Book →"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                }
               </div>
-            );
-          })}
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -504,10 +687,11 @@ function HomePage({ listings, bookings, onSelect, savedIds, onToggleSave, onSetV
         <div style={{position:"absolute",bottom:"20%",right:"10%",width:500,height:500,borderRadius:"50%",background:"rgba(250,222,192,0.2)",filter:"blur(150px)",pointerEvents:"none"}}/>
 
         <div style={{position:"relative",zIndex:1,maxWidth:840,width:"100%",textAlign:"center"}}>
+          <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#A3B18A",letterSpacing:"5px",textTransform:"uppercase",margin:"0 0 16px"}}>The Wellness Pass</p>
           {/* Giant wordmark */}
           <h1 style={{fontFamily:F2,fontWeight:800,fontSize:"clamp(80px,15vw,180px)",color:"#213C18",lineHeight:1,letterSpacing:"-6px",margin:"0 0 24px",userSelect:"none"}}>wello</h1>
-          <p style={{fontFamily:F2,fontSize:18,color:"#74796E",fontWeight:500,lineHeight:1.6,maxWidth:480,margin:"0 auto 48px",letterSpacing:"-0.2px"}}>
-            Your curated pass for wellness and movement. Studios, gyms, spas and outdoor adventures.
+          <p style={{fontFamily:F2,fontSize:18,color:"#74796E",fontWeight:500,lineHeight:1.6,maxWidth:520,margin:"0 auto 48px",letterSpacing:"-0.2px"}}>
+            Book yoga classes, gym access, hotel pools, spa treatments and outdoor adventures — all with one pass. No membership needed.
           </p>
 
           {/* AI Search bar */}
@@ -515,7 +699,7 @@ function HomePage({ listings, bookings, onSelect, savedIds, onToggleSave, onSetV
             <span style={{color:"#74796E",fontSize:14,marginRight:8,flexShrink:0}}>✦</span>
             <input value={aiQ} onChange={e=>setAiQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runAI()}
               style={{flex:1,border:"none",outline:"none",fontFamily:F2,fontSize:14,background:"transparent",color:"#1B1C19",fontWeight:500}}
-              placeholder="Where do you want to find balance today?"/>
+              placeholder="Find a yoga class, spa, gym or adventure near you..."/>
             {aiResults&&<button onClick={()=>{setAiResults(null);setAiQ("");setAiNote("");}}
               style={{background:"transparent",border:"none",color:"#74796E",cursor:"pointer",fontSize:14,padding:"0 8px"}}>✕</button>}
             <button onClick={runAI} disabled={aiLoading||!aiQ.trim()}
@@ -533,7 +717,7 @@ function HomePage({ listings, bookings, onSelect, savedIds, onToggleSave, onSetV
               style={{display:"flex",alignItems:"center",gap:8,padding:"16px 36px",borderRadius:999,background:"#213C18",color:"#fff",border:"none",fontFamily:F2,fontSize:15,fontWeight:700,cursor:"pointer",transition:"all .2s"}}
               onMouseEnter={e=>e.currentTarget.style.opacity="0.9"}
               onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-              Buy Credits <span>→</span>
+              Get Your Pass <span>→</span>
             </button>
             <button onClick={()=>onSetView("explore")}
               style={{padding:"16px 36px",borderRadius:999,background:"transparent",color:"#213C18",border:"2px solid #213C18",fontFamily:F2,fontSize:15,fontWeight:700,cursor:"pointer",transition:"all .2s"}}
@@ -545,11 +729,46 @@ function HomePage({ listings, bookings, onSelect, savedIds, onToggleSave, onSetV
         </div>
       </section>
 
+      {/* ── STATEMENT STRIP ── */}
+      <div style={{background:"#213C18",padding:"18px 32px"}}>
+        <div style={{maxWidth:1200,margin:"0 auto",display:"flex",justifyContent:"center",alignItems:"center",gap:0,flexWrap:"wrap"}}>
+          {["Get your pass","Book any venue","No membership needed"].map((s,i)=>(
+            <div key={s} style={{display:"flex",alignItems:"center",gap:0}}>
+              <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,fontWeight:600,color:"#CAECBA",letterSpacing:"-0.2px",padding:"0 24px",whiteSpace:"nowrap"}}>{s}</span>
+              {i<2&&<span style={{color:"rgba(163,177,138,0.4)",fontSize:16}}>·</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── HOW IT WORKS ── */}
+      <section style={{padding:"80px 32px",background:"#F5F3EE"}}>
+        <div style={{maxWidth:1200,margin:"0 auto"}}>
+          <div style={{textAlign:"center",marginBottom:52}}>
+            <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:"clamp(28px,4vw,44px)",fontWeight:700,color:"#213C18",letterSpacing:"-1.5px",margin:"0 0 12px",lineHeight:1.1}}>How Wello works</h2>
+            <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:16,color:"#74796E",margin:0}}>Three steps to your next wellness experience.</p>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:24}}>
+            {[
+              {n:"01",icon:"◈",title:"Buy your pass",desc:"Choose how many credits you want. Load them onto your Wello pass — no subscription, no commitment."},
+              {n:"02",icon:"⊞",title:"Browse & book",desc:"Explore studios, gyms, hotel pools, spas and outdoor adventures. Book any slot in seconds."},
+              {n:"03",icon:"✓",title:"Walk in ready",desc:"Show your booking confirmation at the venue and enjoy. Your credits are deducted automatically."},
+            ].map(({n,icon,title,desc})=>(
+              <div key={n} style={{background:"#fff",borderRadius:16,padding:"32px 28px",position:"relative",overflow:"hidden"}}>
+                <div style={{position:"absolute",top:20,right:24,fontFamily:"'Manrope',system-ui,sans-serif",fontSize:48,fontWeight:800,color:"rgba(33,60,24,0.05)",letterSpacing:"-2px",lineHeight:1}}>{n}</div>
+                <div style={{width:48,height:48,background:"rgba(33,60,24,0.08)",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,marginBottom:20,color:"#213C18"}}>{icon}</div>
+                <h3 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:18,fontWeight:700,color:"#213C18",margin:"0 0 10px",letterSpacing:"-0.3px"}}>{title}</h3>
+                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,color:"#74796E",margin:0,lineHeight:1.7}}>{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── FEATURED SECTION ── */}
       <section style={{padding:"80px 32px",maxWidth:1200,margin:"0 auto"}}>
         <div style={{display:"flex",flexWrap:"wrap",alignItems:"flex-end",justifyContent:"space-between",marginBottom:52,gap:20}}>
           <div>
-            <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"4px",textTransform:"uppercase",display:"block",marginBottom:12}}>Curated Collections</span>
             <h2 style={{fontFamily:F2,fontSize:"clamp(32px,5vw,56px)",fontWeight:700,color:"#1B1C19",letterSpacing:"-2px",margin:0,lineHeight:1}}>Featured on Wello</h2>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:24}}>
@@ -1205,6 +1424,8 @@ function CreditsPage({ credits, onPurchase }) {
   const fmtExp=v=>{const d=v.replace(/\D/g,"").slice(0,4);return d.length>2?d.slice(0,2)+"/"+d.slice(2):d;};
   const expiryDate=()=>{const d=new Date();d.setMonth(d.getMonth()+6);return d.toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});};
   const totalPrice = +(customCr * 5).toFixed(2);
+  const serviceFee = +Math.min(totalPrice * 0.10, 5).toFixed(2);
+  const grandTotal = +(totalPrice + serviceFee).toFixed(2);
 
   const StepBar = () => (
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:32}}>
@@ -1229,9 +1450,9 @@ function CreditsPage({ credits, onPurchase }) {
           <div>
             {/* Header */}
             <div style={{marginBottom:36}}>
-              <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"4px",textTransform:"uppercase",display:"block",marginBottom:12}}>Wellness Wallet</span>
-              <h1 style={{fontFamily:F2,fontSize:"clamp(28px,4vw,48px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:"0 0 12px",lineHeight:1}}>Add Wello Credits</h1>
-              <p style={{fontFamily:F2,fontSize:16,color:"#74796E",maxWidth:440,lineHeight:1.6,margin:0}}>Credits can be used for any class, gym, spa or adventure. 1 credit = €5 value.</p>
+              <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"4px",textTransform:"uppercase",display:"block",marginBottom:12}}>Your Pass</span>
+              <h1 style={{fontFamily:F2,fontSize:"clamp(28px,4vw,48px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:"0 0 12px",lineHeight:1}}>Top Up Your Pass</h1>
+              <p style={{fontFamily:F2,fontSize:16,color:"#74796E",maxWidth:440,lineHeight:1.6,margin:0}}>Load your Wello pass and use it across any studio, gym, spa or outdoor adventure.</p>
             </div>
 
             {/* Balance card */}
@@ -1239,7 +1460,7 @@ function CreditsPage({ credits, onPurchase }) {
               <div style={{position:"absolute",top:-20,right:-20,width:120,height:120,borderRadius:"50%",background:"rgba(255,255,255,0.05)"}}/>
               <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",letterSpacing:"3px",textTransform:"uppercase",marginBottom:8,fontWeight:600}}>Your balance</p>
               <p style={{fontFamily:F2,fontSize:48,fontWeight:800,color:"#fff",letterSpacing:"-2px",margin:"0 0 6px",lineHeight:1}}>◈ {credits}</p>
-              <p style={{fontFamily:F2,fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>10% service fee per booking · max €5</p>
+              <p style={{fontFamily:F2,fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>10% fee included at checkout · no charges per booking</p>
             </div>
 
             {/* Credit counter */}
@@ -1276,7 +1497,7 @@ function CreditsPage({ credits, onPurchase }) {
 
             {/* Info cards */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
-              {[{icon:"⏱",title:"6 Month Validity",desc:"Credits expire 6 months from purchase."},{icon:"◈",title:"Flexible Booking",desc:"Use across any venue, class or experience."}].map(({icon,title,desc})=>(
+              {[{icon:"⏱",title:"6 Month Validity",desc:"Your pass is valid for 6 months from top-up."},{icon:"◈",title:"Use Anywhere",desc:"Use across any venue, class or experience."}].map(({icon,title,desc})=>(
                 <div key={title} style={{background:"rgba(228,226,221,0.5)",borderRadius:12,padding:"20px"}}>
                   <div style={{fontSize:20,marginBottom:8}}>{icon}</div>
                   <h4 style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>{title}</h4>
@@ -1304,7 +1525,7 @@ function CreditsPage({ credits, onPurchase }) {
                       <p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:0,alignSelf:"center"}}>{r.peak}</p>
                     </div>
                   ))}
-                  <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:"10px 0 0",lineHeight:1.5}}>A 10% service fee (max €5) is charged per booking. Credits expire 6 months from purchase.</p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:"10px 0 0",lineHeight:1.5}}>A 10% service fee (max €5) is charged per booking. Your pass is valid for 6 months from top-up.</p>
                 </div>
               )}
             </div>
@@ -1315,25 +1536,26 @@ function CreditsPage({ credits, onPurchase }) {
             <div style={{background:"#fff",borderRadius:16,padding:"32px",boxShadow:"0 12px 32px rgba(27,28,25,0.06)",border:"1px solid rgba(195,200,188,0.2)"}}>
               <h3 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:"#213C18",margin:"0 0 24px",letterSpacing:"-0.5px"}}>Order Summary</h3>
               <div style={{display:"flex",flexDirection:"column",gap:0}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",paddingBottom:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",paddingBottom:12}}>
                   <div>
                     <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 4px"}}>Credits</p>
-                    <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#213C18",margin:0}}>{customCr} Wello Credits</p>
+                    <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#213C18",margin:0}}>{customCr} × €5.00</p>
                   </div>
-                  <p style={{fontFamily:F2,fontSize:16,fontWeight:700,color:"#213C18",margin:0}}>€{totalPrice}</p>
+                  <p style={{fontFamily:F2,fontSize:15,fontWeight:600,color:"#213C18",margin:0}}>€{totalPrice}</p>
                 </div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 0",borderTop:"1px solid rgba(195,200,188,0.2)",borderBottom:"1px solid rgba(195,200,188,0.2)"}}>
-                  <div>
-                    <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 2px"}}>Unit price</p>
-                    <p style={{fontFamily:F2,fontSize:12,color:"#213C18",fontStyle:"italic",margin:0}}>1 Credit = €5.00</p>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderTop:"1px solid rgba(195,200,188,0.2)"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:0}}>Service fee</p>
+                    <span style={{fontFamily:F2,fontSize:10,color:"#A3B18A",background:"rgba(163,177,138,0.15)",padding:"2px 7px",borderRadius:999}}>10% · max €5</span>
                   </div>
+                  <p style={{fontFamily:F2,fontSize:15,fontWeight:600,color:"#213C18",margin:0}}>€{serviceFee}</p>
                 </div>
-                <div style={{padding:"16px 0 24px",borderBottom:"2px solid rgba(33,60,24,0.05)"}}>
+                <div style={{padding:"12px 0 24px",borderTop:"1px solid rgba(195,200,188,0.2)",borderBottom:"2px solid rgba(33,60,24,0.05)"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-                    <span style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#213C18"}}>Total</span>
+                    <span style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#213C18"}}>Total due</span>
                     <div style={{textAlign:"right"}}>
-                      <span style={{fontFamily:F2,fontSize:40,fontWeight:800,color:"#213C18",letterSpacing:"-2px"}}>€{totalPrice}</span>
-                      <p style={{fontFamily:F2,fontSize:10,letterSpacing:"2px",textTransform:"uppercase",color:"#74796E",margin:"4px 0 0"}}>{customCr} credits</p>
+                      <span style={{fontFamily:F2,fontSize:40,fontWeight:800,color:"#213C18",letterSpacing:"-2px"}}>€{grandTotal}</span>
+                      <p style={{fontFamily:F2,fontSize:10,letterSpacing:"2px",textTransform:"uppercase",color:"#74796E",margin:"4px 0 0"}}>{customCr} credits · no booking fees</p>
                     </div>
                   </div>
                 </div>
@@ -1418,11 +1640,11 @@ function CreditsPage({ credits, onPurchase }) {
         <div style={{maxWidth:420,margin:"0 auto",padding:"0 32px",textAlign:"center",paddingTop:40}}>
           <div style={{width:64,height:64,background:"#CAECBA",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",fontSize:28}}>✓</div>
           <h1 style={{fontFamily:F2,fontSize:32,fontWeight:800,color:"#213C18",letterSpacing:"-1.5px",margin:"0 0 12px"}}>Credits added!</h1>
-          <p style={{fontFamily:F2,fontSize:15,color:"#74796E",margin:"0 0 4px"}}>◈ {customCr} credits added to your account.</p>
+          <p style={{fontFamily:F2,fontSize:15,color:"#74796E",margin:"0 0 4px"}}>◈ {customCr} added to your pass.</p>
           <p style={{fontFamily:F2,fontSize:13,color:"#C3C8BC",margin:"0 0 32px"}}>They expire on {expiryDate()}.</p>
           <button onClick={()=>setStep(1)}
             style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"14px 32px",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>
-            Buy more credits
+            Top up again
           </button>
         </div>
       )}
@@ -1431,420 +1653,445 @@ function CreditsPage({ credits, onPurchase }) {
 }
 
 function BusinessPortalDashboard({ onExit }) {
-  const bizData = { name:"Sol & Alma Yoga", cat:"Yoga", loc:"Soller", monthlyBookings:24, monthlyCredits:86 };
-  const [tab, setTab] = useState("calendar");
-  const [calWeek, setCalWeek] = useState(0);
-  const TABS = [["calendar","Calendar"],["bookings","Bookings"],["analytics","Analytics"],["statements","Payout Statements"],["listing","My Listing"],["settings","Settings"]];
-  const INP3={width:"100%",padding:"9px 11px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:11,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",boxSizing:"border-box"};
-  const WEEK_DAYS  = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-  const WD0 = ["31 Mar","1 Apr","2 Apr","3 Apr","4 Apr","5 Apr","6 Apr"];
-  const WD1 = ["7 Apr","8 Apr","9 Apr","10 Apr","11 Apr","12 Apr","13 Apr"];
-  const WEEK_DATES = calWeek===0 ? WD0 : WD1;
-  const TIMES = ["07:00","09:00","11:00","12:00","18:30"];
-  const CLS = [
-    {day:0,time:"07:00",name:"Sunrise Flow",   spots:8, booked:6, credits:2},
-    {day:0,time:"18:30",name:"Sunset Vinyasa", spots:10,booked:8, credits:3},
-    {day:1,time:"09:00",name:"Morning Yin",    spots:8, booked:3, credits:2},
-    {day:2,time:"07:00",name:"Sunrise Flow",   spots:8, booked:8, credits:2},
-    {day:2,time:"18:30",name:"Sunset Vinyasa", spots:10,booked:5, credits:3},
-    {day:3,time:"07:00",name:"Sunrise Flow",   spots:8, booked:2, credits:2},
-    {day:3,time:"12:00",name:"Lunchtime Flow", spots:6, booked:6, credits:2},
-    {day:4,time:"07:00",name:"Sunrise Flow",   spots:8, booked:7, credits:2},
-    {day:4,time:"18:30",name:"Sunset Vinyasa", spots:10,booked:4, credits:3},
-    {day:5,time:"09:00",name:"Weekend Flow",   spots:12,booked:10,credits:3},
-    {day:5,time:"11:00",name:"Deep Yin",       spots:10,booked:6, credits:2},
-    {day:6,time:"09:00",name:"Weekend Flow",   spots:12,booked:12,credits:3},
-    {day:6,time:"11:00",name:"Restorative",    spots:8, booked:3, credits:2},
-  ];
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  const bizData = { name:"Sol & Alma Yoga", cat:"Yoga", loc:"Sóller", monthlyBookings:24, monthlyCredits:86 };
+  const [tab, setTab] = useState("overview");
+  const [selDay, setSelDay] = useState(0);
+  const [showAddSlot, setShowAddSlot] = useState(false);
+  const [newSlot, setNewSlot] = useState({name:"",time:"09:00",spots:10,credits:3,dur:"60 min"});
+  const [editListing, setEditListing] = useState(false);
+  const [listing, setListing] = useState({name:"Sol & Alma Yoga",cat:"Yoga",cat2:"Meditation",loc:"Sóller",desc:"Rooftop yoga overlooking the Tramuntana mountains. All levels welcome.",credits:3,tags:"Rooftop, All Levels, Mountain Views"});
+  const [integration, setIntegration] = useState(null);
+
+  const TABS = [["overview","Overview"],["schedule","Schedule"],["payouts","Payouts"],["listing","My Listing"],["settings","Settings"]];
+
+  const WEEK_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const WEEK_DATES = ["14 Apr","15 Apr","16 Apr","17 Apr","18 Apr","19 Apr","20 Apr"];
+
+  const [CLS, setCLS] = useState([
+    {id:1,day:0,time:"07:00",name:"Sunrise Flow",   spots:8, booked:6, credits:3, dur:"60 min", live:true},
+    {id:2,day:0,time:"18:30",name:"Sunset Vinyasa", spots:10,booked:8, credits:3, dur:"75 min", live:true},
+    {id:3,day:1,time:"09:00",name:"Morning Yin",    spots:8, booked:3, credits:2, dur:"60 min", live:true},
+    {id:4,day:2,time:"07:00",name:"Sunrise Flow",   spots:8, booked:8, credits:3, dur:"60 min", live:true},
+    {id:5,day:2,time:"18:30",name:"Sunset Vinyasa", spots:10,booked:5, credits:3, dur:"75 min", live:true},
+    {id:6,day:3,time:"07:00",name:"Sunrise Flow",   spots:8, booked:2, credits:3, dur:"60 min", live:true},
+    {id:7,day:3,time:"12:00",name:"Lunchtime Flow", spots:6, booked:6, credits:2, dur:"45 min", live:false},
+    {id:8,day:4,time:"07:00",name:"Sunrise Flow",   spots:8, booked:7, credits:3, dur:"60 min", live:true},
+    {id:9,day:5,time:"09:00",name:"Weekend Flow",   spots:12,booked:10,credits:3, dur:"90 min", live:true},
+    {id:10,day:6,time:"09:00",name:"Weekend Flow",  spots:12,booked:12,credits:3, dur:"90 min", live:true},
+  ]);
+
   const RECENT = [
-    {initials:"SM",name:"Sarah M.",  cls:"Sunrise Flow",   when:"Today 07:00",     cr:2,status:"Confirmed"},
+    {initials:"SM",name:"Sarah M.",  cls:"Sunrise Flow",   when:"Today 07:00",     cr:3,status:"Confirmed"},
     {initials:"JT",name:"James T.",  cls:"Sunset Vinyasa", when:"Today 18:30",     cr:3,status:"Confirmed"},
-    {initials:"AK",name:"Anna K.",   cls:"Weekend Flow",   when:"Sat 5 Apr 09:00", cr:3,status:"Confirmed"},
-    {initials:"MW",name:"Marcus W.", cls:"Sunrise Flow",   when:"Wed 2 Apr 07:00", cr:2,status:"Confirmed"},
-    {initials:"LM",name:"Lea M.",    cls:"Deep Yin",       when:"Sat 5 Apr 11:00", cr:2,status:"Pending"},
-    {initials:"TR",name:"Tom R.",    cls:"Morning Yin",    when:"Tue 1 Apr 09:00", cr:2,status:"Confirmed"},
+    {initials:"AK",name:"Anna K.",   cls:"Weekend Flow",   when:"Sat 19 Apr 09:00",cr:3,status:"Confirmed"},
+    {initials:"MW",name:"Marcus W.", cls:"Sunrise Flow",   when:"Wed 16 Apr 07:00",cr:3,status:"Confirmed"},
+    {initials:"LM",name:"Léa M.",    cls:"Morning Yin",    when:"Tue 15 Apr 09:00",cr:2,status:"Pending"},
   ];
-  function occ(booked,spots){
-    const p=booked/spots;
-    if(booked>=spots) return {bg:"#1E1B15",text:"#fff"};
-    if(p>=0.75) return {bg:T.sageXL,text:T.sage};
-    if(p>=0.4)  return {bg:T.ochreXL,text:T.ochre};
-    return {bg:T.bg,text:T.stone2};
-  }
+
+  const INP = {width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:13,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4"};
+
+  const dayCLS = CLS.filter(c=>c.day===selDay);
+
   return (
-    <div style={{minHeight:"calc(100vh - 100px)"}}>
-      <div style={{background:T.sage,padding:"28px 28px 0"}}>
-        <div style={{maxWidth:980,margin:"0 auto"}}>
-          <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:12,marginBottom:28}}>
+    <div style={{minHeight:"100vh",background:"#FBF9F4",fontFamily:F2}}>
+
+      {/* Header */}
+      <div style={{background:"#213C18",padding:"28px 32px 0"}}>
+        <div style={{maxWidth:1100,margin:"0 auto"}}>
+          <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:12,marginBottom:24}}>
             <div>
-              <div style={{fontFamily:F.body,fontSize:8,color:"rgba(255,255,255,.45)",letterSpacing:"2px",textTransform:"uppercase",marginBottom:8}}>Business Dashboard</div>
-              <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:26,fontWeight:700,color:"#fff",letterSpacing:"-0.5px",margin:"0 0 6px"}}>{bizData.name}</h1>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{width:6,height:6,borderRadius:"50%",background:"#a3d9a0",display:"inline-block",animation:"pulse 2s infinite"}}/>
-                <span style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.65)"}}>Live on marketplace</span>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+                <span onClick={onExit} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:16,fontWeight:800,color:"#CAECBA",letterSpacing:"-0.5px",cursor:"pointer",opacity:0.8}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>wello</span>
+                <span style={{fontFamily:F2,fontSize:9,color:"rgba(255,255,255,0.3)",letterSpacing:"2px",textTransform:"uppercase"}}>/ Business Dashboard</span>
+              </div>
+              <h1 style={{fontFamily:F2,fontSize:24,fontWeight:700,color:"#fff",letterSpacing:"-0.5px",margin:"0 0 6px"}}>{bizData.name}</h1>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
+                <span style={{fontFamily:F2,fontSize:11,color:"rgba(255,255,255,0.6)"}}>Live on marketplace</span>
               </div>
             </div>
             <div style={{display:"flex",gap:8}}>
-              <a href="#" style={{padding:"8px 16px",background:"rgba(255,255,255,.15)",color:"#fff",border:"1px solid rgba(255,255,255,.25)",borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,textDecoration:"none"}}>View listing</a>
-              <button onClick={onExit} style={{padding:"8px 16px",background:"transparent",color:"rgba(255,255,255,.5)",border:"1px solid rgba(255,255,255,.15)",borderRadius:2,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:300}}>Close preview</button>
+              <button onClick={()=>setTab("listing")} style={{padding:"8px 16px",background:"rgba(255,255,255,0.12)",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer"}}>Edit listing</button>
+              <button onClick={onExit} style={{padding:"8px 16px",background:"transparent",color:"rgba(255,255,255,0.45)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:999,fontFamily:F2,fontSize:11,cursor:"pointer"}}>✕ Exit preview</button>
             </div>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+          {/* Stats row */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:0}}>
             {[
-              {label:"Bookings this month",value:"24",      sub:"March 2026",       accent:T.ochreL},
-              {label:"Credits redeemed",   value:"◈ 86",   sub:"this month",       accent:"rgba(255,255,255,.35)"},
-              {label:"Payout due",         value:"€619.20",sub:"paid this Friday", accent:"#a3d9a0"},
-              {label:"Avg rating",         value:"4.9",    sub:"38 reviews",       accent:T.ochreL},
+              {label:"Bookings this month",value:"24",sub:"April 2026",accent:"#CAECBA"},
+              {label:"Credits redeemed",value:"◈ 86",sub:"this month",accent:"rgba(255,255,255,0.25)"},
+              {label:"Payout due",value:"€619",sub:"paid this Friday",accent:"#4ade80"},
+              {label:"Avg rating",value:"4.9",sub:"38 reviews",accent:"#D6B47C"},
             ].map(({label,value,sub,accent})=>(
-              <div key={label} style={{background:"rgba(0,0,0,.18)",borderRadius:"4px 4px 0 0",padding:"16px 18px",borderTop:`3px solid ${accent}`}}>
-                <div style={{fontFamily:F.body,fontSize:8,color:"rgba(255,255,255,.45)",letterSpacing:"2px",textTransform:"uppercase",marginBottom:8}}>{label}</div>
-                <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:28,fontWeight:700,color:"#fff",letterSpacing:"-1px",lineHeight:1,marginBottom:5}}>{value}</div>
-                <div style={{fontFamily:F.body,fontSize:9,color:"rgba(255,255,255,.4)",fontWeight:300}}>{sub}</div>
+              <div key={label} style={{background:"rgba(0,0,0,0.15)",borderRadius:"8px 8px 0 0",padding:"14px 16px",borderTop:`3px solid ${accent}`}}>
+                <p style={{fontFamily:F2,fontSize:9,color:"rgba(255,255,255,0.4)",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 6px"}}>{label}</p>
+                <p style={{fontFamily:F2,fontSize:24,fontWeight:800,color:"#fff",letterSpacing:"-1px",margin:"0 0 3px",lineHeight:1}}>{value}</p>
+                <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.35)",margin:0}}>{sub}</p>
               </div>
             ))}
           </div>
-          <div style={{display:"flex",marginTop:4}}>
+          {/* Tabs */}
+          <div style={{display:"flex",marginTop:4,gap:0}}>
             {TABS.map(([k,l])=>(
-              <button key={k} onClick={()=>setTab(k)} style={{padding:"11px 18px",border:"none",borderBottom:`3px solid ${tab===k?"#fff":"transparent"}`,background:tab===k?"rgba(255,255,255,.12)":"transparent",color:tab===k?"#fff":"rgba(255,255,255,.5)",fontFamily:F.body,fontSize:11,fontWeight:tab===k?600:300,cursor:"pointer",transition:"all .13s"}}>{l}</button>
+              <button key={k} onClick={()=>setTab(k)}
+                style={{padding:"12px 20px",border:"none",borderBottom:`3px solid ${tab===k?"#fff":"transparent"}`,background:tab===k?"rgba(255,255,255,0.1)":"transparent",color:tab===k?"#fff":"rgba(255,255,255,0.45)",fontFamily:F2,fontSize:12,fontWeight:tab===k?700:400,cursor:"pointer",transition:"all .15s"}}>
+                {l}
+              </button>
             ))}
           </div>
         </div>
       </div>
-      <div style={{maxWidth:980,margin:"0 auto",padding:"28px 28px 58px"}}>
 
-        {tab==="calendar"&&(
-          <div>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
-              <div>
-                <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:15,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>{calWeek===0?"This week":"Next week"}</div>
-                <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginTop:2}}>{WEEK_DATES[0]} to {WEEK_DATES[6]}</div>
-              </div>
-              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                <div style={{display:"flex",gap:10,marginRight:4}}>
-                  {[["Full","#1E1B15"],["75%+ booked",T.sageXL],["40%+ booked",T.ochreXL],["Available",T.bg]].map(([l,bg])=>(
-                    <div key={l} style={{display:"flex",alignItems:"center",gap:4}}>
-                      <div style={{width:9,height:9,borderRadius:1,background:bg,border:`1px solid ${T.border}`}}/>
-                      <span style={{fontFamily:F.body,fontSize:9,color:T.stone2}}>{l}</span>
-                    </div>
-                  ))}
-                </div>
-                <button onClick={()=>setCalWeek(0)} style={{padding:"5px 12px",background:calWeek===0?T.sage:"transparent",color:calWeek===0?"#fff":T.stone,border:`1px solid ${calWeek===0?T.sage:T.border}`,borderRadius:2,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:calWeek===0?600:300}}>This week</button>
-                <button onClick={()=>setCalWeek(1)} style={{padding:"5px 12px",background:calWeek===1?T.sage:"transparent",color:calWeek===1?"#fff":T.stone,border:`1px solid ${calWeek===1?T.sage:T.border}`,borderRadius:2,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:calWeek===1?600:300}}>Next week</button>
-              </div>
-            </div>
-            <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:4,overflow:"hidden",marginBottom:18}}>
-              <div style={{display:"grid",gridTemplateColumns:"56px repeat(7,1fr)",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
-                <div style={{padding:"10px 8px"}}/>
-                {WEEK_DAYS.map((d,i)=>(
-                  <div key={d} style={{padding:"10px 6px",textAlign:"center",borderLeft:`1px solid ${T.border}`}}>
-                    <div style={{fontFamily:F.body,fontSize:10,fontWeight:700,color:T.ink}}>{d}</div>
-                    <div style={{fontFamily:F.body,fontSize:9,color:T.stone2,fontWeight:300,marginTop:1}}>{WEEK_DATES[i]}</div>
-                  </div>
-                ))}
-              </div>
-              {TIMES.map(time=>{
-                if(!CLS.some(c=>c.time===time)) return null;
-                return (
-                  <div key={time} style={{display:"grid",gridTemplateColumns:"56px repeat(7,1fr)",borderBottom:`1px solid ${T.border}`}}>
-                    <div style={{padding:"8px 6px",display:"flex",alignItems:"center",justifyContent:"center",borderRight:`1px solid ${T.border}`}}>
-                      <span style={{fontFamily:F.body,fontSize:9,color:T.stone2,fontWeight:300}}>{time}</span>
-                    </div>
-                    {WEEK_DAYS.map((_,di)=>{
-                      const c=CLS.find(x=>x.day===di&&x.time===time);
-                      const o=c?occ(c.booked,c.spots):null;
-                      return (
-                        <div key={di} style={{borderLeft:`1px solid ${T.border}`,padding:"5px 4px",minHeight:58,display:"flex"}}>
-                          {c?(
-                            <div style={{flex:1,background:o.bg,borderRadius:3,padding:"6px 7px",cursor:"pointer",display:"flex",flexDirection:"column",justifyContent:"space-between"}}
-                              onMouseEnter={e=>e.currentTarget.style.opacity=".78"} onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                              <div style={{fontFamily:F.body,fontSize:9,fontWeight:600,color:o.text,lineHeight:1.3}}>{c.name}</div>
-                              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:4}}>
-                                <span style={{fontFamily:F.body,fontSize:8,color:o.text,opacity:.65}}>◈{c.credits}</span>
-                                <span style={{fontFamily:F.body,fontSize:9,fontWeight:700,color:o.text}}>{c.booked===c.spots?"Full":`${c.booked}/${c.spots}`}</span>
-                              </div>
-                            </div>
-                          ):<div style={{flex:1}}/>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:8,marginBottom:24}}>
-              {WEEK_DAYS.map((d,i)=>{
-                const dc=CLS.filter(c=>c.day===i);
-                const b=dc.reduce((s,c)=>s+c.booked,0);
-                const sp=dc.reduce((s,c)=>s+c.spots,0);
-                const cr=dc.reduce((s,c)=>s+c.booked*c.credits,0);
-                return (
-                  <div key={d} style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"10px 11px"}}>
-                    <div style={{fontFamily:F.body,fontSize:9,color:T.stone,fontWeight:600,marginBottom:4}}>{d}<br/><span style={{fontWeight:300,color:T.stone2,fontSize:8}}>{WEEK_DATES[i]}</span></div>
-                    <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:17,fontWeight:700,color:b===sp?T.sage:T.ink,letterSpacing:"-0.3px"}}>{b}<span style={{fontSize:10,color:T.stone2,fontWeight:300}}>/{sp}</span></div>
-                    <div style={{fontFamily:F.body,fontSize:8,color:T.stone2,fontWeight:300,marginTop:3}}>◈{cr}</div>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:4,overflow:"hidden"}}>
-              <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div>
-                  <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>Recent bookings</div>
-                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginTop:2}}>Latest reservations across all your sessions</div>
-                </div>
-                <span style={{background:T.sageXL,color:T.sage,fontSize:9,padding:"3px 10px",borderRadius:2,fontFamily:F.body,fontWeight:600}}>{RECENT.length} this week</span>
-              </div>
-              <div style={{padding:"0 16px"}}>
-                {RECENT.map((b,i)=>(
-                  <div key={i} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 0",borderBottom:i<RECENT.length-1?`1px solid ${T.border}`:"none"}}>
-                    <div style={{width:36,height:36,borderRadius:"50%",background:b.status==="Confirmed"?T.sageXL:T.ochreXL,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F.body,fontSize:10,color:b.status==="Confirmed"?T.sage:T.ochre,fontWeight:700,flexShrink:0}}>{b.initials}</div>
-                    <div style={{flex:1}}>
-                      <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{b.name}</div>
-                      <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{b.cls} · {b.when}</div>
-                    </div>
-                    <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginRight:8}}>◈ {b.cr}</span>
-                    <span style={{background:b.status==="Confirmed"?T.sageXL:T.ochreXL,color:b.status==="Confirmed"?T.sage:T.ochre,fontSize:8,padding:"3px 9px",borderRadius:2,fontFamily:F.body,fontWeight:700,textTransform:"uppercase",letterSpacing:"1px"}}>{b.status}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
+      {/* Content */}
+      <div style={{maxWidth:1100,margin:"0 auto",padding:"28px 32px 80px"}}>
 
-        {tab==="bookings"&&(
-          <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden"}}>
-            <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.border}`}}><div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>All bookings</div></div>
-            <div style={{padding:"0 16px"}}>
-              {RECENT.map((b,i)=>(
-                <div key={i} style={{display:"flex",alignItems:"center",gap:14,padding:"12px 0",borderBottom:i<RECENT.length-1?`1px solid ${T.border}`:"none"}}>
-                  <div style={{width:36,height:36,borderRadius:"50%",background:b.status==="Confirmed"?T.sageXL:T.ochreXL,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F.body,fontSize:10,color:b.status==="Confirmed"?T.sage:T.ochre,fontWeight:700,flexShrink:0}}>{b.initials}</div>
-                  <div style={{flex:1}}><div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{b.name}</div><div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{b.cls} · {b.when}</div></div>
-                  <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>◈ {b.cr}</span>
-                  <span style={{background:b.status==="Confirmed"?T.sageXL:T.ochreXL,color:b.status==="Confirmed"?T.sage:T.ochre,fontSize:8,padding:"3px 9px",borderRadius:2,fontFamily:F.body,fontWeight:700,textTransform:"uppercase",letterSpacing:"1px"}}>{b.status}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {tab==="statements"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:13}}>
-            <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden"}}>
-              <div style={{padding:"13px 16px",borderBottom:`1px solid ${T.border}`}}>
-                <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>Payout statements</div>
-                <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginTop:2}}>Download for your monthly accounting records</div>
-              </div>
-              <div style={{padding:"0 16px"}}>
-                {[
-                  {date:"14 Mar 2026",credits:34,bookings:4,gross:306,commission:20,invNo:"WLO-2026-014"},
-                  {date:"07 Mar 2026",credits:28,bookings:3,gross:252,commission:20,invNo:"WLO-2026-013"},
-                  {date:"28 Feb 2026",credits:24,bookings:3,gross:216,commission:20,invNo:"WLO-2026-012"},
-                  {date:"21 Feb 2026",credits:20,bookings:2,gross:180,commission:20,invNo:"WLO-2026-011"},
-                ].map((row,i,arr)=>{
-                  const net=(row.gross*(1-row.commission/100)).toFixed(2);
-                  return (
-                    <div key={row.date} style={{display:"flex",alignItems:"center",gap:14,padding:"13px 0",borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                      <div style={{flex:1}}>
-                        <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600,marginBottom:2}}>{row.invNo}</div>
-                        <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{row.date} · {row.credits} credits · {row.bookings} bookings</div>
-                      </div>
-                      <div style={{textAlign:"right",marginRight:12}}>
-                        <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>€{net}</div>
-                        <span style={{background:T.sageXL,color:T.sage,fontSize:8,padding:"2px 7px",borderRadius:2,fontFamily:F.body,fontWeight:700}}>Paid</span>
-                      </div>
-                      <button onClick={()=>printInvoice({
-                        invoiceNo:row.invNo,date:row.date,businessName:bizData.name,businessAddress:"Mallorca",
-                        vatNo:"—",iban:"On file",credits:row.credits,bookings:row.bookings,
-                        grossValue:row.gross,commissionRate:row.commission,
-                        commissionAmt:(row.gross*row.commission/100).toFixed(2),netPayout:net,
-                      })} style={{padding:"8px 16px",background:T.ink,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer",flexShrink:0}}>Download PDF</button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:3,padding:"12px 14px"}}>
-              <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,lineHeight:1.6}}>Payouts every Friday · 5.00 per credit · Contact hola@wello.es</div>
-            </div>
-          </div>
-        )}
-
-        {tab==="listing"&&(
-          <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"20px"}}>
-            <div style={{display:"flex",gap:16,marginBottom:18}}>
-              <img src="https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=200&q=80" style={{width:120,height:90,objectFit:"cover",borderRadius:3,flexShrink:0}} alt=""/>
-              <div>
-                <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,letterSpacing:"-0.3px",marginBottom:4}}>Sol and Alma Yoga</div>
-                <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.6,marginBottom:10}}>Rooftop yoga overlooking the Tramuntana mountains.</div>
-              </div>
-            </div>
-            <button style={{padding:"8px 18px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer"}}>Edit listing</button>
-          </div>
-        )}
-
-        {tab==="analytics"&&(
+        {/* ── OVERVIEW ── */}
+        {tab==="overview"&&(
           <div style={{display:"flex",flexDirection:"column",gap:20}}>
             {/* Summary cards */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
               {[
-                {label:"Total sessions",value:"142",sub:"Last 6 months",color:T.sage},
-                {label:"Customer loyalty",value:"68%",sub:"Return booking rate",color:T.sage},
-                {label:"Avg credits/booking",value:"◈ 2.8",sub:"March 2026",color:T.ochre},
-                {label:"Revenue this month",value:"€619",sub:"Paid this Friday",color:T.sage},
+                {label:"Total sessions",value:"142",sub:"Last 6 months",color:"#213C18"},
+                {label:"Customer return rate",value:"68%",sub:"booked more than once",color:"#213C18"},
+                {label:"Avg credits/booking",value:"◈ 2.8",sub:"April 2026",color:"#B8925C"},
+                {label:"Revenue this month",value:"€619",sub:"paid this Friday",color:"#213C18"},
               ].map(({label,value,sub,color})=>(
-                <div key={label} style={{background:T.paper,borderRadius:12,padding:"18px 20px",borderTop:`3px solid ${color}`}}>
-                  <div style={{fontFamily:F.body,fontSize:9,color:T.stone,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:8,fontWeight:500}}>{label}</div>
-                  <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:28,fontWeight:800,color:T.ink,letterSpacing:"-1px",lineHeight:1,marginBottom:4}}>{value}</div>
-                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300}}>{sub}</div>
+                <div key={label} style={{background:"#fff",borderRadius:12,padding:"18px 20px",borderTop:`3px solid ${color}`,boxShadow:"0 1px 8px rgba(0,0,0,0.04)"}}>
+                  <p style={{fontFamily:F2,fontSize:9,color:"#74796E",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 8px"}}>{label}</p>
+                  <p style={{fontFamily:F2,fontSize:28,fontWeight:800,color:"#213C18",letterSpacing:"-1px",margin:"0 0 4px",lineHeight:1}}>{value}</p>
+                  <p style={{fontFamily:F2,fontSize:10,color:"#A3B18A",margin:0}}>{sub}</p>
                 </div>
               ))}
             </div>
 
-            {/* Monthly revenue bar chart */}
-            <div style={{background:T.paper,borderRadius:12,padding:"22px 24px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:20}}>
-                <div>
-                  <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>Monthly revenue</div>
-                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginTop:2}}>Credits redeemed × €5 · less commission</div>
-                </div>
-                <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:20,fontWeight:800,color:T.sage,letterSpacing:"-0.5px"}}>€619</div>
-              </div>
-              {(()=>{
-                const months = [
-                  {m:"Oct",v:280},{m:"Nov",v:340},{m:"Dec",v:290},{m:"Jan",v:410},
-                  {m:"Feb",v:520},{m:"Mar",v:619},
-                ];
-                const max = Math.max(...months.map(x=>x.v));
-                return (
-                  <div style={{display:"flex",alignItems:"flex-end",gap:8,height:140}}>
-                    {months.map(({m,v},i)=>{
-                      const isLast = i===months.length-1;
-                      const h = Math.round((v/max)*120);
-                      return (
-                        <div key={m} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
-                          <div style={{fontFamily:F.body,fontSize:9,color:isLast?T.sage:T.stone2,fontWeight:isLast?700:300}}>€{v}</div>
-                          <div style={{width:"100%",height:h,background:isLast?T.sage:T.bg3,borderRadius:"4px 4px 0 0",transition:"height .3s"}}/>
-                          <div style={{fontFamily:F.body,fontSize:9,color:isLast?T.ink:T.stone2,fontWeight:isLast?700:300}}>{m}</div>
-                        </div>
-                      );
-                    })}
+            {/* Revenue chart + live feed */}
+            <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr",gap:16}}>
+              {/* Bar chart */}
+              <div style={{background:"#fff",borderRadius:12,padding:"22px 24px",boxShadow:"0 1px 8px rgba(0,0,0,0.04)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:20}}>
+                  <div>
+                    <p style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 2px",letterSpacing:"-0.3px"}}>Monthly revenue</p>
+                    <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>Credits redeemed × €5 · less commission</p>
                   </div>
-                );
-              })()}
-            </div>
+                  <p style={{fontFamily:F2,fontSize:20,fontWeight:800,color:"#213C18",letterSpacing:"-0.5px",margin:0}}>€619</p>
+                </div>
+                {(()=>{
+                  const months=[{m:"Nov",v:280},{m:"Dec",v:310},{m:"Jan",v:390},{m:"Feb",v:480},{m:"Mar",v:530},{m:"Apr",v:619}];
+                  const max=Math.max(...months.map(x=>x.v));
+                  return (
+                    <div style={{display:"flex",alignItems:"flex-end",gap:8,height:120}}>
+                      {months.map(({m,v},i)=>{
+                        const isLast=i===months.length-1;
+                        const h=Math.round((v/max)*100);
+                        return (
+                          <div key={m} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
+                            <p style={{fontFamily:F2,fontSize:9,color:isLast?"#213C18":"#A3B18A",fontWeight:isLast?700:400,margin:0}}>€{v}</p>
+                            <div style={{width:"100%",height:h,background:isLast?"#213C18":"#E4E2DD",borderRadius:"4px 4px 0 0",transition:"height .3s"}}/>
+                            <p style={{fontFamily:F2,fontSize:9,color:isLast?"#213C18":"#74796E",fontWeight:isLast?700:400,margin:0}}>{m}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
 
-            {/* Live bookings feed */}
-            <div style={{background:T.paper,borderRadius:12,overflow:"hidden"}}>
-              <div style={{padding:"16px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div>
-                  <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>Live bookings</div>
-                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginTop:2}}>Real-time activity feed</div>
-                </div>
-                <div style={{display:"flex",alignItems:"center",gap:5}}>
-                  <span style={{width:6,height:6,borderRadius:"50%",background:"#4caf50",display:"inline-block",animation:"pulse 2s infinite"}}/>
-                  <span style={{fontFamily:F.body,fontSize:9,color:T.sage,fontWeight:600}}>Live</span>
-                </div>
-              </div>
-              <div style={{padding:"0 20px"}}>
-                {RECENT.map((b,i)=>(
-                  <div key={i} style={{display:"flex",alignItems:"center",gap:14,padding:"13px 0",borderBottom:i<RECENT.length-1?`1px solid ${T.border}`:"none"}}>
-                    <div style={{width:38,height:38,borderRadius:"50%",background:b.status==="Confirmed"?T.sageXL:T.ochreXL,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F.body,fontSize:11,color:b.status==="Confirmed"?T.sage:T.ochre,fontWeight:700,flexShrink:0}}>{b.initials}</div>
-                    <div style={{flex:1}}>
-                      <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>{b.name}</div>
-                      <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{b.cls} · {b.when}</div>
-                    </div>
-                    <div style={{textAlign:"right"}}>
-                      <div style={{fontFamily:F.body,fontSize:10,color:T.stone,marginBottom:3}}>◈ {b.cr}</div>
-                      <span style={{background:b.status==="Confirmed"?T.sageXL:T.ochreXL,color:b.status==="Confirmed"?T.sage:T.ochre,fontSize:8,padding:"2px 8px",borderRadius:20,fontFamily:F.body,fontWeight:700,textTransform:"uppercase",letterSpacing:"1px"}}>{b.status}</span>
-                    </div>
+              {/* Live bookings */}
+              <div style={{background:"#fff",borderRadius:12,padding:"22px 24px",boxShadow:"0 1px 8px rgba(0,0,0,0.04)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+                  <p style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:0,letterSpacing:"-0.3px"}}>Live bookings</p>
+                  <div style={{display:"flex",alignItems:"center",gap:5}}>
+                    <span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
+                    <span style={{fontFamily:F2,fontSize:10,color:"#213C18",fontWeight:600}}>Live</span>
                   </div>
-                ))}
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:0}}>
+                  {RECENT.map((b,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<RECENT.length-1?"1px solid rgba(195,200,188,0.2)":"none"}}>
+                      <div style={{width:32,height:32,borderRadius:"50%",background:b.status==="Confirmed"?"#CAECBA":"#FADEC0",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:10,color:b.status==="Confirmed"?"#213C18":"#766149",fontWeight:700,flexShrink:0}}>{b.initials}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <p style={{fontFamily:F2,fontSize:12,color:"#1B1C19",fontWeight:600,margin:"0 0 1px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{b.name}</p>
+                        <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>{b.cls} · {b.when}</p>
+                      </div>
+                      <span style={{fontFamily:F2,fontSize:10,color:b.status==="Confirmed"?"#213C18":"#B8925C",fontWeight:700,flexShrink:0,background:b.status==="Confirmed"?"#CAECBA":"#FADEC0",padding:"2px 8px",borderRadius:999}}>{b.status}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
         )}
 
+        {/* ── SCHEDULE ── */}
+        {tab==="schedule"&&(
+          <div>
+            {/* Day selector */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
+              <div style={{display:"flex",gap:6,overflowX:"auto",scrollbarWidth:"none"}}>
+                {WEEK_DAYS.map((d,i)=>{
+                  const count = CLS.filter(c=>c.day===i).length;
+                  return (
+                    <button key={d} onClick={()=>setSelDay(i)}
+                      style={{padding:"10px 14px",borderRadius:10,border:"none",cursor:"pointer",textAlign:"center",transition:"all .15s",flexShrink:0,
+                        background:selDay===i?"#213C18":"#fff",
+                        boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
+                      <p style={{fontFamily:F2,fontSize:10,color:selDay===i?"rgba(255,255,255,0.6)":"#74796E",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.5px"}}>{d}</p>
+                      <p style={{fontFamily:F2,fontSize:15,fontWeight:800,color:selDay===i?"#fff":"#213C18",margin:"0 0 2px",letterSpacing:"-0.5px"}}>{WEEK_DATES[i].split(" ")[0]}</p>
+                      {count>0&&<div style={{width:4,height:4,borderRadius:"50%",background:selDay===i?"rgba(255,255,255,0.5)":"#213C18",margin:"0 auto"}}/>}
+                    </button>
+                  );
+                })}
+              </div>
+              <button onClick={()=>setShowAddSlot(true)}
+                style={{padding:"10px 18px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+                + Add slot
+              </button>
+            </div>
 
-        {tab==="analytics"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:20}}>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
-              {[
-                {label:"Total sessions",value:"142",sub:"Last 6 months",color:T.sage},
-                {label:"Customer loyalty",value:"68%",sub:"Return booking rate",color:T.sage},
-                {label:"Avg credits/booking",value:"◈ 2.8",sub:"March 2026",color:T.ochre},
-                {label:"Revenue this month",value:"€619",sub:"Paid this Friday",color:T.sage},
-              ].map(({label,value,sub,color})=>(
-                <div key={label} style={{background:T.paper,borderRadius:12,padding:"18px 20px",borderTop:`3px solid ${color}`}}>
-                  <div style={{fontFamily:F.body,fontSize:9,color:T.stone,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:8,fontWeight:500}}>{label}</div>
-                  <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:28,fontWeight:800,color:T.ink,letterSpacing:"-1px",lineHeight:1,marginBottom:4}}>{value}</div>
-                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300}}>{sub}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{background:T.paper,borderRadius:12,padding:"22px 24px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:20}}>
-                <div>
-                  <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>Monthly revenue</div>
-                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginTop:2}}>Credits redeemed × €5 · less commission</div>
-                </div>
-                <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:20,fontWeight:800,color:T.sage,letterSpacing:"-0.5px"}}>€619</div>
-              </div>
-              {(()=>{
-                const months=[{m:"Oct",v:280},{m:"Nov",v:340},{m:"Dec",v:290},{m:"Jan",v:410},{m:"Feb",v:520},{m:"Mar",v:619}];
-                const max=Math.max(...months.map(x=>x.v));
-                return (
-                  <div style={{display:"flex",alignItems:"flex-end",gap:8,height:140}}>
-                    {months.map(({m,v},i)=>{
-                      const isLast=i===months.length-1;
-                      const h=Math.round((v/max)*120);
-                      return (
-                        <div key={m} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
-                          <div style={{fontFamily:F.body,fontSize:9,color:isLast?T.sage:T.stone2,fontWeight:isLast?700:300}}>€{v}</div>
-                          <div style={{width:"100%",height:h,background:isLast?T.sage:T.bg3,borderRadius:"4px 4px 0 0"}}/>
-                          <div style={{fontFamily:F.body,fontSize:9,color:isLast?T.ink:T.stone2,fontWeight:isLast?700:300}}>{m}</div>
-                        </div>
-                      );
-                    })}
+            {/* Slots for day */}
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {dayCLS.length===0
+                ? <div style={{background:"#fff",borderRadius:12,padding:"40px",textAlign:"center",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
+                    <p style={{fontFamily:F2,fontSize:16,color:"#74796E",margin:"0 0 12px"}}>No classes on {WEEK_DAYS[selDay]}</p>
+                    <button onClick={()=>setShowAddSlot(true)} style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"10px 20px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Add a class</button>
                   </div>
-                );
-              })()}
+                : dayCLS.map(cl=>{
+                    const avail=cl.spots-cl.booked;
+                    const pct=(cl.booked/cl.spots)*100;
+                    // Bookings for this slot
+                    const slotBookings = RECENT.filter(b=>b.cls===cl.name).slice(0,3);
+                    return (
+                      <div key={cl.id} style={{background:"#fff",borderRadius:12,padding:"16px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)",border:cl.live?"1px solid rgba(195,200,188,0.3)":"1px dashed rgba(195,200,188,0.5)",opacity:cl.live?1:0.7}}>
+                        <div style={{display:"flex",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+                          {/* Time */}
+                          <div style={{textAlign:"center",minWidth:52,flexShrink:0}}>
+                            <p style={{fontFamily:F2,fontSize:18,fontWeight:800,color:"#213C18",margin:0,letterSpacing:"-0.5px"}}>{cl.time}</p>
+                            <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>{cl.dur}</p>
+                          </div>
+                          <div style={{width:1,height:40,background:"rgba(195,200,188,0.4)",flexShrink:0,marginTop:4}}/>
+                          {/* Details */}
+                          <div style={{flex:1}}>
+                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+                              <p style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#1B1C19",margin:0}}>{cl.name}</p>
+                              <span style={{fontFamily:F2,fontSize:10,fontWeight:700,color:cl.live?"#213C18":"#74796E",background:cl.live?"#CAECBA":"#E4E2DD",padding:"2px 8px",borderRadius:999}}>{cl.live?"Live":"Paused"}</span>
+                              <span style={{fontFamily:F2,fontSize:10,color:"#74796E",background:"#F5F3EE",padding:"2px 8px",borderRadius:999}}>◈ {cl.credits} per person</span>
+                            </div>
+                            {/* Capacity */}
+                            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                              <div style={{width:120,height:4,background:"#E4E2DD",borderRadius:999}}>
+                                <div style={{width:`${pct}%`,height:"100%",background:pct>=100?"#1B1C19":pct>75?"#B8925C":"#213C18",borderRadius:999}}/>
+                              </div>
+                              <p style={{fontFamily:F2,fontSize:11,color:pct>=100?"#e05c5c":"#213C18",fontWeight:600,margin:0}}>{cl.booked}/{cl.spots} booked · {avail} left</p>
+                            </div>
+                            {/* Booked names */}
+                            {slotBookings.length>0&&(
+                              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                                {slotBookings.map(b=>(
+                                  <span key={b.initials} style={{fontFamily:F2,fontSize:10,color:"#74796E",background:"#F5F3EE",padding:"2px 8px",borderRadius:999}}>{b.name}</span>
+                                ))}
+                                {cl.booked>slotBookings.length&&<span style={{fontFamily:F2,fontSize:10,color:"#A3B18A",padding:"2px 0"}}>+{cl.booked-slotBookings.length} more</span>}
+                              </div>
+                            )}
+                          </div>
+                          {/* Actions */}
+                          <div style={{display:"flex",gap:6,flexShrink:0}}>
+                            <button onClick={()=>setCLS(p=>p.map(c=>c.id===cl.id?{...c,live:!c.live}:c))}
+                              style={{padding:"6px 12px",background:cl.live?"#FADEC0":"#CAECBA",color:cl.live?"#766149":"#213C18",border:"none",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                              {cl.live?"Pause":"Go live"}
+                            </button>
+                            <button onClick={()=>setCLS(p=>p.filter(c=>c.id!==cl.id))}
+                              style={{padding:"6px 12px",background:"transparent",color:"#74796E",border:"1px solid rgba(195,200,188,0.4)",borderRadius:999,fontFamily:F2,fontSize:11,cursor:"pointer"}}>
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+              }
             </div>
-            <div style={{background:T.paper,borderRadius:12,overflow:"hidden"}}>
-              <div style={{padding:"16px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div>
-                  <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>Live bookings</div>
-                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginTop:2}}>Real-time activity feed</div>
-                </div>
-                <div style={{display:"flex",alignItems:"center",gap:5}}>
-                  <span style={{width:6,height:6,borderRadius:"50%",background:"#4caf50",display:"inline-block",animation:"pulse 2s infinite"}}/>
-                  <span style={{fontFamily:F.body,fontSize:9,color:T.sage,fontWeight:600}}>Live</span>
+
+            {/* Add slot modal */}
+            {showAddSlot&&(
+              <div style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(27,28,25,0.7)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowAddSlot(false)}>
+                <div style={{background:"#fff",borderRadius:16,maxWidth:420,width:"100%",padding:"28px 28px",boxShadow:"0 24px 60px rgba(0,0,0,0.2)"}} onClick={e=>e.stopPropagation()}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+                    <h3 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#213C18",margin:0}}>Add a class slot</h3>
+                    <button onClick={()=>setShowAddSlot(false)} style={{background:"transparent",border:"none",fontSize:18,cursor:"pointer",color:"#74796E"}}>×</button>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                    {[{l:"Class name",k:"name",p:"e.g. Sunrise Flow"},{l:"Time",k:"time",p:"09:00",t:"time"},{l:"Duration",k:"dur",p:"e.g. 60 min"},{l:"Available spots",k:"spots",p:"10",t:"number"},{l:"Credits per person",k:"credits",p:"3",t:"number"}].map(f=>(
+                      <div key={f.k}>
+                        <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:5}}>{f.l}</label>
+                        <input type={f.t||"text"} placeholder={f.p} value={newSlot[f.k]} onChange={e=>setNewSlot(p=>({...p,[f.k]:e.target.value}))} style={{...INP}}
+                          onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                      </div>
+                    ))}
+                    <button onClick={()=>{
+                      if(!newSlot.name||!newSlot.time) return;
+                      setCLS(p=>[...p,{id:Date.now(),day:selDay,time:newSlot.time,name:newSlot.name,spots:+newSlot.spots||10,booked:0,credits:+newSlot.credits||3,dur:newSlot.dur||"60 min",live:true}]);
+                      setShowAddSlot(false);
+                      setNewSlot({name:"",time:"09:00",spots:10,credits:3,dur:"60 min"});
+                    }} style={{marginTop:4,padding:"13px 0",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>
+                      Add slot
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div style={{padding:"0 20px"}}>
-                {RECENT.map((b,i)=>(
-                  <div key={i} style={{display:"flex",alignItems:"center",gap:14,padding:"13px 0",borderBottom:i<RECENT.length-1?`1px solid ${T.border}`:"none"}}>
-                    <div style={{width:38,height:38,borderRadius:"50%",background:b.status==="Confirmed"?T.sageXL:T.ochreXL,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F.body,fontSize:11,color:b.status==="Confirmed"?T.sage:T.ochre,fontWeight:700,flexShrink:0}}>{b.initials}</div>
-                    <div style={{flex:1}}>
-                      <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>{b.name}</div>
-                      <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{b.cls} · {b.when}</div>
-                    </div>
-                    <div style={{textAlign:"right"}}>
-                      <div style={{fontFamily:F.body,fontSize:10,color:T.stone,marginBottom:3}}>◈ {b.cr}</div>
-                      <span style={{background:b.status==="Confirmed"?T.sageXL:T.ochreXL,color:b.status==="Confirmed"?T.sage:T.ochre,fontSize:8,padding:"2px 8px",borderRadius:20,fontFamily:F.body,fontWeight:700,textTransform:"uppercase",letterSpacing:"1px"}}>{b.status}</span>
-                    </div>
+            )}
+          </div>
+        )}
+
+        {/* ── PAYOUTS ── */}
+        {tab==="payouts"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{background:"#213C18",borderRadius:12,padding:"20px 24px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+              <div>
+                <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 4px"}}>Next payout</p>
+                <p style={{fontFamily:F2,fontSize:28,fontWeight:800,color:"#fff",letterSpacing:"-1px",margin:"0 0 2px"}}>€619.20</p>
+                <p style={{fontFamily:F2,fontSize:12,color:"rgba(255,255,255,0.5)",margin:0}}>Processed this Friday · direct to your IBAN</p>
+              </div>
+              <div style={{background:"rgba(255,255,255,0.1)",borderRadius:10,padding:"12px 16px",textAlign:"right"}}>
+                <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",margin:"0 0 2px"}}>Commission rate</p>
+                <p style={{fontFamily:F2,fontSize:16,fontWeight:700,color:"#CAECBA",margin:0}}>20% · agreed with Wello</p>
+              </div>
+            </div>
+            {[
+              {date:"14 Mar 2026",credits:34,bookings:4,gross:306,commission:20,invNo:"WLO-2026-014"},
+              {date:"07 Mar 2026",credits:28,bookings:3,gross:252,commission:20,invNo:"WLO-2026-013"},
+              {date:"28 Feb 2026",credits:24,bookings:3,gross:216,commission:20,invNo:"WLO-2026-012"},
+            ].map((row,i)=>{
+              const net=(row.gross*(1-row.commission/100)).toFixed(2);
+              return (
+                <div key={row.date} style={{background:"#fff",borderRadius:12,padding:"16px 20px",display:"flex",alignItems:"center",gap:14,boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
+                  <div style={{flex:1}}>
+                    <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#1B1C19",margin:"0 0 2px"}}>{row.invNo}</p>
+                    <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>{row.date} · {row.credits} credits · {row.bookings} bookings</p>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <p style={{fontFamily:F2,fontSize:16,fontWeight:800,color:"#213C18",margin:"0 0 2px",letterSpacing:"-0.5px"}}>€{net}</p>
+                    <span style={{fontFamily:F2,fontSize:9,fontWeight:700,color:"#213C18",background:"#CAECBA",padding:"2px 7px",borderRadius:999}}>Paid</span>
+                  </div>
+                  <button style={{padding:"7px 14px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",flexShrink:0}}>↓ Download</button>
+                </div>
+              );
+            })}
+            <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",textAlign:"center",marginTop:4}}>Payouts every Friday · questions? hello@wello-wellness.com</p>
+          </div>
+        )}
+
+        {/* ── MY LISTING ── */}
+        {tab==="listing"&&(
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"start"}}>
+            {/* Listing preview */}
+            <div style={{background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
+              <div style={{position:"relative",height:180}}>
+                <img src="https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&q=80" alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(27,28,25,0.7) 0%,transparent 60%)"}}/>
+                <div style={{position:"absolute",bottom:12,left:14,right:14}}>
+                  <p style={{fontFamily:F2,fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{listing.name}</p>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    <span style={{fontFamily:F2,fontSize:10,color:"#fff",background:"#213C18",padding:"2px 8px",borderRadius:999}}>{listing.cat}</span>
+                    {listing.cat2&&<span style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.8)",background:"rgba(255,255,255,0.15)",padding:"2px 8px",borderRadius:999}}>{listing.cat2}</span>}
+                  </div>
+                </div>
+              </div>
+              <div style={{padding:"14px 16px"}}>
+                <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 8px",lineHeight:1.6}}>{listing.desc}</p>
+                <p style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600,margin:0}}>📍 {listing.loc} · ◈ {listing.credits} per person</p>
+              </div>
+            </div>
+            {/* Edit form */}
+            <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
+              <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 16px"}}>Edit listing details</h3>
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                {[{l:"Venue name",k:"name"},{l:"Location",k:"loc"},{l:"Primary category",k:"cat"},{l:"Secondary category",k:"cat2"},{l:"Credits per person",k:"credits",t:"number"},{l:"Tags (comma separated)",k:"tags"}].map(f=>(
+                  <div key={f.k}>
+                    <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:5}}>{f.l}</label>
+                    <input type={f.t||"text"} value={listing[f.k]||""} onChange={e=>setListing(p=>({...p,[f.k]:e.target.value}))}
+                      style={{...INP}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
                   </div>
                 ))}
+                <div>
+                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:5}}>Description</label>
+                  <textarea value={listing.desc} onChange={e=>setListing(p=>({...p,desc:e.target.value}))} rows={3}
+                    style={{...INP,resize:"vertical"}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                </div>
+                <button style={{padding:"12px 0",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer"}}>Save changes</button>
               </div>
             </div>
           </div>
         )}
 
+        {/* ── SETTINGS ── */}
         {tab==="settings"&&(
-          <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"20px",display:"flex",flexDirection:"column",gap:14}}>
-            {[["Contact email","hello@solyalmayoga.com"],["Phone","+34 971 234 567"],["IBAN","ES12 3456 7890 1234 5678"]].map(([l,v])=>(
-              <div key={l}><FieldLabel>{l}</FieldLabel><input defaultValue={v} style={INP3} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=T.border}/></div>
-            ))}
-            <button style={{alignSelf:"flex-start",padding:"8px 18px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer"}}>Save changes</button>
+          <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:560}}>
+            {/* Contact details */}
+            <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
+              <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 14px"}}>Contact & payment</h3>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {[{l:"Contact email",v:"hello@solyalmayoga.com"},{l:"Phone",v:"+34 971 234 567"},{l:"IBAN",v:"ES12 3456 7890 1234 5678"}].map(f=>(
+                  <div key={f.l}>
+                    <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:5}}>{f.l}</label>
+                    <input defaultValue={f.v} style={{...INP}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  </div>
+                ))}
+                <button style={{alignSelf:"flex-start",padding:"10px 20px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",marginTop:4}}>Save changes</button>
+              </div>
+            </div>
+
+            {/* Integrations */}
+            <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
+              <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Booking system integration</h3>
+              <p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:"0 0 16px",lineHeight:1.6}}>Connect your existing booking system so your schedule stays in sync automatically.</p>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {[
+                  {id:"mindbody",name:"Mindbody",desc:"Most yoga & pilates studios",status:"coming_soon",icon:"🧘"},
+                  {id:"fresha",name:"Fresha",desc:"Spas, massage & beauty",status:"available",icon:"💆"},
+                  {id:"google",name:"Google Calendar",desc:"iCal feed · works with anything",status:"available",icon:"📅"},
+                  {id:"manual",name:"Manage manually",desc:"Add & edit slots directly in Wello",status:"active",icon:"✏️"},
+                ].map(item=>(
+                  <div key={item.id} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:integration===item.id?"rgba(33,60,24,0.05)":"#F5F3EE",borderRadius:10,border:integration===item.id?"1px solid rgba(33,60,24,0.2)":"1px solid transparent",transition:"all .15s",cursor:item.status==="coming_soon"?"default":"pointer"}}
+                    onClick={()=>item.status!=="coming_soon"&&setIntegration(item.id)}>
+                    <span style={{fontSize:22,flexShrink:0}}>{item.icon}</span>
+                    <div style={{flex:1}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                        <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:0}}>{item.name}</p>
+                        {item.status==="coming_soon"&&<span style={{fontFamily:F2,fontSize:9,fontWeight:700,color:"#B8925C",background:"#FADEC0",padding:"2px 6px",borderRadius:999}}>Coming soon</span>}
+                        {item.status==="active"&&<span style={{fontFamily:F2,fontSize:9,fontWeight:700,color:"#213C18",background:"#CAECBA",padding:"2px 6px",borderRadius:999}}>Active</span>}
+                      </div>
+                      <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>{item.desc}</p>
+                    </div>
+                    {item.status!=="coming_soon"&&(
+                      <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600}}>{integration===item.id?"✓ Selected":"Select →"}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {integration==="google"&&(
+                <div style={{marginTop:14,padding:"14px 16px",background:"#F5F3EE",borderRadius:10}}>
+                  <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Connect Google Calendar</p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:"0 0 10px",lineHeight:1.6}}>1. Open Google Calendar → Settings → your calendar → Integrate calendar<br/>2. Copy the iCal URL and paste below</p>
+                  <input placeholder="Paste your iCal URL here..." style={{...INP,marginBottom:8}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  <button style={{padding:"8px 16px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>Connect</button>
+                </div>
+              )}
+              {integration==="fresha"&&(
+                <div style={{marginTop:14,padding:"14px 16px",background:"#F5F3EE",borderRadius:10}}>
+                  <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Connect Fresha</p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:"0 0 10px",lineHeight:1.6}}>1. Log into Fresha → Settings → Integrations<br/>2. Copy your API key and paste below</p>
+                  <input placeholder="Paste your Fresha API key here..." style={{...INP,marginBottom:8}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  <button style={{padding:"8px 16px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>Connect</button>
+                </div>
+              )}
+              {integration==="manual"&&(
+                <div style={{marginTop:14,padding:"14px 16px",background:"#CAECBA",borderRadius:10}}>
+                  <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>✓ Manual mode active</p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#213C18",margin:0,opacity:0.7}}>Manage your schedule directly in the Schedule tab.</p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -1852,10 +2099,6 @@ function BusinessPortalDashboard({ onExit }) {
   );
 }
 
-
-// ═══════════════════════════════════════════════════════════════
-// PAGE: BUSINESS PORTAL  (separate login/register entry point)
-// ═══════════════════════════════════════════════════════════════
 function BusinessPortal({ onSetView }) {
   const [screen, setScreen]     = useState("landing");
   const [email,  setEmail]      = useState("");
@@ -2098,6 +2341,11 @@ function BusinessPortal({ onSetView }) {
 export default function App() {
   const [view,setView]         = useState("home");
   const [bizPreview,setBizPreview] = useState(false);
+  const [showContact,setShowContact] = useState(false);
+  const [showPrivacy,setShowPrivacy] = useState(false);
+  const [showTerms,setShowTerms] = useState(false);
+  const [contactForm,setContactForm] = useState({name:"",email:"",message:""});
+  const [contactSent,setContactSent] = useState(false);
   const [recovering,setRecovering] = useState(false);
   const [newPw,setNewPw]       = useState("");
   const [newPwErr,setNewPwErr] = useState("");
@@ -2158,7 +2406,7 @@ export default function App() {
   function onPurchase(purchase){ setCredits(c=>c+purchase.cr); showToast(`◈ ${purchase.cr} credits added!`,"gold"); }
   function toggleSave(id){ setSaved(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]); showToast(saved.includes(id)?"Removed from saved":"Saved!","success"); }
 
-  const NAV=[{id:"home",l:"Home"},{id:"explore",l:"Explore"},{id:"credits",l:"Credits"},{id:"profile",l:"Profile"},{id:"biz-portal",l:"For Business"}];
+  const NAV=[{id:"home",l:"Home"},{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"profile",l:"Profile"},{id:"biz-portal",l:"For Business"}];
 
   return (
     <>
@@ -2209,17 +2457,6 @@ export default function App() {
         </div>
       )}
 
-      {/* PROTOTYPE PREVIEW BAR — remove before public launch */}
-      {!bizPreview&&<div style={{background:T.ink2,padding:"6px 20px",display:"flex",gap:10,alignItems:"center",justifyContent:"center",flexWrap:"wrap"}}>
-        <span style={{fontFamily:F.body,fontSize:9,color:T.stone2,letterSpacing:"1px",textTransform:"uppercase"}}>Demo</span>
-        <button onClick={()=>setBizPreview(true)} style={{padding:"4px 12px",background:"transparent",color:T.ochreL,border:`1px solid ${T.ochre}`,borderRadius:2,fontFamily:F.body,fontSize:9,cursor:"pointer",fontWeight:600,letterSpacing:".3px"}}>
-          👁 Preview business console
-        </button>
-      </div>}
-      {bizPreview&&<div style={{background:T.ink,padding:"5px 16px",display:"flex",gap:8,alignItems:"center",justifyContent:"flex-end"}}>
-        <span style={{fontFamily:F.body,fontSize:9,color:T.stone2}}>Business console preview</span>
-        <button onClick={()=>setBizPreview(false)} style={{padding:"3px 10px",background:"transparent",color:T.stone2,border:`1px solid ${T.border2}`,borderRadius:2,fontFamily:F.body,fontSize:9,cursor:"pointer"}}>✕ Exit preview</button>
-      </div>}
       {bizPreview&&<BusinessPortalDashboard onExit={()=>setBizPreview(false)}/>}
 
       <div style={{minHeight:"100vh",background:"#FBF9F4",display:bizPreview?"none":"block"}}>
@@ -2231,7 +2468,7 @@ export default function App() {
             <div style={{display:"flex",alignItems:"center",gap:48}}>
               <a onClick={()=>setView("home")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:22,fontWeight:800,color:"#213C18",letterSpacing:"-1px",cursor:"pointer",userSelect:"none",textDecoration:"none"}}>wello</a>
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                {[{id:"explore",l:"Explore"},{id:"credits",l:"Credits"},{id:"biz-portal",l:"For Business"}].map(n=>(
+                {[{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"biz-portal",l:"For Business"}].map(n=>(
                   <button key={n.id} onClick={()=>setView(n.id)}
                     style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,fontWeight:view===n.id?700:500,color:view===n.id?"#213C18":"#43483F",background:"transparent",border:"none",borderBottom:view===n.id?"2px solid #213C18":"2px solid transparent",padding:"4px 4px 8px",cursor:"pointer",letterSpacing:"-0.2px",transition:"color .2s",outline:"none"}}
                     onMouseEnter={e=>{if(view!==n.id)e.target.style.color="#213C18"}}
@@ -2275,10 +2512,9 @@ export default function App() {
               <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",maxWidth:280,lineHeight:1.6,margin:0}}>© 2026 Wello. Our Sustainability Commitment.</p>
             </div>
             <div style={{display:"flex",gap:32,flexWrap:"wrap"}}>
-              {["Privacy","Terms","Marketplace","Our Mission","Contact"].map(l=>(
-                <a key={l} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}}
-                  onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>{l}</a>
-              ))}
+              <a onClick={()=>setShowPrivacy(true)} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Privacy</a>
+              <a onClick={()=>setShowTerms(true)} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Terms</a>
+              <a onClick={()=>setShowContact(true)} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Contact</a>
             </div>
             <div>
               <button style={{width:40,height:40,borderRadius:"50%",border:"1px solid rgba(195,200,188,0.4)",background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,transition:"background .15s"}}
@@ -2288,16 +2524,129 @@ export default function App() {
         </footer>
       </div>
 
+      {/* CONTACT MODAL */}
+      {showContact&&(
+        <div style={{position:"fixed",inset:0,zIndex:2000,background:"rgba(27,28,25,0.75)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowContact(false)}>
+          <div style={{background:"#fff",borderRadius:20,maxWidth:480,width:"100%",padding:"36px 32px",boxShadow:"0 32px 80px rgba(0,0,0,0.22)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
+              <div>
+                <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:22,fontWeight:700,color:"#213C18",margin:"0 0 4px",letterSpacing:"-0.5px"}}>Get in touch</h2>
+                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,color:"#74796E",margin:0}}>We'd love to hear from you.</p>
+              </div>
+              <button onClick={()=>{setShowContact(false);setContactSent(false);setContactForm({name:"",email:"",message:""}); }} style={{background:"transparent",border:"none",fontSize:20,cursor:"pointer",color:"#74796E",padding:4}}>×</button>
+            </div>
+            {contactSent?(
+              <div style={{textAlign:"center",padding:"20px 0"}}>
+                <div style={{fontSize:40,marginBottom:12}}>✓</div>
+                <h3 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:18,fontWeight:700,color:"#213C18",margin:"0 0 8px"}}>Message sent!</h3>
+                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,color:"#74796E",margin:0}}>We'll get back to you at {contactForm.email}.</p>
+              </div>
+            ):(
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                {[{l:"Name",k:"name",t:"text",p:"Your name"},{l:"Email",k:"email",t:"email",p:"your@email.com"}].map(f=>(
+                  <div key={f.k}>
+                    <label style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:6}}>{f.l}</label>
+                    <input type={f.t} placeholder={f.p} value={contactForm[f.k]} onChange={e=>setContactForm(p=>({...p,[f.k]:e.target.value}))}
+                      style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s"}}
+                      onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  </div>
+                ))}
+                <div>
+                  <label style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:6}}>Message</label>
+                  <textarea placeholder="How can we help?" value={contactForm.message} onChange={e=>setContactForm(p=>({...p,message:e.target.value}))} rows={4}
+                    style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",resize:"vertical",transition:"border-color .15s"}}
+                    onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                </div>
+                <a href={`mailto:hello@wello-wellness.com?subject=Wello enquiry from ${contactForm.name}&body=${encodeURIComponent(contactForm.message + "%0A%0AFrom: " + contactForm.name + "%0AEmail: " + contactForm.email)}`}
+                  onClick={()=>setContactSent(true)}
+                  style={{display:"block",width:"100%",padding:"14px 0",borderRadius:999,background:contactForm.name&&contactForm.email&&contactForm.message?"#213C18":"#E4E2DD",color:contactForm.name&&contactForm.email&&contactForm.message?"#fff":"#74796E",border:"none",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:15,fontWeight:700,cursor:contactForm.name&&contactForm.email&&contactForm.message?"pointer":"not-allowed",textAlign:"center",textDecoration:"none",transition:"all .15s",boxSizing:"border-box"}}>
+                  Send message →
+                </a>
+                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"#A3B18A",textAlign:"center",margin:0}}>Or email us directly: hello@wello-wellness.com</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* PRIVACY MODAL */}
+      {showPrivacy&&(
+        <div style={{position:"fixed",inset:0,zIndex:2000,background:"rgba(27,28,25,0.75)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowPrivacy(false)}>
+          <div style={{background:"#fff",borderRadius:20,maxWidth:560,width:"100%",padding:"36px 32px",boxShadow:"0 32px 80px rgba(0,0,0,0.22)",maxHeight:"80vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:24}}>
+              <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:22,fontWeight:700,color:"#213C18",margin:0}}>Privacy Policy</h2>
+              <button onClick={()=>setShowPrivacy(false)} style={{background:"transparent",border:"none",fontSize:20,cursor:"pointer",color:"#74796E"}}>×</button>
+            </div>
+            {[
+              ["What we collect","We collect your name, email address and booking information when you use Wello. We also collect usage data to improve the platform."],
+              ["How we use it","Your data is used to process bookings, send confirmations and improve your experience. We never sell your data to third parties."],
+              ["Venue partners","When you make a booking, your name and email are shared with the relevant venue so they can confirm your attendance."],
+              ["Your rights","You can request to view, update or delete your data at any time by contacting hello@wello-wellness.com."],
+              ["Cookies","We use essential cookies to keep you logged in. No advertising or tracking cookies are used."],
+              ["Contact","For any privacy questions contact hello@wello-wellness.com"],
+            ].map(([title,body])=>(
+              <div key={title} style={{marginBottom:20}}>
+                <h3 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>{title}</h3>
+                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#74796E",margin:0,lineHeight:1.7}}>{body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* TERMS MODAL */}
+      {showTerms&&(
+        <div style={{position:"fixed",inset:0,zIndex:2000,background:"rgba(27,28,25,0.75)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowTerms(false)}>
+          <div style={{background:"#fff",borderRadius:20,maxWidth:560,width:"100%",padding:"36px 32px",boxShadow:"0 32px 80px rgba(0,0,0,0.22)",maxHeight:"80vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:24}}>
+              <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:22,fontWeight:700,color:"#213C18",margin:0}}>Terms of Use</h2>
+              <button onClick={()=>setShowTerms(false)} style={{background:"transparent",border:"none",fontSize:20,cursor:"pointer",color:"#74796E"}}>×</button>
+            </div>
+            {[
+              ["Credits","Wello credits are purchased in advance and used to book wellness experiences. Credits expire 6 months from purchase. Credits are non-refundable once purchased."],
+              ["Bookings","Bookings are confirmed immediately on payment. Cancellations must be made at least 24 hours before the session. Late cancellations forfeit the credits used."],
+              ["Venue access","Wello acts as a marketplace connecting users with venue partners. Wello is not responsible for the quality, safety or availability of individual venues."],
+              ["Account","You are responsible for maintaining the security of your account. Do not share your login details."],
+              ["Changes","Wello reserves the right to update these terms. Continued use of the platform after changes constitutes acceptance."],
+              ["Contact","For any questions contact hello@wello-wellness.com"],
+            ].map(([title,body])=>(
+              <div key={title} style={{marginBottom:20}}>
+                <h3 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>{title}</h3>
+                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#74796E",margin:0,lineHeight:1.7}}>{body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {selBiz   &&<BizPanel biz={selBiz}        onClose={()=>setSelBiz(null)}  onBook={onBook}/>}
       {bkData   &&<BookingModal biz={bkData.biz} slot={bkData.slot} onClose={()=>setBkData(null)} onConfirm={onConfirm} credits={credits} onBuyCredits={()=>{setBkData(null);setView("credits");}}/>}
       <SyncEngine listings={listings} onUpdate={onSyncUpdate}/>
       <Chatbot listings={listings} credits={credits} bookings={bookings} onSelectBiz={onSelect}/>
 
+      {/* Prototype preview — goes straight to dashboard demo */}
+      {!bizPreview&&(
+        <div style={{position:"fixed",bottom:80,right:16,zIndex:400}}>
+          <button onClick={()=>setBizPreview(true)}
+            style={{background:"#1B1C19",color:"#D6B47C",border:"1px solid #B8925C",borderRadius:999,padding:"8px 16px",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,fontWeight:600,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,0,0,0.3)",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
+            👁 Business dashboard
+          </button>
+        </div>
+      )}
+      {bizPreview&&(
+        <div style={{position:"fixed",bottom:80,right:16,zIndex:400}}>
+          <button onClick={()=>setBizPreview(false)}
+            style={{background:"#1B1C19",color:"#A89E8C",border:"1px solid #43483F",borderRadius:999,padding:"8px 16px",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,0,0,0.3)"}}>
+            ✕ Exit preview
+          </button>
+        </div>
+      )}
+
       {/* Mobile bottom nav */}
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"rgba(251,249,244,0.95)",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",borderTop:"1px solid rgba(195,200,188,0.2)",padding:"8px 24px calc(8px + env(safe-area-inset-bottom))"}}>
         <style>{`@media (min-width: 768px) { .mob-nav { display: none !important; } }`}</style>
         <div className="mob-nav" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          {[{id:"home",icon:"🏠",l:"Home"},{id:"explore",icon:"🧭",l:"Explore"},{id:"credits",icon:"◈",l:"Credits"},{id:"profile",icon:"👤",l:"Profile"}].map(({id,icon,l})=>(
+          {[{id:"home",icon:"🏠",l:"Home"},{id:"explore",icon:"🧭",l:"Explore"},{id:"credits",icon:"◈",l:"Pass"},{id:"profile",icon:"👤",l:"Profile"}].map(({id,icon,l})=>(
             <button key={id} onClick={()=>setView(id)}
               style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"transparent",border:"none",cursor:"pointer",padding:"4px 12px",fontFamily:"'Manrope',system-ui,sans-serif"}}>
               <span style={{fontSize:20}}>{icon}</span>
