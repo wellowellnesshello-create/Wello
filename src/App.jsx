@@ -1,6 +1,43 @@
 import { supabase } from './supabase.js'
 import { useState, useEffect, useCallback, useRef } from "react";
 
+// ── SEO Meta Tags ─────────────────────────────────────────────
+function SEO({ title, description, path="" }) {
+  useEffect(()=>{
+    document.title = title || "Wello — The Wellness Pass";
+    const setMeta = (name, content, prop=false) => {
+      const sel = prop ? `meta[property="${name}"]` : `meta[name="${name}"]`;
+      let el = document.querySelector(sel);
+      if(!el){ el=document.createElement("meta"); prop?el.setAttribute("property",name):el.setAttribute("name",name); document.head.appendChild(el); }
+      el.setAttribute("content", content);
+    };
+    const desc = description || "Wello is the wellness pass for island living. Book studio classes, gym access, hotel pools, spa treatments and outdoor adventures wherever you are.";
+    const url = "https://wello-seven.vercel.app" + path;
+    setMeta("description", desc);
+    setMeta("keywords", "wellness pass, studio classes, yoga, pilates, gym day pass, spa, outdoor adventures, hotel pool, island wellness, ClassPass alternative");
+    setMeta("og:title", title || "Wello — The Wellness Pass", true);
+    setMeta("og:description", desc, true);
+    setMeta("og:url", url, true);
+    setMeta("og:type", "website", true);
+    setMeta("og:site_name", "Wello", true);
+    setMeta("twitter:card", "summary_large_image");
+    setMeta("twitter:title", title || "Wello — The Wellness Pass");
+    setMeta("twitter:description", desc);
+    // Structured data — WebSite schema
+    let sd = document.getElementById("wello-schema");
+    if(!sd){ sd=document.createElement("script"); sd.id="wello-schema"; sd.type="application/ld+json"; document.head.appendChild(sd); }
+    sd.textContent = JSON.stringify({
+      "@context":"https://schema.org",
+      "@type":"WebSite",
+      "name":"Wello",
+      "description":"Mallorca\'s first wellness credit pass",
+      "url":"https://wello-seven.vercel.app",
+      "potentialAction":{ "@type":"SearchAction", "target":"https://wello-seven.vercel.app/?q={search_term_string}", "query-input":"required name=search_term_string" }
+    });
+  },[title, description, path]);
+  return null;
+}
+
 async function ai(sys, usr, tok = 900) {
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -16,74 +53,56 @@ async function aiJSON(sys, usr, tok = 900) {
   try { return JSON.parse(t.replace(/```json|```/g, "").trim()); } catch { return null; }
 }
 
-// Copenhagen café palette: warm linen + dusty sage + aged clay + antique ochre
+// Wello "Breathe" palette — Stitch-refined Mediterranean Noir
 const T = {
-  bg:      "#F5F0E8",
-  bg2:     "#EDE8DF",
-  bg3:     "#E4DDD0",
-  paper:   "#FAF8F4",
-  ink:     "#1E1B15",
-  ink2:    "#3C3828",
-  stone:   "#7C7260",
-  stone2:  "#A89E8C",
-  sage:    "#4E6B43",
-  sage2:   "#3C5233",
-  sageL:   "#C4D9BD",
-  sageXL:  "#ECF3E9",
-  moss:    "#89AB80",
-  clay:    "#8C5D4A",
-  clayL:   "#C49A86",
-  clayXL:  "#F2E8E3",
-  ochre:   "#B8925C",
+  bg:      "#FBF9F4",   // Alabaster — warm off-white surface
+  bg2:     "#F5F3EE",   // Surface container low
+  bg3:     "#EAE8E3",   // Surface container high
+  paper:   "#FFFFFF",   // Surface container lowest
+  ink:     "#1B1C19",   // Obsidian — near-black with green undertone
+  ink2:    "#43483F",   // On-surface variant
+  stone:   "#74796E",   // Outline
+  stone2:  "#C3C8BC",   // Outline variant
+  sage:    "#213C18",   // Forest Green — primary brand
+  sage2:   "#37532D",   // Primary container
+  sageL:   "#A3B18A",   // Luminous Sage — accent
+  sageXL:  "#CAECBA",   // Primary fixed
+  moss:    "#49663E",   // Surface tint
+  clay:    "#6F5B44",   // Secondary (warm sand)
+  clayL:   "#DCC2A6",   // Secondary fixed dim
+  clayXL:  "#FADEC0",   // Secondary container
+  ochre:   "#B8925C",   // Kept for credit badges & accents
   ochreL:  "#D6B47C",
   ochreXL: "#F7EDD8",
-  border:  "#DDD6C8",
-  border2: "#C9C1B0",
+  border:  "#E4E2DD",   // Surface variant
+  border2: "#C3C8BC",   // Outline variant
 };
 
 // ─── Credit system ────────────────────────────────────────────────────────────
-// Credits expire 6 months from purchase. Booking fee: €2.99 per transaction.
-// 1 credit ≈ €8–10 real-world value based on Mallorca market research.
+// 1 credit = €5 face value. Service fee: €2.50 per booking.
+// Bundles sold at a discount — larger bundles = better value per credit.
+// Credits expire 6 months from purchase.
 const BUNDLES = [
-  { id:"taster",   name:"Taster",    cr:10, price:29,  desc:"New to Wello? Try a handful of classes",         badge:null,         popular:false },
-  { id:"explorer", name:"Explorer",  cr:24, price:59,  desc:"A week or two of varied island activity",        badge:"Most Popular",popular:true  },
-  { id:"local",    name:"Local",     cr:52, price:119, desc:"A full month of regular wellness",               badge:"Best Value",  popular:false },
-  { id:"islander", name:"Islander",  cr:110,price:229, desc:"Commit to the island lifestyle all season",      badge:null,         popular:false },
+  { id:"wellolife", name:"Wello Life", cr:50, price:237.50, fullPrice:250, desc:"For those who make wellness part of island life.", badge:"5% off", popular:true },
 ];
-const BOOKING_FEE = 2.99;
+const BOOKING_FEE = 2.50; // 10% of session value, max €5, charged per booking
 
-// Market-researched Mallorca pricing (2025):
-// Yoga drop-in: €18–20 · Pilates drop-in: €18–22 · Gym day pass: €15–20
-// Hotel spa+gym day pass: €25–80 · Guided hike: €30–50pp · Spa treatment (60min): €60–90
-// Pool day pass (resort): €30–60 · Fitness class drop-in: €15–18
-// At ~€9/credit, credit costs are calibrated to give venues fair value
+// Credit pricing — 1 credit = €5 face value.
+// Venues price sessions in €5 increments, converted to credits.
+// Market reference: Yoga €20 = 4cr · Gym day pass €15 = 3cr · Spa 60min €60 = 12cr
 const CREDIT_PRICING = [
-  { cat:"Yoga class",         offPeak:"2 credits  (≈€18)",  peak:"3 credits (≈€27)", example:"Drop-in classes, studios" },
-  { cat:"Pilates class",      offPeak:"2 credits  (≈€18)",  peak:"3 credits (≈€27)", example:"Reformer & mat classes" },
-  { cat:"Fitness class",      offPeak:"2 credits  (≈€18)",  peak:"2 credits (≈€18)", example:"HIIT, circuits, bootcamp" },
-  { cat:"Gym day pass",       offPeak:"2 credits  (≈€18)",  peak:"3 credits (≈€27)", example:"Independent gyms" },
-  { cat:"Hotel gym & pool",   offPeak:"3 credits  (≈€27)",  peak:"5 credits (≈€45)", example:"5-star hotel access" },
-  { cat:"Pool day pass",      offPeak:"3 credits  (≈€27)",  peak:"5 credits (≈€45)", example:"Resort & rooftop pools" },
-  { cat:"Outdoor adventure",  offPeak:"4 credits  (≈€36)",  peak:"5 credits (≈€45)", example:"Guided hikes, kayaking" },
-  { cat:"Spa treatment",      offPeak:"7 credits  (≈€63)",  peak:"9 credits (≈€81)", example:"60-min massage & wellness" },
+  { cat:"Yoga class",        offPeak:"3 credits (€15)",  peak:"4 credits (€20)",  example:"Drop-in classes, studios" },
+  { cat:"Pilates class",     offPeak:"3 credits (€15)",  peak:"4 credits (€20)",  example:"Reformer & mat classes" },
+  { cat:"Fitness class",     offPeak:"3 credits (€15)",  peak:"3 credits (€15)",  example:"HIIT, circuits, bootcamp" },
+  { cat:"Gym day pass",      offPeak:"3 credits (€15)",  peak:"4 credits (€20)",  example:"Independent gyms" },
+  { cat:"Hotel gym & pool",  offPeak:"5 credits (€25)",  peak:"8 credits (€40)",  example:"5-star hotel access" },
+  { cat:"Pool day pass",     offPeak:"5 credits (€25)",  peak:"8 credits (€40)",  example:"Resort & rooftop pools" },
+  { cat:"Outdoor adventure", offPeak:"6 credits (€30)",  peak:"8 credits (€40)",  example:"Guided hikes, kayaking" },
+  { cat:"Spa treatment",     offPeak:"12 credits (€60)", peak:"16 credits (€80)", example:"60-min massage & wellness" },
 ];
 
 // Commission — admin-set only, never visible to businesses during registration
-const COMMISSION_TIERS = [
-  { id:"standard", label:"Standard",  rate:20, desc:"Default for new venues" },
-  { id:"premium",  label:"Premium",   rate:18, desc:"Higher-volume venues" },
-  { id:"partner",  label:"Partner",   rate:15, desc:"Strategic partners" },
-];
 
-// Admin panel — mock registered businesses
-const ADMIN_BUSINESSES = [
-  { id:"b1", name:"Sol & Alma Yoga",      cat:"Yoga",         loc:"Sóller",   commission:"standard", status:"live",    monthlyBookings:24, monthlyCredits:86  },
-  { id:"b2", name:"Hospes Maricel",       cat:"Hotel Gym",    loc:"Palma",    commission:"partner",  status:"live",    monthlyBookings:18, monthlyCredits:90  },
-  { id:"b3", name:"Deià Mountain Yoga",   cat:"Yoga",         loc:"Deià",     commission:"standard", status:"live",    monthlyBookings:12, monthlyCredits:36  },
-  { id:"b4", name:"Olas Surf & Yoga",     cat:"Surfing",      loc:"Alcúdia",  commission:"premium",  status:"live",    monthlyBookings:9,  monthlyCredits:45  },
-  { id:"b5", name:"Pollença HIIT Lab",    cat:"Fitness Class",loc:"Pollença", commission:"standard", status:"pending", monthlyBookings:0,  monthlyCredits:0   },
-  { id:"b6", name:"Pure Palma Pool Club", cat:"Pool Access",  loc:"Palma",    commission:"premium",  status:"live",    monthlyBookings:31, monthlyCredits:155 },
-];
 const PAY = [
   { id:"card",   label:"Credit / Debit Card", sub:"Visa, Mastercard, Amex" },
   { id:"apple",  label:"Apple Pay",           sub:"Touch ID or Face ID" },
@@ -103,47 +122,47 @@ const LOCS = ["All Mallorca","Palma","Sóller","Deià","Pollença","Alcúdia","S
 const SYNC = {1:"Mindbody",2:"Acuity",3:"Acuity",4:"FareHarbor",5:"Custom API",6:"Mindbody",7:"Gympass",8:"iCal",9:"Custom API"};
 
 const LISTINGS = [
-  { id:1, name:"Sol & Alma Yoga", cat:"Yoga", loc:"Sóller", rating:4.9, reviews:127, cr:2,
+  { id:1, name:"Sol & Alma Yoga", cat:"Yoga", loc:"Sóller", rating:4.9, reviews:127, cr:4,
     desc:"Rooftop yoga overlooking the Tramuntana mountains. Sunrise & sunset sessions with certified instructors.",
     img:"https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80",
     tags:["Rooftop","All Levels","Mountain Views"],
     slots:[{id:"s1",date:"2026-03-22",time:"07:00",dur:"75 min",spots:8,booked:3,name:"Sunrise Flow"},{id:"s2",date:"2026-03-22",time:"18:30",dur:"90 min",spots:10,booked:7,name:"Sunset Vinyasa"},{id:"s3",date:"2026-03-23",time:"07:00",dur:"75 min",spots:8,booked:1,name:"Sunrise Flow"}] },
-  { id:2, name:"Hospes Maricel", cat:"Hotel Gym", loc:"Palma", rating:4.8, reviews:64, cr:3,
+  { id:2, name:"Hospes Maricel", cat:"Hotel Gym", loc:"Palma", rating:4.8, reviews:64, cr:8,
     desc:"Five-star hotel fitness centre with heated infinity pool and panoramic sea views. Day passes available.",
     img:"https://images.unsplash.com/photo-1540497077202-7c8a3999166f?w=600&q=80",
     tags:["5-Star","Infinity Pool","Sea Views"],
     slots:[{id:"s5",date:"2026-03-22",time:"06:30",dur:"Open",spots:15,booked:5,name:"Gym & Pool Pass"},{id:"s6",date:"2026-03-22",time:"16:00",dur:"Open",spots:15,booked:9,name:"Afternoon Access"},{id:"s7",date:"2026-03-23",time:"06:30",dur:"Open",spots:15,booked:2,name:"Gym & Pool Pass"}] },
-  { id:3, name:"Tramuntana Flow", cat:"Pilates", loc:"Valldemossa", rating:5.0, reviews:43, cr:2,
+  { id:3, name:"Tramuntana Flow", cat:"Pilates", loc:"Valldemossa", rating:5.0, reviews:43, cr:4,
     desc:"Reformer and mat Pilates inside a restored 18th-century farmhouse. Small groups, meticulous attention.",
     img:"https://images.unsplash.com/photo-1518611012118-696072aa579a?w=600&q=80",
     tags:["Reformer","Small Groups","Historic"],
     slots:[{id:"s8",date:"2026-03-22",time:"09:00",dur:"55 min",spots:6,booked:6,name:"Reformer"},{id:"s9",date:"2026-03-22",time:"11:00",dur:"55 min",spots:6,booked:2,name:"Mat Pilates"},{id:"s10",date:"2026-03-23",time:"09:00",dur:"55 min",spots:6,booked:0,name:"Intro Reformer"}] },
-  { id:4, name:"Olas Surf & Yoga", cat:"Surfing", loc:"Alcúdia", rating:4.7, reviews:89, cr:4,
+  { id:4, name:"Olas Surf & Yoga", cat:"Surfing", loc:"Alcúdia", rating:4.7, reviews:89, cr:8,
     desc:"North coast beach packages — paddle out at dawn, practice yoga as the sun rises over the bay.",
     img:"https://images.unsplash.com/photo-1515016886654-94c06b8a8c7d?w=600&q=80",
     tags:["Beach","Surf","Full Experience"],
     slots:[{id:"s12",date:"2026-03-22",time:"08:00",dur:"Half Day",spots:8,booked:5,name:"Surf + Yoga"},{id:"s13",date:"2026-03-23",time:"08:00",dur:"Half Day",spots:8,booked:1,name:"Surf + Yoga"}] },
-  { id:5, name:"Cap Rocat Wellness", cat:"Pool Access", loc:"Palma", rating:4.9, reviews:52, cr:3,
+  { id:5, name:"Cap Rocat Wellness", cat:"Pool Access", loc:"Palma", rating:4.9, reviews:52, cr:8,
     desc:"Fortress hotel — infinity pool carved into the cliffs, spa circuit and breathwork sessions. Extraordinary luxury.",
     img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=600&q=80",
     tags:["Luxury","Cliff Pool","Spa"],
     slots:[{id:"s15",date:"2026-03-22",time:"10:00",dur:"Full Day",spots:6,booked:2,name:"Pool & Spa Day"},{id:"s16",date:"2026-03-23",time:"10:00",dur:"Full Day",spots:6,booked:0,name:"Pool & Spa Day"}] },
-  { id:6, name:"Deià Mountain Yoga", cat:"Yoga", loc:"Deià", rating:4.8, reviews:71, cr:2,
+  { id:6, name:"Deià Mountain Yoga", cat:"Yoga", loc:"Deià", rating:4.8, reviews:71, cr:4,
     desc:"Open-air platform in the artist village of Deià. Iyengar practice surrounded by ancient olive groves.",
     img:"https://images.unsplash.com/photo-1508672019048-805c876b67e2?w=600&q=80",
     tags:["Outdoor","Iyengar","Olive Groves"],
     slots:[{id:"s18",date:"2026-03-22",time:"08:30",dur:"90 min",spots:10,booked:8,name:"Iyengar Morning"},{id:"s19",date:"2026-03-22",time:"17:00",dur:"90 min",spots:10,booked:4,name:"Restorative Evening"}] },
-  { id:7, name:"Pollença HIIT Lab", cat:"Fitness Class", loc:"Pollença", rating:4.6, reviews:110, cr:1,
+  { id:7, name:"Pollença HIIT Lab", cat:"Fitness Class", loc:"Pollença", rating:4.6, reviews:110, cr:3,
     desc:"High-intensity training in a converted mill. 45-minute sessions, expert coaching, maximum results.",
     img:"https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=600&q=80",
     tags:["HIIT","Small Groups","Expert Coaches"],
     slots:[{id:"s21",date:"2026-03-22",time:"07:30",dur:"45 min",spots:14,booked:10,name:"HIIT Express"},{id:"s22",date:"2026-03-22",time:"12:00",dur:"45 min",spots:14,booked:6,name:"Lunchtime"},{id:"s24",date:"2026-03-23",time:"07:30",dur:"45 min",spots:14,booked:4,name:"HIIT Express"}] },
-  { id:8, name:"Santanyí Sea Meditation", cat:"Meditation", loc:"Santanyí", rating:5.0, reviews:38, cr:2,
+  { id:8, name:"Santanyí Sea Meditation", cat:"Meditation", loc:"Santanyí", rating:5.0, reviews:38, cr:3,
     desc:"Cliffside meditation and breathwork with the Mediterranean as your backdrop. Intimate and transformative.",
     img:"https://images.unsplash.com/photo-1593811167562-9cef47bfc4d7?w=600&q=80",
     tags:["Cliffside","Breathwork","Sea Views"],
     slots:[{id:"s25",date:"2026-03-22",time:"06:00",dur:"60 min",spots:8,booked:5,name:"Dawn Breathwork"},{id:"s26",date:"2026-03-22",time:"19:30",dur:"60 min",spots:8,booked:2,name:"Sunset Meditation"}] },
-  { id:9, name:"Pure Palma Pool Club", cat:"Pool Access", loc:"Palma", rating:4.7, reviews:93, cr:2,
+  { id:9, name:"Pure Palma Pool Club", cat:"Pool Access", loc:"Palma", rating:4.7, reviews:93, cr:5,
     desc:"Rooftop pool at the heart of Palma. Lap lanes from 8am, day club all afternoon. Hotel gym access included.",
     img:"https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=600&q=80",
     tags:["Rooftop Pool","Lap Lanes","Day Pass"],
@@ -159,7 +178,7 @@ const FRIENDS = [
 const fd = d => new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
 
 // ─── Atoms ────────────────────────────────────────────────────────────────────
-const F = { display:"'Jost',system-ui,sans-serif", body:"'Jost',system-ui,sans-serif" };
+const F = { display:"'Manrope','Jost',system-ui,sans-serif", body:"'Manrope','Jost',system-ui,sans-serif" };
 
 function Stars({ n }) {
   return <span style={{color:T.ochre,fontSize:12,letterSpacing:1}}>{Array(Math.floor(n)).fill("★").join("")}<span style={{color:T.stone2,marginLeft:4,fontSize:11,letterSpacing:"normal"}}>{n}</span></span>;
@@ -307,27 +326,39 @@ function BizPanel({ biz, onClose, onBook }) {
 function Card({ biz, onSelect, syncing, saved, onToggleSave }) {
   const next=biz.slots.find(s=>s.booked<s.spots);
   return (
-    <div style={{background:T.paper,borderRadius:4,overflow:"hidden",cursor:"pointer",transition:"transform .18s,box-shadow .18s",boxShadow:"0 1px 8px rgba(0,0,0,.06)",border:`1px solid ${T.border}`}}
-      onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 8px 26px rgba(0,0,0,.1)"}}
-      onMouseLeave={e=>{e.currentTarget.style.transform="";e.currentTarget.style.boxShadow="0 1px 8px rgba(0,0,0,.06)"}}>
-      <div style={{position:"relative",height:178}} onClick={()=>onSelect(biz)}>
-        <img src={biz.img} alt={biz.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-        <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(30,27,21,.62) 0%,transparent 55%)"}}/>
-        <div style={{position:"absolute",top:8,left:8}}><span style={{background:T.sage,color:"#fff",fontSize:8,padding:"2px 7px",borderRadius:2,fontFamily:F.body,letterSpacing:"1px",textTransform:"uppercase"}}>{biz.cat}</span></div>
-        <button onClick={e=>{e.stopPropagation();onToggleSave(biz.id);}} style={{position:"absolute",top:7,right:7,background:"rgba(250,248,244,.88)",border:"none",width:24,height:24,borderRadius:2,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:saved?T.clay:T.stone2}}>
+    <div className="group cursor-pointer" onClick={()=>onSelect(biz)}>
+      <div className="relative aspect-[4/5] rounded-xl overflow-hidden mb-4 bg-surface-container-highest">
+        <img src={biz.img} alt={biz.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"/>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent"/>
+        <div className="absolute top-4 right-4 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-full shadow-sm">
+          <span className="text-xs font-extrabold text-primary">◈ {biz.cr}</span>
+        </div>
+        <button onClick={e=>{e.stopPropagation();onToggleSave(biz.id);}}
+          className="absolute top-4 left-4 w-8 h-8 rounded-full bg-white/90 backdrop-blur-sm flex items-center justify-center text-sm transition-transform hover:scale-110"
+          style={{color:saved?"#e05c5c":"#74796e"}}>
           {saved?"♥":"♡"}
         </button>
-        <div style={{position:"absolute",bottom:7,left:8,right:8,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
-          {syncing&&<div style={{display:"flex",alignItems:"center",gap:3,background:"rgba(30,27,21,.5)",borderRadius:2,padding:"2px 5px"}}><span style={{width:4,height:4,borderRadius:"50%",background:"#9dd4a0",display:"inline-block"}}/><span style={{fontFamily:F.body,fontSize:8,color:"#fff"}}>Live</span></div>}
-          <div style={{marginLeft:"auto"}}><Cr n={biz.cr} size="sm"/></div>
-        </div>
+        {syncing&&(
+          <div className="absolute bottom-3 left-3 flex items-center gap-1 bg-black/50 backdrop-blur-sm rounded-full px-2 py-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"/>
+            <span className="text-white text-[9px] font-medium">Live</span>
+          </div>
+        )}
       </div>
-      <div style={{padding:"10px 12px"}} onClick={()=>onSelect(biz)}>
-        <h3 style={{fontFamily:F.display,fontSize:14,color:T.ink,margin:"0 0 3px",fontWeight:400,lineHeight:1.2}}>{biz.name}</h3>
-        <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:4}}><Stars n={biz.rating}/><span style={{color:T.stone2,fontSize:9,fontFamily:F.body}}>({biz.reviews}) · 📍 {biz.loc}</span></div>
-        <p style={{fontFamily:F.body,color:T.stone,fontSize:10,lineHeight:1.5,margin:"0 0 7px",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden",fontWeight:300}}>{biz.desc}</p>
-        {next?<div style={{background:T.bg,borderRadius:2,padding:"4px 7px",display:"flex",justifyContent:"space-between",border:`1px solid ${T.border}`}}><span style={{fontSize:9,color:T.stone,fontFamily:F.body}}>{fd(next.date)} {next.time}</span><span style={{fontSize:9,color:T.sage,fontFamily:F.body,fontWeight:600}}>{next.spots-next.booked} left</span></div>
-        :<div style={{background:T.clayXL,borderRadius:2,padding:"4px 7px",textAlign:"center",border:`1px solid ${T.clayL}`}}><span style={{fontSize:9,color:T.clay,fontFamily:F.body}}>All full · check back soon</span></div>}
+      <div className="space-y-1">
+        <div className="flex justify-between items-start">
+          <h3 className="text-base font-bold text-primary tracking-tight">{biz.name}</h3>
+          <div className="flex items-center gap-1">
+            <span className="text-secondary text-sm">★</span>
+            <span className="text-sm font-bold">{biz.rating}</span>
+          </div>
+        </div>
+        <p className="text-on-surface-variant text-sm flex items-center gap-1">
+          <span className="text-xs">📍</span> {biz.loc} · {biz.cat}
+        </p>
+        {next
+          ? <p className="text-xs text-primary font-medium">{next.spots-next.booked} spots left · {next.time}</p>
+          : <p className="text-xs text-outline">Fully booked · check back soon</p>}
       </div>
     </div>
   );
@@ -428,98 +459,119 @@ function SyncEngine({ listings, onUpdate }) {
 // PAGE: HOME
 // ═══════════════════════════════════════════════════════════════
 function HomePage({ listings, bookings, onSelect, savedIds, onToggleSave, onSetView, syncingIds }) {
-  const [recs,setRecs]=useState([]); const [recsLoading,setRecsLoading]=useState(true);
   const [aiQ,setAiQ]=useState(""); const [aiLoading,setAiLoading]=useState(false);
   const [aiNote,setAiNote]=useState(""); const [aiResults,setAiResults]=useState(null);
-
-  useEffect(()=>{
-    (async()=>{
-      const hist=bookings.length>0?bookings.map(b=>`${b.slot.name} at ${b.biz.name}`).join(", "):"New user";
-      const ls=listings.map(b=>`ID:${b.id} "${b.name}" ${b.cat} ${b.loc} ◈${b.cr}`).join("\n");
-      const r=await aiJSON(`Mallorca wellness concierge. Return ONLY JSON: {"recommendations":[{"id":1,"reason":"max 9 words"}]} — 3 items.`,`History:${hist}\nListings:\n${ls}`);
-      if(r?.recommendations) setRecs(r.recommendations.map(x=>({biz:listings.find(b=>b.id===x.id),reason:x.reason})).filter(x=>x.biz));
-      setRecsLoading(false);
-    })();
-  },[]);
 
   async function runAI() {
     if (!aiQ.trim()) return; setAiLoading(true);
     const ls=listings.map(b=>`ID:${b.id} "${b.name}" ${b.cat} ${b.loc} ◈${b.cr} tags:${b.tags.join(",")}`).join("\n");
-    const r=await aiJSON(`Mallorca wellness search. Return ONLY JSON: {"ids":[1,2],"explanation":"short sentence max 12 words"}`,`Query:"${aiQ}"\nListings:\n${ls}`);
+    const r=await aiJSON(`Wellness search. Return ONLY JSON: {"ids":[1,2],"explanation":"short sentence max 12 words"}`,`Query:"${aiQ}"\nListings:\n${ls}`);
     if(r?.ids){setAiResults(listings.filter(b=>r.ids.includes(b.id)));setAiNote(r.explanation||"");}
     setAiLoading(false);
   }
 
-  const poolGym=listings.filter(b=>["Hotel Gym","Pool Access"].includes(b.cat)); // kept for explore page reference
+  const featured = aiResults || listings.slice(0,4);
 
   return (
     <div>
-      {/* ─ GREEN HERO ─ */}
-      <div style={{background:`linear-gradient(155deg,${T.sage2} 0%,${T.sage} 55%,#5a7a51 100%)`,minHeight:460,position:"relative",overflow:"hidden",display:"flex",flexDirection:"column",justifyContent:"center",padding:"60px 0 52px"}}>
-        <div style={{position:"absolute",inset:0,backgroundImage:"url('https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=1400&q=65')",backgroundSize:"cover",backgroundPosition:"center top",opacity:.18}}/>
-        <div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(60,82,51,.2) 0%,rgba(60,82,51,.82) 100%)"}}/>
-        <div style={{maxWidth:680,margin:"0 auto",padding:"0 28px",position:"relative",width:"100%",textAlign:"center"}}>
-          {/* F1 hero wordmark */}
-          <div style={{marginBottom:20}}>
-            <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:"clamp(52px,7vw,88px)",fontWeight:700,color:"#fff",lineHeight:1,letterSpacing:"-3px"}}>wello</div>
-            <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:11,fontWeight:400,color:T.ochreL,letterSpacing:"6px",marginTop:6,textTransform:"uppercase"}}>the wellness pass</div>
+      {/* ── IMMERSIVE HERO ── */}
+      <section className="relative min-h-screen flex flex-col items-center justify-center pt-20 px-6 overflow-hidden bg-gradient-to-b from-surface via-surface to-secondary-container/20">
+        {/* Background blobs */}
+        <div className="absolute top-0 left-0 w-full h-full opacity-30 pointer-events-none">
+          <div className="absolute top-[20%] left-[10%] w-96 h-96 rounded-full bg-primary-container/10 blur-[120px]"/>
+          <div className="absolute bottom-[20%] right-[10%] w-[500px] h-[500px] rounded-full bg-secondary-container/20 blur-[150px]"/>
+        </div>
+        <div className="relative z-10 max-w-4xl w-full text-center space-y-12">
+          <div className="space-y-6">
+            <h1 className="text-[clamp(80px,15vw,180px)] font-extrabold tracking-tighter text-primary leading-none select-none">wello</h1>
+            <p className="text-on-surface-variant max-w-xl mx-auto font-medium leading-relaxed tracking-tight text-lg">
+              Your curated pass for wellness and movement. Studios, gyms, spas and outdoor adventures.
+            </p>
           </div>
-          <p style={{fontFamily:F.body,color:"rgba(255,255,255,.7)",fontSize:14,lineHeight:1.7,margin:"0 auto 28px",maxWidth:420,fontWeight:300}}>
-            Your pass to studios, gyms, hotels, spas and outdoor adventures across Mallorca.
-          </p>
           {/* AI Search */}
-          <div style={{display:"flex",maxWidth:520,margin:"0 auto 8px",background:"rgba(250,248,244,.12)",backdropFilter:"blur(10px)",border:"1px solid rgba(255,255,255,.2)",borderRadius:3,overflow:"hidden"}}>
-            <span style={{padding:"0 12px",display:"flex",alignItems:"center",color:"rgba(255,255,255,.55)",fontSize:12,flexShrink:0}}>✦</span>
-            <input value={aiQ} onChange={e=>setAiQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runAI()}
-              placeholder='Try "outdoor yoga under 2 credits" or "pool access Palma"…'
-              style={{flex:1,padding:"12px 0",border:"none",outline:"none",fontFamily:F.body,fontSize:11,background:"transparent",color:"#fff"}}/>
-            {aiResults&&<button onClick={()=>{setAiResults(null);setAiQ("");setAiNote("");}} style={{padding:"0 10px",background:"transparent",color:"rgba(255,255,255,.6)",border:"none",cursor:"pointer",fontSize:11,fontFamily:F.body}}>✕</button>}
-            <button onClick={runAI} disabled={aiLoading||!aiQ.trim()} style={{padding:"0 18px",background:aiLoading?"rgba(255,255,255,.08)":"rgba(255,255,255,.22)",color:"#fff",border:"none",cursor:aiLoading||!aiQ.trim()?"not-allowed":"pointer",fontFamily:F.body,fontSize:11,fontWeight:600,flexShrink:0}}>
-              {aiLoading?"…":"Search"}
+          <div className="relative max-w-2xl mx-auto group">
+            <div className="flex items-center bg-white rounded-full p-2 pl-6 shadow-sm border border-outline-variant/10 focus-within:border-primary/20 transition-all duration-500">
+              <span className="text-outline text-sm mr-2">✦</span>
+              <input value={aiQ} onChange={e=>setAiQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runAI()}
+                className="w-full bg-transparent border-none focus:ring-0 text-on-surface placeholder:text-outline/60 py-3 font-medium text-sm"
+                placeholder="Where do you want to find balance today?"/>
+              {aiResults&&<button onClick={()=>{setAiResults(null);setAiQ("");setAiNote("");}} className="px-3 text-outline text-sm bg-transparent border-none cursor-pointer">✕</button>}
+              <button onClick={runAI} disabled={aiLoading||!aiQ.trim()}
+                className="bg-primary text-on-primary px-8 py-3 rounded-full font-bold hover:scale-[1.02] active:scale-95 transition-all text-sm disabled:opacity-50">
+                {aiLoading?"…":"Search"}
+              </button>
+            </div>
+            {aiNote&&<p className="text-on-surface-variant text-xs mt-3 italic">✦ {aiNote}</p>}
+          </div>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-6 pt-4">
+            <button onClick={()=>onSetView("credits")}
+              className="group flex items-center gap-2 px-10 py-4 rounded-full bg-primary text-on-primary font-bold transition-all duration-300 hover:opacity-95 hover:scale-[1.02]">
+              Buy Credits <span className="transition-transform group-hover:translate-x-1">→</span>
+            </button>
+            <button onClick={()=>onSetView("explore")}
+              className="px-10 py-4 rounded-full border-2 border-primary text-primary font-bold transition-all duration-300 hover:bg-primary/5">
+              Explore all
             </button>
           </div>
-          {aiNote&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,marginBottom:8}}><span style={{fontSize:9,color:T.ochreL}}>✦</span><span style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.65)",fontStyle:"italic"}}>{aiNote}</span></div>}
-          <div style={{display:"flex",gap:8,marginTop:22,flexWrap:"wrap",justifyContent:"center"}}>
-            <button onClick={()=>onSetView("explore")} style={{padding:"10px 22px",background:"#fff",color:T.sage,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:".4px"}} onMouseEnter={e=>e.target.style.opacity=".88"} onMouseLeave={e=>e.target.style.opacity="1"}>Explore all →</button>
-            <button onClick={()=>onSetView("credits")} style={{padding:"10px 22px",background:"transparent",color:"#fff",border:"1px solid rgba(255,255,255,.35)",borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>◈ Buy Credits</button>
+        </div>
+      </section>
+
+      {/* ── FEATURED SECTION ── */}
+      <section className="py-20 px-8 max-w-7xl mx-auto">
+        <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
+          <div className="space-y-3">
+            <span className="text-primary font-bold tracking-widest text-xs uppercase">Curated Collections</span>
+            <h2 className="text-5xl font-bold tracking-tighter text-on-background">Featured on Wello</h2>
+          </div>
+          <div className="flex items-center gap-4">
+            <p className="text-on-surface-variant max-w-xs text-base leading-relaxed hidden md:block">
+              Hand-picked spaces and experiences for your wellbeing.
+            </p>
+            <button onClick={()=>onSetView("explore")} className="bg-transparent border-none text-primary font-bold text-sm cursor-pointer whitespace-nowrap hover:underline">See all →</button>
           </div>
         </div>
-      </div>
-
-      <div style={{maxWidth:1140,margin:"0 auto",padding:"34px 28px 0"}}>
-        {/* ─ AI RECS ─ */}
-        <div style={{marginBottom:30}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:13}}>
-            <div style={{width:20,height:20,background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:T.ochre}}>✦</div>
-            <span style={{fontFamily:F.body,fontSize:14,fontWeight:600,color:T.ink,letterSpacing:"-0.3px"}}>For you</span>
-            <span style={{fontFamily:F.body,fontSize:8,color:T.stone2,letterSpacing:"1.5px",textTransform:"uppercase"}}>AI-powered</span>
-          </div>
-          {recsLoading?(
-            <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"12px 14px",display:"flex",alignItems:"center",gap:7}}>
-              <span style={{width:4,height:4,borderRadius:"50%",background:T.sage,display:"inline-block",animation:"pulse 1.2s infinite"}}/>
-              <span style={{fontFamily:F.body,fontSize:11,color:T.stone}}>Finding your perfect classes…</span>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          {featured.slice(0,4).map((biz,i)=>(
+            <div key={biz.id} className={i===1?"md:mt-12":""}>
+              <Card biz={biz} onSelect={onSelect} syncing={!!syncingIds[biz.id]} saved={savedIds.includes(biz.id)} onToggleSave={onToggleSave}/>
             </div>
-          ):(
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(244px,1fr))",gap:10}}>
-              {recs.map(({biz,reason})=>(
-                <div key={biz.id} onClick={()=>onSelect(biz)} style={{background:T.paper,borderRadius:3,overflow:"hidden",cursor:"pointer",border:`1.5px solid ${T.ochreL}`,display:"flex",transition:"all .15s"}}
-                  onMouseEnter={e=>{e.currentTarget.style.borderColor=T.ochre;e.currentTarget.style.boxShadow=`0 4px 16px rgba(184,146,92,.13)`}}
-                  onMouseLeave={e=>{e.currentTarget.style.borderColor=T.ochreL;e.currentTarget.style.boxShadow="none"}}>
-                  <img src={biz.img} style={{width:80,objectFit:"cover",flexShrink:0}} alt=""/>
-                  <div style={{padding:"9px 11px",flex:1}}>
-                    <div style={{fontFamily:F.body,fontSize:8,color:T.ochre,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:700,marginBottom:3}}>✦ AI Pick</div>
-                    <div style={{fontFamily:F.body,fontSize:13,fontWeight:600,color:T.ink,marginBottom:2,letterSpacing:"-0.3px"}}>{biz.name}</div>
-                    <div style={{fontFamily:F.body,fontSize:10,color:T.stone,lineHeight:1.4,marginBottom:5,fontWeight:300}}>{reason}</div>
-                    <Cr n={biz.cr} size="sm"/>
+          ))}
+        </div>
+      </section>
+
+      {/* ── VALUES SECTION ── */}
+      <section className="bg-surface-container-low py-24">
+        <div className="max-w-7xl mx-auto px-8 grid grid-cols-1 md:grid-cols-2 gap-20 items-center">
+          <div className="relative">
+            <div className="aspect-square rounded-full overflow-hidden border-8 border-white/50 shadow-2xl">
+              <img src="https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80" alt="Wellness" className="w-full h-full object-cover"/>
+            </div>
+            <div className="absolute -bottom-8 -right-8 bg-white p-6 rounded-2xl shadow-xl max-w-[220px] space-y-2">
+              <span className="text-3xl">🌿</span>
+              <h4 className="font-bold text-lg text-primary">Sustainably Minded</h4>
+              <p className="text-sm text-on-surface-variant">We partner with venues that prioritise ethical practices and ecological balance.</p>
+            </div>
+          </div>
+          <div className="space-y-8">
+            <h2 className="text-5xl font-bold tracking-tighter text-primary">The Wellness Pass for Island Living</h2>
+            <div className="space-y-6">
+              {[
+                {icon:"🔓",title:"Unlimited Access",desc:"No memberships required. Pure, flexible access to the best wellness venues."},
+                {icon:"⭐",title:"Vetted Quality",desc:"Every venue on Wello is personally visited and verified for quality and experience."},
+                {icon:"🌊",title:"Rooted in Community",desc:"We give back to the places we operate — coastlines, communities and natural environments."},
+              ].map(({icon,title,desc})=>(
+                <div key={title} className="flex gap-5 items-start">
+                  <div className="w-12 h-12 rounded-full bg-secondary-container flex items-center justify-center flex-shrink-0 text-xl">{icon}</div>
+                  <div>
+                    <h4 className="font-bold text-lg mb-1">{title}</h4>
+                    <p className="text-on-surface-variant leading-relaxed">{desc}</p>
                   </div>
                 </div>
               ))}
             </div>
-          )}
+          </div>
         </div>
-
-
-      </div>
+      </section>
     </div>
   );
 }
@@ -538,27 +590,66 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
     return mC&&mL&&mS;
   });
   return (
-    <div style={{maxWidth:1140,margin:"0 auto",padding:"32px 28px 58px"}}>
-      <h1 style={{fontFamily:F.display,fontSize:24,color:T.ink,fontWeight:400,margin:"0 0 18px"}}>Explore</h1>
-      <div style={{display:"flex",gap:0,background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"8px 12px",alignItems:"center",marginBottom:14,boxShadow:"0 2px 8px rgba(0,0,0,.04)"}}>
-        <span style={{color:T.stone2,fontSize:11,marginRight:9}}>⌕</span>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name, location or category…"
-          style={{flex:1,border:"none",outline:"none",fontFamily:F.body,fontSize:12,background:"transparent",color:T.ink,fontWeight:300}}/>
-        {search&&<button onClick={()=>setSearch("")} style={{background:"transparent",border:"none",color:T.stone2,cursor:"pointer",fontSize:11,fontFamily:F.body}}>✕</button>}
+    <div className="pt-8 pb-24 px-8 max-w-7xl mx-auto">
+      {/* Header */}
+      <header className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
+        <div className="max-w-2xl">
+          <span className="text-secondary font-semibold tracking-widest text-xs uppercase mb-2 block">Curated Sanctuary</span>
+          <h1 className="text-4xl font-extrabold tracking-tighter text-primary leading-tight">Find your flow.</h1>
+        </div>
+        <div className="flex items-center gap-2 text-on-surface-variant text-sm">
+          <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"/>
+          <span className="font-medium">{filtered.length} experiences · Live sync</span>
+        </div>
+      </header>
+
+      {/* Filter bar — sticky */}
+      <div className="sticky top-[76px] z-40 bg-surface/95 backdrop-blur-sm py-4 -mx-8 px-8">
+        <div className="flex items-center gap-3 overflow-x-auto pb-1" style={{scrollbarWidth:"none"}}>
+          {CATS.slice(0,12).map(c=>(
+            <button key={c} onClick={()=>setActiveCat(c)}
+              className={`px-5 py-2.5 rounded-full font-semibold text-sm whitespace-nowrap transition-colors ${activeCat===c?"bg-primary text-on-primary":"bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest"}`}>
+              {c}
+            </button>
+          ))}
+          <div className="ml-auto flex items-center gap-2 pl-4 border-l border-outline-variant/30">
+            <div className="flex items-center bg-surface-container rounded-full px-4 py-2 gap-2">
+              <span className="text-outline text-sm">⌕</span>
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..."
+                className="bg-transparent border-none focus:ring-0 text-sm w-32 outline-none text-on-surface placeholder:text-outline/60"/>
+            </div>
+          </div>
+        </div>
+        {/* Location pills */}
+        <div className="flex items-center gap-2 overflow-x-auto pt-3" style={{scrollbarWidth:"none"}}>
+          {LOCS.map(l=>(
+            <button key={l} onClick={()=>setActiveLoc(l)}
+              className={`px-4 py-1.5 rounded-full font-medium text-xs whitespace-nowrap transition-colors border ${activeLoc===l?"bg-primary text-on-primary border-primary":"border-outline-variant/30 text-on-surface-variant hover:border-primary/40"}`}>
+              {l}
+            </button>
+          ))}
+        </div>
       </div>
-      <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:7,marginBottom:5,scrollbarWidth:"none"}}>
-        {CATS.map(c=><Pill key={c} label={c} active={activeCat===c} onClick={()=>setActiveCat(c)}/>)}
-      </div>
-      <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:13,marginBottom:16,scrollbarWidth:"none"}}>
-        {LOCS.map(l=><Pill key={l} label={l} active={activeLoc===l} onClick={()=>setActiveLoc(l)} color={T.clay}/>)}
-      </div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-        <span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>{filtered.length} listing{filtered.length!==1?"s":""}</span>
-        <div style={{display:"flex",alignItems:"center",gap:4,fontFamily:F.body,fontSize:9,color:T.stone2}}><span style={{width:4,height:4,borderRadius:"50%",background:T.moss,display:"inline-block",animation:"pulse 2s infinite"}}/>Live sync</div>
-      </div>
+
+      {/* Grid */}
       {filtered.length===0
-        ?<div style={{textAlign:"center",padding:"78px 20px"}}><div style={{fontSize:24,marginBottom:10,color:T.stone2}}>∅</div><h3 style={{fontFamily:F.display,fontSize:17,color:T.ink,fontWeight:400,marginBottom:6}}>No results</h3><p style={{fontFamily:F.body,color:T.stone,fontSize:11,fontWeight:300}}>Try adjusting your filters</p></div>
-        :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(258px,1fr))",gap:14}}>{filtered.map(b=><Card key={b.id} biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave}/>)}</div>}
+        ? <div className="text-center py-24">
+            <div className="text-4xl mb-4 text-outline">∅</div>
+            <h3 className="text-xl font-bold text-primary mb-2">No results</h3>
+            <p className="text-on-surface-variant">Try adjusting your filters</p>
+          </div>
+        : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mt-6">
+            {filtered.map(b=><Card key={b.id} biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave}/>)}
+          </div>
+      }
+
+      {filtered.length>8&&(
+        <div className="mt-16 flex justify-center">
+          <button className="px-10 py-4 rounded-full border border-primary text-primary font-bold hover:bg-primary hover:text-on-primary transition-all duration-300">
+            Load more experiences
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -573,108 +664,201 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
   const TABS=[["reservations","Reservations"],["saved","Saved"],["friends","Friends"],["settings","Settings"]];
 
   return (
-    <div style={{maxWidth:760,margin:"0 auto",padding:"32px 28px 58px"}}>
-      {/* Account header */}
-      <div style={{display:"flex",alignItems:"center",gap:15,marginBottom:24,padding:"19px 20px",background:T.paper,borderRadius:4,border:`1px solid ${T.border}`}}>
-        <div style={{width:52,height:52,borderRadius:"50%",background:T.sage,display:"flex",alignItems:"center",justifyContent:"center",fontSize:19,color:"#fff",fontFamily:F.display,flexShrink:0}}>J</div>
-        <div style={{flex:1}}>
-          <h2 style={{fontFamily:F.display,fontSize:18,color:T.ink,margin:"0 0 2px",fontWeight:400}}>Jane Smith</h2>
-          <p style={{fontFamily:F.body,fontSize:11,color:T.stone,margin:"0 0 7px",fontWeight:300}}>jane@example.com · Member since 2026</p>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            <span style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:2,padding:"3px 8px",fontSize:10,color:T.sage,fontFamily:F.body,fontWeight:600}}>◈ {credits}</span>
-            <span style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:2,padding:"3px 8px",fontSize:10,color:T.stone,fontFamily:F.body}}>{bookings.length} booking{bookings.length!==1?"s":""}</span>
-            {isBiz&&<span style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:2,padding:"3px 8px",fontSize:10,color:T.ochre,fontFamily:F.body,fontWeight:600}}>Business</span>}
+    <div className="pt-8 pb-24 px-6 max-w-7xl mx-auto">
+
+      {/* Hero profile header */}
+      <header className="flex flex-col md:flex-row items-end gap-8 mb-12 pt-4">
+        <div className="relative group">
+          <div className="w-28 h-28 md:w-36 md:h-36 rounded-xl overflow-hidden bg-surface-container-high flex items-center justify-center bg-primary">
+            <span className="text-white text-5xl font-bold">J</span>
+          </div>
+          <button className="absolute -bottom-3 -right-3 bg-primary text-on-primary p-2 rounded-full shadow-lg hover:scale-105 transition-transform">
+            <span className="text-xs">✏</span>
+          </button>
+        </div>
+        <div className="flex-1 space-y-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-4xl font-extrabold tracking-tight text-primary">Jane Smith</h1>
+            <span className="bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase">Member</span>
+          </div>
+          <p className="text-on-surface-variant max-w-md leading-relaxed">Exploring wellness across the island.</p>
+          <div className="flex gap-6 pt-2 flex-wrap">
+            <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+              <span>📍</span><span>Mallorca</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+              <span>◈</span><span>{credits} credits</span>
+            </div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-primary">
+              <span>📅</span><span>{bookings.length} bookings</span>
+            </div>
           </div>
         </div>
-        <button onClick={()=>onSetView("credits")} style={{padding:"6px 13px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>+ Credits</button>
-      </div>
+        <button onClick={()=>onSetView("credits")}
+          className="bg-primary text-on-primary px-6 py-3 rounded-full font-bold hover:scale-[1.02] transition-transform shadow-lg">
+          + Add Credits
+        </button>
+      </header>
 
-      {/* Tabs */}
-      <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,marginBottom:19}}>
-        {TABS.map(([k,l])=><button key={k} onClick={()=>setTab(k)} style={{padding:"7px 14px",border:"none",borderBottom:`2px solid ${tab===k?T.sage:"transparent"}`,background:"transparent",color:tab===k?T.sage:T.stone,fontFamily:F.body,fontSize:11,fontWeight:tab===k?600:300,cursor:"pointer",marginBottom:-1,transition:"all .13s"}}>{l}</button>)}
+      {/* Navigation tabs */}
+      <div className="flex items-center gap-8 border-b border-outline-variant/20 mb-10 overflow-x-auto whitespace-nowrap">
+        {TABS.map(([k,l])=>(
+          <button key={k} onClick={()=>setTab(k)}
+            className={`pb-4 px-1 font-medium transition-all border-b-2 -mb-px ${tab===k?"text-primary border-primary font-bold":"text-on-surface-variant border-transparent hover:text-primary"}`}>
+            {l}
+          </button>
+        ))}
       </div>
 
       {/* Reservations */}
-      {tab==="reservations"&&(bookings.length===0
-        ?<div style={{textAlign:"center",padding:"55px",background:T.paper,borderRadius:3,border:`1px solid ${T.border}`}}><div style={{fontSize:24,marginBottom:9,color:T.stone2}}>📅</div><h3 style={{fontFamily:F.display,fontSize:17,color:T.ink,fontWeight:400,marginBottom:6}}>No reservations yet</h3><button onClick={()=>onSetView("explore")} style={{padding:"6px 17px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontWeight:600,cursor:"pointer",fontSize:10}}>Explore Classes</button></div>
-        :<div style={{display:"flex",flexDirection:"column",gap:7}}>{bookings.map(bk=>(
-          <div key={bk.id} style={{background:T.paper,borderRadius:3,border:`1px solid ${T.border}`,display:"flex",overflow:"hidden"}}>
-            <div style={{width:78,flexShrink:0}}><img src={bk.biz.img} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/></div>
-            <div style={{padding:"11px 13px",flex:1}}>
-              <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:5}}>
-                <div><div style={{fontFamily:F.display,fontSize:13,color:T.ink,fontWeight:400,marginBottom:1}}>{bk.slot.name}</div><div style={{fontFamily:F.body,color:T.stone,fontSize:10,fontWeight:300}}>{bk.biz.name} · {bk.biz.loc}</div></div>
-                <span style={{background:T.sageXL,color:T.sage,fontSize:8,padding:"2px 7px",borderRadius:2,fontFamily:F.body,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",alignSelf:"flex-start"}}>Confirmed</span>
-              </div>
-              <div style={{display:"flex",gap:10,marginTop:8,flexWrap:"wrap"}}>{[["📅",fd(bk.slot.date)],["⏰",bk.slot.time],["👤",`${bk.form.guests} guest${bk.form.guests>1?"s":""}`],["◈",`${bk.cost} credits`]].map(([ic,v])=><span key={v} style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{ic} {v}</span>)}</div>
+      {tab==="reservations"&&(
+        bookings.length===0
+          ? <div className="bg-surface-container-low rounded-2xl p-16 text-center">
+              <div className="text-4xl mb-4">📅</div>
+              <h3 className="text-xl font-bold text-primary mb-3">No reservations yet</h3>
+              <button onClick={()=>onSetView("explore")}
+                className="bg-primary text-on-primary px-8 py-3 rounded-full font-bold hover:scale-[1.02] transition-transform">
+                Explore Classes
+              </button>
             </div>
-          </div>
-        ))}</div>
+          : <div className="space-y-4">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-primary tracking-tight">Upcoming Bookings</h2>
+              </div>
+              {bookings.map(bk=>(
+                <div key={bk.id} className="group bg-surface-container-low rounded-xl overflow-hidden flex flex-col md:flex-row hover:bg-surface-container-high transition-colors duration-300">
+                  <div className="w-full md:w-48 h-36 md:h-auto overflow-hidden flex-shrink-0">
+                    <img src={bk.biz.img} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"/>
+                  </div>
+                  <div className="flex-1 p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div className="space-y-1">
+                      <span className="text-xs font-bold text-secondary uppercase tracking-widest">{bk.biz.cat}</span>
+                      <h3 className="text-xl font-bold text-primary">{bk.slot.name}</h3>
+                      <p className="text-on-surface-variant font-medium text-sm">📅 {fd(bk.slot.date)} · {bk.slot.time}</p>
+                      <p className="text-on-surface-variant font-medium text-sm">📍 {bk.biz.name}, {bk.biz.loc}</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-3">
+                      <span className="bg-primary-container text-on-primary-container px-4 py-1.5 rounded-full text-xs font-bold flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-primary animate-pulse"/>Confirmed
+                      </span>
+                      <span className="text-sm font-bold text-primary">◈ {bk.cost} credits</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
       )}
 
       {/* Saved */}
-      {tab==="saved"&&(saved.length===0
-        ?<div style={{textAlign:"center",padding:"55px",background:T.paper,borderRadius:3,border:`1px solid ${T.border}`}}><div style={{fontSize:24,marginBottom:9,color:T.stone2}}>♡</div><h3 style={{fontFamily:F.display,fontSize:17,color:T.ink,fontWeight:400,marginBottom:5}}>Nothing saved yet</h3><p style={{fontFamily:F.body,color:T.stone,fontSize:11,marginBottom:12,fontWeight:300}}>Tap ♡ on any listing</p><button onClick={()=>onSetView("explore")} style={{padding:"6px 17px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontWeight:600,cursor:"pointer",fontSize:10}}>Explore</button></div>
-        :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10}}>{saved.map(b=>(
-          <div key={b.id} onClick={()=>onSelect(b)} style={{background:T.paper,borderRadius:3,overflow:"hidden",cursor:"pointer",border:`1px solid ${T.border}`,transition:"all .14s"}} onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,.08)"} onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
-            <img src={b.img} style={{width:"100%",height:112,objectFit:"cover"}} alt=""/>
-            <div style={{padding:"8px 10px"}}><div style={{fontFamily:F.display,fontSize:12,color:T.ink,fontWeight:400,marginBottom:1}}>{b.name}</div><div style={{fontFamily:F.body,fontSize:9,color:T.stone,fontWeight:300}}>📍 {b.loc}</div></div>
-          </div>
-        ))}</div>
+      {tab==="saved"&&(
+        saved.length===0
+          ? <div className="bg-surface-container-low rounded-2xl p-16 text-center">
+              <div className="text-4xl mb-4">♡</div>
+              <h3 className="text-xl font-bold text-primary mb-3">Nothing saved yet</h3>
+              <p className="text-on-surface-variant mb-6">Tap ♡ on any listing to save it</p>
+              <button onClick={()=>onSetView("explore")} className="bg-primary text-on-primary px-8 py-3 rounded-full font-bold">Explore</button>
+            </div>
+          : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              {saved.map(b=>(
+                <div key={b.id} className="group cursor-pointer" onClick={()=>onSelect(b)}>
+                  <div className="relative aspect-[4/5] rounded-xl overflow-hidden mb-3 bg-surface-container-highest">
+                    <img src={b.img} alt={b.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"/>
+                  </div>
+                  <h3 className="font-bold text-primary text-sm">{b.name}</h3>
+                  <p className="text-on-surface-variant text-xs">📍 {b.loc}</p>
+                </div>
+              ))}
+            </div>
       )}
 
       {/* Friends */}
       {tab==="friends"&&(
         <div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>{friends.length} friends</span><button style={{padding:"4px 11px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontSize:9,fontFamily:F.body,fontWeight:600,cursor:"pointer"}}>+ Invite</button></div>
-          <div style={{display:"flex",flexDirection:"column",gap:6}}>{friends.map(f=>(
-            <div key={f.id} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 13px",background:T.paper,borderRadius:3,border:`1px solid ${T.border}`}}>
-              <div style={{width:34,height:34,borderRadius:"50%",background:T.bg3,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:600,flexShrink:0}}>{f.init}</div>
-              <div style={{flex:1}}><div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>{f.name}</div><div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>📍 {f.loc} · {f.bio}</div></div>
-              <button style={{padding:"4px 10px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontSize:9,fontFamily:F.body,cursor:"pointer"}}>View</button>
-            </div>
-          ))}</div>
+          <div className="flex justify-between items-center mb-6">
+            <span className="text-on-surface-variant text-sm">{friends.length} friends</span>
+            <button className="bg-primary text-on-primary px-5 py-2 rounded-full text-xs font-bold">+ Invite</button>
+          </div>
+          <div className="space-y-3">
+            {friends.map(f=>(
+              <div key={f.id} className="flex items-center gap-4 p-5 bg-surface-container-low rounded-xl hover:bg-surface-container transition-colors">
+                <div className="w-10 h-10 rounded-full bg-surface-container-highest flex items-center justify-center font-bold text-sm text-on-surface-variant flex-shrink-0">{f.init}</div>
+                <div className="flex-1">
+                  <p className="font-bold text-sm text-on-background">{f.name}</p>
+                  <p className="text-on-surface-variant text-xs">📍 {f.loc} · {f.bio}</p>
+                </div>
+                <button className="border border-outline-variant/30 text-primary px-4 py-1.5 rounded-full text-xs font-bold hover:bg-surface transition-colors">View</button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
       {/* Settings */}
       {tab==="settings"&&(
-        <div style={{display:"flex",flexDirection:"column",gap:13}}>
-          {[{title:"Account Details",body:(
-            <div style={{padding:"15px"}}>
-              <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:12}}>
-                {[{l:"Full Name",v:"Jane Smith"},{l:"Email",v:"jane@example.com"},{l:"Location",v:"Palma, Mallorca"}].map(f=>(
-                  <div key={f.l}><FieldLabel>{f.l}</FieldLabel><input defaultValue={f.v} style={INP} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=T.border}/></div>
-                ))}
-              </div>
-              <button style={{padding:"6px 16px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer"}}>Save</button>
-            </div>
-          )},{title:"Account Type",body:(
-            <div style={{padding:"15px"}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:9}}>
-                <div><div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600,marginBottom:2}}>Business Account</div><div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>List your venue and manage integrations.</div></div>
-                <div onClick={onToggleBiz} style={{width:36,height:20,borderRadius:10,background:isBiz?T.sage:T.border2,cursor:"pointer",position:"relative",transition:"background .2s",flexShrink:0}}>
-                  <div style={{position:"absolute",top:2,left:isBiz?18:2,width:16,height:16,borderRadius:"50%",background:"#fff",transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.18)"}}/>
+        <div className="space-y-4 max-w-lg">
+          <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/10">
+            <h3 className="font-bold text-primary mb-4">Account Details</h3>
+            <div className="space-y-4">
+              {[{l:"Full Name",v:"Jane Smith"},{l:"Email",v:"jane@example.com"},{l:"Location",v:"Mallorca"}].map(f=>(
+                <div key={f.l}>
+                  <label className="text-xs font-bold uppercase tracking-widest text-outline mb-1 block">{f.l}</label>
+                  <input defaultValue={f.v} className="w-full border border-outline-variant/30 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-primary transition-colors bg-surface"/>
                 </div>
-              </div>
-              {isBiz&&<button onClick={()=>onSetView("business")} style={{padding:"6px 13px",background:T.ochreXL,color:T.ochre,border:`1px solid ${T.ochreL}`,borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer"}}>Manage Business →</button>}
+              ))}
+              <button className="bg-primary text-on-primary px-6 py-2.5 rounded-full font-bold text-sm hover:scale-[1.02] transition-transform">Save changes</button>
             </div>
-          )},{title:"Notifications",body:(
-            <div style={{padding:"15px",display:"flex",flexDirection:"column",gap:9}}>
+          </div>
+          <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/10">
+            <h3 className="font-bold text-primary mb-4">Account Type</h3>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-semibold text-sm text-on-background mb-1">Business Account</p>
+                <p className="text-on-surface-variant text-xs">List your venue and manage integrations.</p>
+              </div>
+              <div onClick={onToggleBiz} className={`w-12 h-6 rounded-full cursor-pointer relative transition-colors ${isBiz?"bg-primary":"bg-surface-container-highest"}`}>
+                <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${isBiz?"left-7":"left-1"}`}/>
+              </div>
+            </div>
+            {isBiz&&<button onClick={()=>onSetView("business")} className="mt-4 bg-secondary-container text-on-secondary-container px-5 py-2 rounded-full font-bold text-xs hover:scale-[1.02] transition-transform">Manage Business →</button>}
+          </div>
+          <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/10">
+            <h3 className="font-bold text-primary mb-4">Notifications</h3>
+            <div className="space-y-4">
               {["Booking confirmations","Availability reminders","Weekly recommendations","New venues nearby"].map(l=>(
-                <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:300}}>{l}</span>
-                  <div style={{width:30,height:17,borderRadius:9,background:T.sage,cursor:"pointer",position:"relative",flexShrink:0}}><div style={{position:"absolute",top:1.5,right:1.5,width:14,height:14,borderRadius:"50%",background:"#fff",boxShadow:"0 1px 3px rgba(0,0,0,.18)"}}/></div>
+                <div key={l} className="flex justify-between items-center">
+                  <span className="text-sm text-on-background">{l}</span>
+                  <div className="w-10 h-6 rounded-full bg-primary relative cursor-pointer flex-shrink-0">
+                    <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-white shadow"/>
+                  </div>
                 </div>
               ))}
             </div>
-          )}].map(s=>(
-            <div key={s.title} style={{background:T.paper,borderRadius:3,border:`1px solid ${T.border}`,overflow:"hidden"}}>
-              <div style={{padding:"10px 15px",borderBottom:`1px solid ${T.border}`}}><Label>{s.title}</Label></div>
-              {s.body}
-            </div>
-          ))}
+          </div>
         </div>
       )}
+
+      {/* Insights section */}
+      <section className="mt-16 grid grid-cols-1 md:grid-cols-12 gap-6">
+        <div className="md:col-span-4 bg-primary text-on-primary p-10 rounded-2xl flex flex-col justify-between">
+          <div className="space-y-2">
+            <span className="text-4xl opacity-50">✦</span>
+            <h4 className="text-3xl font-bold leading-tight">Your Wellness Journey</h4>
+            <p className="text-on-primary/70">Keep exploring to build your wellness habit.</p>
+          </div>
+          <div className="pt-8">
+            <div className="text-5xl font-black">{bookings.length > 0 ? `${bookings.length}` : "0"}</div>
+            <div className="text-sm font-bold uppercase tracking-widest opacity-60">Sessions booked</div>
+          </div>
+        </div>
+        <div className="md:col-span-8 bg-surface-container-highest p-10 rounded-2xl relative overflow-hidden">
+          <div className="relative z-10 space-y-4">
+            <h4 className="text-2xl font-bold text-primary">Recommended for you</h4>
+            <p className="text-on-surface-variant max-w-sm">Discover new experiences based on what you've enjoyed so far.</p>
+            <button onClick={()=>onSetView("explore")} className="bg-white text-primary px-8 py-3 rounded-full font-bold shadow-sm hover:shadow-md transition-shadow">Explore Matches</button>
+          </div>
+          <div className="absolute -right-12 -bottom-12 w-64 h-64 bg-primary/5 rounded-full blur-3xl"/>
+        </div>
+      </section>
     </div>
   );
 }
@@ -735,7 +919,7 @@ function printInvoice({ invoiceNo, date, businessName, businessAddress, vatNo, i
   <hr class="rule">
   <div style="font-size:10px;color:#A89E8C;line-height:1.7;margin-bottom:24px;">
     Payouts are processed every Friday. This invoice serves as confirmation of credits redeemed at your venue during the stated period,
-    less the agreed Wello platform commission. Credit value is calculated at €9.00 per credit. If you have any queries regarding this
+    less the agreed Wello platform commission. Credit value is calculated at €5.00 per credit. If you have any queries regarding this
     invoice please contact hola@wello.es quoting invoice number ${invoiceNo}.
   </div>
 
@@ -978,478 +1162,254 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
 // PAGE: ADD CREDITS
 // ═══════════════════════════════════════════════════════════════
 function CreditsPage({ credits, onPurchase }) {
-  const [sel,setSel]=useState("explorer");
-  const [pay,setPay]=useState("card");
-  const [step,setStep]=useState(1);
-  const [card,setCard]=useState({number:"",expiry:"",cvc:"",name:""});
-  const [showPricing,setShowPricing]=useState(false);
-  const bundle=BUNDLES.find(b=>b.id===sel);
+  const [customCr, setCustomCr] = useState(10);
+  const [pay, setPay]   = useState("card");
+  const [step, setStep] = useState(1);
+  const [card, setCard] = useState({number:"",expiry:"",cvc:"",name:""});
+  const [showPricing, setShowPricing] = useState(false);
+
   const fmtCard=v=>v.replace(/\D/g,"").slice(0,16).replace(/(.{4})/g,"$1 ").trim();
   const fmtExp=v=>{const d=v.replace(/\D/g,"").slice(0,4);return d.length>2?d.slice(0,2)+"/"+d.slice(2):d;};
   const expiryDate=()=>{const d=new Date();d.setMonth(d.getMonth()+6);return d.toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});};
+  const totalPrice = +(customCr * 5).toFixed(2);
+  const serviceFee = +(Math.min(totalPrice * 0.1, 5)).toFixed(2);
 
-  const StepBar=()=>(
-    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:24}}>
-      {[["1","Choose bundle"],["2","Payment"],["3","Done"]].map(([n,l],i)=>(
-        <div key={n} style={{display:"flex",alignItems:"center",gap:6}}>
-          <div style={{display:"flex",alignItems:"center",gap:5}}>
-            <div style={{width:20,height:20,borderRadius:"50%",background:step>i?T.sage:step===i+1?T.sage:T.border,color:step>=i+1?"#fff":T.stone2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontFamily:F.body,fontWeight:600,transition:"background .2s"}}>{step>i+1?"✓":n}</div>
-            <span style={{fontFamily:F.body,fontSize:10,color:step===i+1?T.sage:T.stone2,fontWeight:step===i+1?600:300}}>{l}</span>
-          </div>
-          {i<2&&<div style={{width:24,height:1,background:step>i+1?T.sage:T.border,transition:"background .2s"}}/>}
+  // Step indicator
+  const StepBar = () => (
+    <div className="flex items-center gap-2 mb-8">
+      {[["1","Choose credits"],["2","Payment"],["3","Done"]].map(([n,l],i)=>(
+        <div key={n} className="flex items-center gap-2">
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${step>i?"bg-primary text-white":step===i+1?"bg-primary text-white":"bg-surface-container text-outline"}`}>{step>i+1?"✓":n}</div>
+          <span className={`text-xs font-medium ${step===i+1?"text-primary":"text-outline"}`}>{l}</span>
+          {i<2&&<div className={`w-8 h-px ${step>i+1?"bg-primary":"bg-outline-variant"}`}/>}
         </div>
       ))}
     </div>
   );
 
   return (
-    <div style={{maxWidth:660,margin:"0 auto",padding:"32px 28px 58px"}}>
+    <div className="pt-8 pb-24 px-6 max-w-5xl mx-auto">
+      {step===1&&(
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
 
-      {/* ── STEP 1: Choose bundle ── */}
-      {step===1&&(<>
-        <StepBar/>
+          {/* Left column */}
+          <div className="lg:col-span-7 space-y-6">
+            <header className="space-y-2">
+              <span className="text-xs font-bold tracking-widest uppercase text-primary">Wellness Wallet</span>
+              <h1 className="text-4xl font-extrabold tracking-tighter text-primary leading-none">Add Wello Credits</h1>
+              <p className="text-on-surface-variant text-base max-w-md leading-relaxed">Credits can be used for any class, gym, spa or adventure in the Wello marketplace. 1 credit = €5 value.</p>
+            </header>
 
-        {/* Balance card */}
-        <div style={{background:`linear-gradient(138deg,${T.sage2},${T.sage})`,borderRadius:4,padding:"18px 22px",marginBottom:22,position:"relative",overflow:"hidden"}}>
-          <div style={{position:"absolute",right:-10,top:-10,width:90,height:90,borderRadius:"50%",background:"rgba(255,255,255,.05)"}}/>
-          <Label><span style={{color:"rgba(255,255,255,.5)"}}>Your balance</span></Label>
-          <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:38,fontWeight:700,color:"#fff",lineHeight:1,letterSpacing:"-1px"}}>◈ {credits}</div>
-          <div style={{display:"flex",gap:16,marginTop:5,flexWrap:"wrap"}}>
-            <span style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:300}}>Credits expire 6 months from purchase</span>
-            <span style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.5)",fontWeight:300}}>€{BOOKING_FEE.toFixed(2)} booking fee per session</span>
+            {/* Current balance */}
+            <div className="bg-primary rounded-2xl p-6 relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-40 h-40 bg-white/5 rounded-full -mr-16 -mt-16"/>
+              <div className="relative z-10">
+                <p className="text-white/50 text-xs font-semibold tracking-widest uppercase mb-2">Your balance</p>
+                <p className="text-white text-5xl font-extrabold tracking-tighter leading-none">◈ {credits}</p>
+                <p className="text-white/40 text-xs mt-3">10% service fee per booking · max €5</p>
+              </div>
+            </div>
+
+            {/* Credit counter */}
+            <div className="bg-surface-container-low p-8 rounded-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-48 h-48 bg-primary/5 rounded-full -mr-16 -mt-16 blur-3xl"/>
+              <div className="relative z-10 flex flex-col items-center text-center">
+                <label className="text-on-surface-variant font-medium text-sm mb-6">How many credits?</label>
+                <div className="flex items-center gap-6 mb-8">
+                  <button onClick={()=>setCustomCr(c=>Math.max(1,c-1))}
+                    className="w-14 h-14 rounded-full bg-white flex items-center justify-center text-primary hover:scale-105 transition-transform shadow-sm text-2xl font-light border border-outline-variant/20">−</button>
+                  <div className="flex flex-col items-center">
+                    <input
+                      type="number" min="1" max="200" value={customCr}
+                      onChange={e=>{const v=parseInt(e.target.value);if(!isNaN(v))setCustomCr(Math.min(200,Math.max(1,v)));}}
+                      className="text-7xl font-extrabold text-primary tracking-tighter leading-none text-center w-32 bg-transparent border-none outline-none"/>
+                    <span className="text-primary/60 font-semibold tracking-widest uppercase text-xs mt-1">Credits</span>
+                  </div>
+                  <button onClick={()=>setCustomCr(c=>Math.min(200,c+1))}
+                    className="w-14 h-14 rounded-full bg-primary flex items-center justify-center text-white hover:scale-105 transition-transform shadow-lg text-2xl font-light">+</button>
+                </div>
+                {/* Quick add pills */}
+                <div className="flex flex-wrap justify-center gap-2">
+                  {[1,5,10,25].map(n=>(
+                    <button key={n} onClick={()=>setCustomCr(c=>Math.min(200,c+n))}
+                      className="px-5 py-2 rounded-full border border-outline-variant/30 text-on-surface-variant text-sm font-medium hover:bg-primary hover:text-white hover:border-primary transition-all">+{n}</button>
+                  ))}
+                  <button onClick={()=>setCustomCr(1)}
+                    className="px-5 py-2 rounded-full border border-outline-variant/20 text-outline text-sm hover:bg-surface-container transition-all">Reset</button>
+                </div>
+              </div>
+            </div>
+
+            {/* Info cards */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-surface-container-highest/50 p-5 rounded-xl">
+                <div className="text-primary text-xl mb-2">⏱</div>
+                <h4 className="font-bold text-primary text-sm mb-1">6 Month Validity</h4>
+                <p className="text-xs text-on-surface-variant">Credits expire 6 months from purchase date.</p>
+              </div>
+              <div className="bg-surface-container-highest/50 p-5 rounded-xl">
+                <div className="text-primary text-xl mb-2">◈</div>
+                <h4 className="font-bold text-primary text-sm mb-1">Flexible Booking</h4>
+                <p className="text-xs text-on-surface-variant">Use across any venue, class or experience.</p>
+              </div>
+            </div>
+
+            {/* How credits work — collapsible */}
+            <div className="bg-secondary-container/40 rounded-xl p-4">
+              <button onClick={()=>setShowPricing(p=>!p)} className="w-full flex justify-between items-center bg-transparent border-none cursor-pointer">
+                <span className="text-sm font-semibold text-on-secondary-container">How credits work · 1 credit = €5 value</span>
+                <span className="text-on-secondary-container text-sm">{showPricing?"↑":"↓"}</span>
+              </button>
+              {showPricing&&(
+                <div className="mt-4 pt-4 border-t border-outline-variant/20 space-y-2">
+                  {CREDIT_PRICING.map(r=>(
+                    <div key={r.cat} className="grid grid-cols-3 gap-2 py-2 border-b border-outline-variant/10 last:border-0">
+                      <div>
+                        <div className="text-xs font-semibold text-on-background">{r.cat}</div>
+                        <div className="text-xs text-outline">{r.example}</div>
+                      </div>
+                      <div className="text-xs font-semibold text-primary">{r.offPeak}</div>
+                      <div className="text-xs text-on-surface-variant">{r.peak}</div>
+                    </div>
+                  ))}
+                  <p className="text-xs text-outline mt-2">A 10% service fee (max €5) is charged per booking. Credits expire 6 months from purchase.</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right column — sticky order summary */}
+          <div className="lg:col-span-5 lg:sticky lg:top-28">
+            <div className="bg-white rounded-2xl p-8 shadow-[0_12px_32px_rgba(27,28,25,0.06)] border border-outline-variant/10">
+              <h3 className="text-xl font-bold text-primary mb-6 tracking-tight">Order Summary</h3>
+              <div className="space-y-5">
+                <div className="flex justify-between items-end">
+                  <div>
+                    <p className="text-on-surface-variant text-sm">Credits</p>
+                    <p className="text-primary font-semibold">{customCr} Wello Credits</p>
+                  </div>
+                  <p className="text-primary font-bold">€{totalPrice}</p>
+                </div>
+                <div className="flex justify-between items-center py-4 border-y border-outline-variant/10">
+                  <div>
+                    <p className="text-on-surface-variant text-sm">Unit price</p>
+                    <p className="text-primary text-sm italic">1 Credit = €5.00</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-on-surface-variant">Service fee (10%, max €5)</span>
+                    <span className="text-primary font-medium">charged per booking</span>
+                  </div>
+                </div>
+                <div className="pt-5 border-t-2 border-primary/5">
+                  <div className="flex justify-between items-baseline mb-6">
+                    <span className="text-xl font-bold text-primary tracking-tight">Total</span>
+                    <div className="text-right">
+                      <span className="text-4xl font-extrabold text-primary tracking-tighter">€{totalPrice}</span>
+                      <p className="text-xs uppercase tracking-widest text-on-surface-variant mt-1">{customCr} credits</p>
+                    </div>
+                  </div>
+                  <button onClick={()=>setStep(2)}
+                    className="w-full bg-primary text-white py-4 rounded-full font-bold text-base hover:scale-[1.02] active:scale-95 transition-transform shadow-lg flex items-center justify-center gap-2">
+                    <span>Continue to Payment</span>
+                    <span>→</span>
+                  </button>
+                  <div className="mt-4 flex items-center justify-center gap-2 text-on-surface-variant text-xs">
+                    <span>🔒</span>
+                    <span>Secure encrypted checkout</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="mt-5 px-2">
+              <p className="text-xs text-on-surface-variant text-center">Credits expire on <strong className="text-primary">{expiryDate()}</strong></p>
+            </div>
           </div>
         </div>
+      )}
 
-        {/* How credits work — collapsible pricing table */}
-        <div style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:3,padding:"12px 14px",marginBottom:18}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontFamily:F.body,fontSize:10,color:T.ochre,fontWeight:600}}>How credits work · different sessions cost different amounts</span>
-            <button onClick={()=>setShowPricing(p=>!p)} style={{background:"transparent",border:"none",color:T.ochre,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer",padding:0,flexShrink:0,marginLeft:8}}>{showPricing?"Hide ↑":"See pricing ↓"}</button>
+      {/* Step 2 — Payment */}
+      {step===2&&(
+        <div className="max-w-lg mx-auto">
+          <StepBar/>
+          <button onClick={()=>setStep(1)} className="flex items-center gap-1 text-outline text-sm mb-6 bg-transparent border-none cursor-pointer hover:text-primary transition-colors">← Back</button>
+          <div className="bg-primary rounded-2xl p-5 mb-6 flex justify-between items-center relative overflow-hidden">
+            <div className="absolute right-4 top-3 text-white/5 text-5xl font-bold">◈</div>
+            <div>
+              <p className="text-white/50 text-xs uppercase tracking-widest">Order summary</p>
+              <p className="text-white font-bold text-base mt-1">◈ {customCr} credits · Expires {expiryDate()}</p>
+            </div>
+            <p className="text-white text-2xl font-extrabold tracking-tighter">€{totalPrice}</p>
           </div>
-          {showPricing&&(
-            <div style={{borderTop:`1px solid ${T.ochreL}`,marginTop:10,paddingTop:10}}>
-              <div style={{display:"grid",gridTemplateColumns:"1.4fr .8fr .8fr",gap:0,marginBottom:6}}>
-                {["","Off-peak","Peak"].map((h,i)=><div key={i} style={{fontFamily:F.body,fontSize:8,color:T.ochre,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",padding:"2px 0"}}>{h}</div>)}
+          <h2 className="text-sm font-bold text-primary uppercase tracking-widest mb-4">Payment method</h2>
+          <div className="grid grid-cols-2 gap-3 mb-5">
+            {PAY.map(pm=>(
+              <div key={pm.id} onClick={()=>setPay(pm.id)}
+                className={`border rounded-xl p-4 cursor-pointer flex items-center gap-3 transition-all ${pay===pm.id?"border-primary bg-primary-fixed/30":"border-outline-variant/30 hover:border-primary/40"}`}>
+                <span className={`text-base font-bold ${pay===pm.id?"text-primary":"text-outline"}`}>{pm.id==="card"?"▬":pm.id==="apple"?"⌘":pm.id==="google"?"G":"₱"}</span>
+                <div>
+                  <p className={`text-sm font-semibold ${pay===pm.id?"text-primary":"text-on-background"}`}>{pm.label}</p>
+                  <p className="text-xs text-outline">{pm.sub}</p>
+                </div>
               </div>
-              {CREDIT_PRICING.map(r=>(
-                <div key={r.cat} style={{display:"grid",gridTemplateColumns:"1.4fr .8fr .8fr",gap:0,padding:"6px 0",borderTop:`1px solid rgba(184,146,92,.15)`}}>
-                  <div><div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{r.cat}</div><div style={{fontFamily:F.body,fontSize:9,color:T.stone2,fontWeight:300}}>{r.example}</div></div>
-                  <div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600,alignSelf:"center"}}>{r.offPeak}</div>
-                  <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:400,alignSelf:"center"}}>{r.peak}</div>
+            ))}
+          </div>
+          {pay==="card"&&(
+            <div className="bg-white rounded-2xl border border-outline-variant/20 p-6 space-y-4 mb-5">
+              {[{l:"Cardholder Name",k:"name",p:"Jane Smith",tf:v=>v},{l:"Card Number",k:"number",p:"4242 4242 4242 4242",tf:fmtCard}].map(f=>(
+                <div key={f.k}>
+                  <label className="text-xs font-bold uppercase tracking-widest text-outline mb-1 block">{f.l}</label>
+                  <input placeholder={f.p} value={card[f.k]} onChange={e=>setCard(p=>({...p,[f.k]:f.tf(e.target.value)}))}
+                    className="w-full border border-outline-variant/30 rounded-lg px-4 py-3 text-sm font-medium focus:outline-none focus:border-primary transition-colors bg-surface"/>
                 </div>
               ))}
-              <div style={{marginTop:9,fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,lineHeight:1.5}}>Off-peak = before 9am or after 6pm on weekdays, or less popular slots set by the venue. A €{BOOKING_FEE.toFixed(2)} booking fee is charged per session booked, not per credit purchase.</div>
+              <div className="grid grid-cols-2 gap-4">
+                {[{l:"Expiry",k:"expiry",p:"MM/YY",tf:fmtExp},{l:"CVC",k:"cvc",p:"123",tf:v=>v.replace(/\D/g,"").slice(0,3)}].map(f=>(
+                  <div key={f.k}>
+                    <label className="text-xs font-bold uppercase tracking-widest text-outline mb-1 block">{f.l}</label>
+                    <input placeholder={f.p} value={card[f.k]} onChange={e=>setCard(p=>({...p,[f.k]:f.tf(e.target.value)}))}
+                      className="w-full border border-outline-variant/30 rounded-lg px-4 py-3 text-sm font-medium focus:outline-none focus:border-primary transition-colors bg-surface"/>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
+          <button onClick={()=>{onPurchase({cr:customCr,price:totalPrice});setStep(3);}}
+            className="w-full bg-primary text-white py-4 rounded-full font-bold text-base hover:scale-[1.02] active:scale-95 transition-transform shadow-lg">
+            Pay €{totalPrice} →
+          </button>
         </div>
+      )}
 
-        {/* Bundle grid */}
-        <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:15,fontWeight:600,color:T.ink,margin:"0 0 12px",letterSpacing:"-0.3px"}}>Choose a bundle</h2>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:9,marginBottom:18}}>
-          {BUNDLES.map(b=>{
-            const perCredit=(b.price/b.cr).toFixed(2);
-            return (
-              <div key={b.id} onClick={()=>setSel(b.id)} style={{border:`1.5px solid ${sel===b.id?T.sage:T.border}`,borderRadius:3,padding:"14px 13px",cursor:"pointer",background:sel===b.id?T.sageXL:T.paper,position:"relative",transition:"all .13s"}}
-                onMouseEnter={e=>{if(sel!==b.id)e.currentTarget.style.borderColor=T.border2;}}
-                onMouseLeave={e=>{if(sel!==b.id)e.currentTarget.style.borderColor=T.border;}}>
-                {b.badge&&<div style={{position:"absolute",top:-8,right:10,background:sel===b.id?T.sage:b.popular?T.ochre:T.stone2,color:"#fff",fontSize:7,fontFamily:F.body,fontWeight:700,padding:"2px 7px",borderRadius:2,letterSpacing:"1px",textTransform:"uppercase",transition:"background .13s"}}>{b.badge}</div>}
-                <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:14,fontWeight:600,color:T.ink,marginBottom:1,letterSpacing:"-0.3px"}}>{b.name}</div>
-                <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:sel===b.id?T.sage:T.stone,marginBottom:3,letterSpacing:"-0.5px"}}>◈ {b.cr}</div>
-                <div style={{fontFamily:F.body,fontSize:9,color:T.stone,marginBottom:8,lineHeight:1.4,fontWeight:300}}>{b.desc}</div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-                  <span style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:17,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>€{b.price}</span>
-                  <span style={{fontFamily:F.body,fontSize:8,color:T.stone2}}>€{perCredit}/credit</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Summary + expiry */}
-        <div style={{background:T.bg,borderRadius:3,padding:"12px 14px",marginBottom:18,border:`1px solid ${T.border}`}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-            <div><div style={{fontFamily:F.body,fontSize:9,color:T.stone,marginBottom:1,fontWeight:300}}>Credits after purchase</div><div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>◈ {credits+bundle.cr}</div></div>
-            <div style={{textAlign:"right"}}><div style={{fontFamily:F.body,fontSize:9,color:T.stone,marginBottom:1,fontWeight:300}}>Total</div><div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,letterSpacing:"-0.5px"}}>€{bundle.price}</div></div>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:6,borderTop:`1px solid ${T.border}`,paddingTop:8}}>
-            <span style={{width:5,height:5,borderRadius:"50%",background:T.ochre,display:"inline-block",flexShrink:0}}/>
-            <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>These credits expire on <strong style={{fontWeight:600,color:T.ink}}>{expiryDate()}</strong></span>
-          </div>
-        </div>
-
-        <button onClick={()=>setStep(2)} style={{width:"100%",padding:12,background:T.sage,color:"#fff",border:"none",borderRadius:3,fontSize:12,fontFamily:F.body,fontWeight:600,cursor:"pointer",letterSpacing:".4px",transition:"background .15s"}}
-          onMouseEnter={e=>e.target.style.background=T.sage2} onMouseLeave={e=>e.target.style.background=T.sage}>
-          Choose payment method →
-        </button>
-      </>)}
-
-      {/* ── STEP 2: Payment ── */}
-      {step===2&&(<>
-        <StepBar/>
-        <button onClick={()=>setStep(1)} style={{display:"flex",alignItems:"center",gap:4,background:"transparent",border:"none",color:T.stone,fontFamily:F.body,fontSize:11,cursor:"pointer",marginBottom:18,padding:0,fontWeight:300}}>← Back</button>
-        <div style={{background:`linear-gradient(138deg,${T.sage2},${T.sage})`,borderRadius:3,padding:"13px 16px",marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center",position:"relative",overflow:"hidden"}}>
-          <div style={{position:"absolute",right:12,top:8,opacity:.08,fontSize:40,color:"#fff"}}>◈</div>
-          <div><Label><span style={{color:"rgba(255,255,255,.5)"}}>Order summary</span></Label>
-          <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:15,fontWeight:600,color:"#fff",letterSpacing:"-0.3px"}}>{bundle.name} · ◈ {bundle.cr} credits</div>
-          <div style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,.5)",marginTop:2,fontWeight:300}}>Expires {expiryDate()}</div></div>
-          <div style={{textAlign:"right",flexShrink:0}}><div style={{fontFamily:F.body,fontSize:9,color:"rgba(255,255,255,.5)",marginBottom:2,fontWeight:300}}>Total</div><div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:"#fff",letterSpacing:"-0.5px"}}>€{bundle.price}</div></div>
-        </div>
-        <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:14,fontWeight:600,color:T.ink,margin:"0 0 11px",letterSpacing:"-0.3px"}}>Payment method</h2>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8,marginBottom:18}}>
-          {PAY.map(pm=>(
-            <div key={pm.id} onClick={()=>setPay(pm.id)} style={{border:`1.5px solid ${pay===pm.id?T.sage:T.border}`,borderRadius:3,padding:"11px 13px",cursor:"pointer",background:pay===pm.id?T.sageXL:T.paper,display:"flex",alignItems:"center",gap:9,transition:"all .13s"}}>
-              <div style={{width:18,textAlign:"center",fontFamily:F.body,fontSize:pm.id==="google"?12:14,color:pay===pm.id?T.sage:T.stone,fontWeight:600,flexShrink:0}}>{pm.id==="card"?"▬":pm.id==="apple"?"⌘":pm.id==="google"?"G":"₱"}</div>
-              <div><div style={{fontFamily:F.body,fontSize:11,color:pay===pm.id?T.sage:T.ink,fontWeight:pay===pm.id?600:400}}>{pm.label}</div><div style={{fontFamily:F.body,fontSize:9,color:T.stone2,fontWeight:300}}>{pm.sub}</div></div>
-            </div>
-          ))}
-        </div>
-        {pay==="card"?(
-          <div style={{background:T.paper,borderRadius:3,border:`1px solid ${T.border}`,padding:"15px",display:"flex",flexDirection:"column",gap:10,marginBottom:14}}>
-            {[{l:"Cardholder Name",k:"name",p:"Jane Smith",tf:v=>v},{l:"Card Number",k:"number",p:"4242 4242 4242 4242",tf:fmtCard}].map(f=>(
-              <div key={f.k}><FieldLabel>{f.l}</FieldLabel><input placeholder={f.p} value={card[f.k]} onChange={e=>setCard(p=>({...p,[f.k]:f.tf(e.target.value)}))} style={INP} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=T.border}/></div>
-            ))}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              {[{l:"Expiry",k:"expiry",p:"MM/YY",tf:fmtExp},{l:"CVC",k:"cvc",p:"123",tf:v=>v.replace(/\D/g,"").slice(0,3)}].map(f=>(
-                <div key={f.k}><FieldLabel>{f.l}</FieldLabel><input placeholder={f.p} value={card[f.k]} onChange={e=>setCard(p=>({...p,[f.k]:f.tf(e.target.value)}))} style={INP} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=T.border}/></div>
-              ))}
-            </div>
-          </div>
-        ):(
-          <div style={{background:T.paper,borderRadius:3,border:`1px solid ${T.border}`,padding:"16px",marginBottom:14,textAlign:"center"}}>
-            <div style={{fontSize:22,marginBottom:6}}>{pay==="apple"?"🍎":pay==="google"?"G":"🅿"}</div>
-            <div style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300}}>You'll be redirected to {PAY.find(p=>p.id===pay)?.label} to complete payment</div>
-          </div>
-        )}
-        <button onClick={()=>{onPurchase(bundle);setStep(3);}} style={{width:"100%",padding:12,background:T.sage,color:"#fff",border:"none",borderRadius:3,fontSize:12,fontFamily:F.body,fontWeight:600,cursor:"pointer",letterSpacing:".4px",marginBottom:8,transition:"background .15s"}}
-          onMouseEnter={e=>e.target.style.background=T.sage2} onMouseLeave={e=>e.target.style.background=T.sage}>
-          Pay €{bundle.price} · Get ◈ {bundle.cr} credits
-        </button>
-        <div style={{textAlign:"center"}}><span style={{fontSize:9,color:T.stone2,fontFamily:F.body,fontWeight:300}}>🔒 Secured by Stripe · Credits expire in 6 months · €{BOOKING_FEE.toFixed(2)} booking fee per session</span></div>
-      </>)}
-
-      {/* ── STEP 3: Confirmation ── */}
+      {/* Step 3 — Confirmation */}
       {step===3&&(
-        <div style={{textAlign:"center",padding:"52px 20px"}}>
-          <div style={{width:52,height:52,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:20,color:T.sage}}>✓</div>
-          <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,margin:"0 0 6px",letterSpacing:"-0.5px"}}>Credits added</h2>
-          <p style={{fontFamily:F.body,color:T.stone,fontSize:12,marginBottom:2,fontWeight:300}}>◈ {bundle.cr} {bundle.name} credits added to your wallet</p>
-          <p style={{fontFamily:F.body,color:T.stone2,fontSize:11,marginBottom:2,fontWeight:300}}>New balance: <strong style={{color:T.ink,fontWeight:600}}>◈ {credits+bundle.cr}</strong></p>
-          <p style={{fontFamily:F.body,color:T.stone2,fontSize:10,fontWeight:300}}>These credits expire on {expiryDate()}</p>
-          <div style={{marginTop:18,background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:3,padding:"10px 14px",display:"inline-block",textAlign:"left"}}>
-            <div style={{fontFamily:F.body,fontSize:10,color:T.ochre,fontWeight:600,marginBottom:2}}>Remember</div>
-            <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>A €{BOOKING_FEE.toFixed(2)} booking fee applies each time you reserve a session.</div>
-          </div>
-          <br/><button onClick={()=>setStep(1)} style={{marginTop:20,padding:"8px 22px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontSize:11,fontFamily:F.body,fontWeight:600,cursor:"pointer"}}>Buy More</button>
+        <div className="max-w-md mx-auto text-center py-16">
+          <div className="w-16 h-16 bg-primary-fixed rounded-full flex items-center justify-center mx-auto mb-6 text-3xl">✓</div>
+          <h1 className="text-3xl font-extrabold tracking-tighter text-primary mb-3">Credits added!</h1>
+          <p className="text-on-surface-variant mb-1">◈ {customCr} credits added to your account.</p>
+          <p className="text-outline text-sm mb-8">They expire on {expiryDate()}.</p>
+          <button onClick={()=>setStep(1)}
+            className="bg-primary text-white px-8 py-3 rounded-full font-bold hover:scale-105 transition-transform">
+            Buy more credits
+          </button>
         </div>
       )}
     </div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ADMIN PANEL — password protected, not in public nav
-// Access via: add ?admin=true to the URL, then enter password
-// ═══════════════════════════════════════════════════════════════
-const ADMIN_PASSWORD = "wello2026";
 
-function AdminPanel({ onExit, skipAuth=false }) {
-  const [auth, setAuth]           = useState(skipAuth);
-  const [pw, setPw]               = useState("");
-  const [pwErr, setPwErr]         = useState(false);
-  const [businesses, setBusinesses] = useState(ADMIN_BUSINESSES.map(b=>({...b})));
-  const [tab, setTab]             = useState("businesses");
-  const [editingId, setEditingId] = useState(null);
-  const [saved, setSaved]         = useState({});
 
-  function login() {
-    if (pw === ADMIN_PASSWORD) { setAuth(true); setPwErr(false); }
-    else { setPwErr(true); }
-  }
-
-  function setCommission(id, tier) {
-    setBusinesses(prev => prev.map(b => b.id===id ? {...b, commission:tier} : b));
-    setSaved(p=>({...p,[id]:true}));
-    setTimeout(()=>setSaved(p=>{const n={...p};delete n[id];return n;}), 1800);
-  }
-
-  function setStatus(id, status) {
-    setBusinesses(prev => prev.map(b => b.id===id ? {...b, status} : b));
-  }
-
-  const totalCredits = businesses.reduce((s,b)=>s+b.monthlyCredits,0);
-  const totalBookings = businesses.reduce((s,b)=>s+b.monthlyBookings,0);
-  const liveCount = businesses.filter(b=>b.status==="live").length;
-
-  const INP3={width:"100%",padding:"8px 10px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:11,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",boxSizing:"border-box"};
-
-  if (!auth) return (
-    <div style={{minHeight:"100vh",background:T.ink,display:"flex",alignItems:"center",justifyContent:"center",padding:28}}>
-      <div style={{background:T.paper,borderRadius:4,padding:"36px 32px",maxWidth:360,width:"100%",boxShadow:"0 20px 60px rgba(0,0,0,.4)"}}>
-        <div style={{marginBottom:24}}>
-          <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.sage,letterSpacing:"-0.5px"}}>wello</div>
-          <div style={{fontFamily:F.body,fontSize:8,color:T.ochre,letterSpacing:"4px",textTransform:"uppercase",marginTop:2}}>admin panel</div>
-        </div>
-        <FieldLabel>Password</FieldLabel>
-        <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setPwErr(false);}}
-          onKeyDown={e=>e.key==="Enter"&&login()}
-          placeholder="Enter admin password"
-          style={{...INP3,marginBottom:pwErr?6:14,borderColor:pwErr?T.clay:T.border}}/>
-        {pwErr&&<div style={{fontFamily:F.body,fontSize:10,color:T.clay,marginBottom:12}}>Incorrect password.</div>}
-        <button onClick={login} style={{width:"100%",padding:"10px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:"pointer"}}>Sign in →</button>
-        <button onClick={onExit} style={{width:"100%",marginTop:8,padding:"8px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>← Back to wello</button>
-      </div>
-    </div>
-  );
-
-  return (
-    <div style={{minHeight:"100vh",background:T.bg}}>
-      {/* Admin header */}
-      <header style={{background:T.ink,padding:"0 28px",display:"flex",alignItems:"center",justifyContent:"space-between",height:54}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:18,fontWeight:700,color:T.sage,letterSpacing:"-0.5px"}}>wello</div>
-          <div style={{width:1,height:18,background:T.ink2}}/>
-          <div style={{fontFamily:F.body,fontSize:9,color:T.stone2,letterSpacing:"2px",textTransform:"uppercase"}}>Admin Panel</div>
-          <div style={{background:"rgba(184,146,92,.15)",border:`1px solid ${T.ochre}`,borderRadius:2,padding:"2px 8px"}}>
-            <span style={{fontFamily:F.body,fontSize:8,color:T.ochre,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase"}}>Private</span>
-          </div>
-        </div>
-        <button onClick={onExit} style={{background:"transparent",border:`1px solid ${T.ink2}`,color:T.stone2,fontFamily:F.body,fontSize:10,cursor:"pointer",padding:"5px 12px",borderRadius:2}}>← Exit admin</button>
-      </header>
-
-      <div style={{maxWidth:960,margin:"0 auto",padding:"28px 28px 58px"}}>
-
-        {/* Stats row */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10,marginBottom:24}}>
-          {[["Live venues",liveCount],["Total bookings",totalBookings+" this month"],["Credits redeemed",totalCredits+" ◈ this month"],["Pending review",businesses.filter(b=>b.status==="pending").length]].map(([l,v])=>(
-            <div key={l} style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"12px 14px"}}>
-              <Label>{l}</Label>
-              <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>{v}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Tabs */}
-        <div style={{display:"flex",borderBottom:`1px solid ${T.border}`,marginBottom:22}}>
-          {[["businesses","Businesses & Commission"],["applications","Applications"],["pricing","Credit Pricing"],["payouts","Payouts"]].map(([k,l])=>(
-            <button key={k} onClick={()=>setTab(k)} style={{padding:"7px 16px",border:"none",borderBottom:`2px solid ${tab===k?T.sage:"transparent"}`,background:"transparent",color:tab===k?T.sage:T.stone,fontFamily:F.body,fontSize:11,fontWeight:tab===k?600:300,cursor:"pointer",marginBottom:-1,transition:"all .13s",display:"flex",alignItems:"center",gap:5}}>
-              {l}
-              {k==="applications"&&MOCK_APPLICATIONS.filter(a=>a.status==="pending").length>0&&(
-                <span style={{background:T.ochre,color:"#fff",fontSize:8,fontWeight:700,padding:"1px 5px",borderRadius:10,fontFamily:F.body}}>{MOCK_APPLICATIONS.filter(a=>a.status==="pending").length}</span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* Applications tab */}
-        {tab==="applications"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,marginBottom:4}}>New business registrations waiting for your review. Approve to give them dashboard access and agree their commission rate.</div>
-            {MOCK_APPLICATIONS.length===0&&<div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"28px",textAlign:"center",fontFamily:F.body,fontSize:12,color:T.stone2}}>No applications yet.</div>}
-            {MOCK_APPLICATIONS.map(app=>(
-              <div key={app.id} style={{background:T.paper,border:`1px solid ${app.status==="approved"?T.sageL:app.status==="rejected"?T.clayL:T.border}`,borderRadius:3,overflow:"hidden",transition:"border-color .2s"}}>
-                <div style={{padding:"14px 16px",display:"flex",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
-                  <div style={{flex:1}}>
-                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
-                      <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>{app.name}</div>
-                      <span style={{
-                        background:app.status==="approved"?T.sageXL:app.status==="rejected"?T.clayXL:T.ochreXL,
-                        color:app.status==="approved"?T.sage:app.status==="rejected"?T.clay:T.ochre,
-                        fontSize:8,padding:"2px 7px",borderRadius:2,fontFamily:F.body,fontWeight:700,textTransform:"uppercase",letterSpacing:"1px"
-                      }}>{app.status}</span>
-                    </div>
-                    <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
-                      {[[app.cat,null],[app.loc,null],[app.email,"📧"],[app.phone,"📞"]].map(([v,icon],i)=>v&&(
-                        <span key={i} style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{icon&&icon+" "}{v}</span>
-                      ))}
-                    </div>
-                    <div style={{fontFamily:F.body,fontSize:9,color:T.stone2,marginTop:5,fontWeight:300}}>Submitted {app.submittedAt}</div>
-                  </div>
-                  {app.status==="pending"&&(
-                    <div style={{display:"flex",gap:7,flexShrink:0}}>
-                      <button style={{padding:"8px 16px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer",transition:"background .15s"}}
-                        onMouseEnter={e=>e.target.style.background=T.sage2} onMouseLeave={e=>e.target.style.background=T.sage}>
-                        ✓ Approve
-                      </button>
-                      <button style={{padding:"8px 14px",background:"transparent",color:T.clay,border:`1px solid ${T.clayL}`,borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>
-                        Reject
-                      </button>
-                    </div>
-                  )}
-                  {app.status==="approved"&&(
-                    <span style={{fontFamily:F.body,fontSize:10,color:T.sage,fontWeight:600,alignSelf:"center"}}>✓ Approved — live on marketplace</span>
-                  )}
-                </div>
-                {app.status==="pending"&&(
-                  <div style={{padding:"9px 16px",borderTop:`1px solid ${T.border}`,background:T.bg,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
-                    <span style={{fontFamily:F.body,fontSize:9,color:T.stone,fontWeight:300}}>Set commission before approving:</span>
-                    <div style={{display:"flex",gap:6}}>
-                      {COMMISSION_TIERS.map(t=>(
-                        <button key={t.id} style={{padding:"4px 10px",background:T.paper,color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:9,cursor:"pointer",fontWeight:300}}>
-                          {t.rate}% {t.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Businesses & Commission tab */}
-        {tab==="businesses"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,marginBottom:4}}>Set the commission rate for each registered business. Businesses cannot see or change this value.</div>
-            {businesses.map(biz=>{
-              const tier = COMMISSION_TIERS.find(t=>t.id===biz.commission);
-              const monthlyPayout = biz.monthlyCredits * 9 * (1 - tier.rate/100);
-              const monthlyCommission = biz.monthlyCredits * 9 * (tier.rate/100);
-              return (
-                <div key={biz.id} style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden",transition:"border-color .15s"}}>
-                  <div style={{padding:"14px 16px",display:"flex",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
-                    {/* Business info */}
-                    <div style={{flex:"1 1 200px"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                        <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>{biz.name}</div>
-                        <span style={{background:biz.status==="live"?T.sageXL:T.ochreXL,color:biz.status==="live"?T.sage:T.ochre,fontSize:8,padding:"1px 6px",borderRadius:2,fontFamily:F.body,fontWeight:700,textTransform:"uppercase",letterSpacing:"1px"}}>{biz.status}</span>
-                      </div>
-                      <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{biz.cat} · {biz.loc}</div>
-                      {biz.status==="live"&&<div style={{fontFamily:F.body,fontSize:10,color:T.stone2,marginTop:3,fontWeight:300}}>{biz.monthlyBookings} bookings · ◈ {biz.monthlyCredits} credits this month</div>}
-                    </div>
-
-                    {/* Commission selector */}
-                    <div style={{flex:"0 1 340px"}}>
-                      <FieldLabel>Commission rate</FieldLabel>
-                      <div style={{display:"flex",gap:6}}>
-                        {COMMISSION_TIERS.map(t=>(
-                          <div key={t.id} onClick={()=>setCommission(biz.id, t.id)}
-                            style={{flex:1,padding:"7px 8px",borderRadius:2,border:`1.5px solid ${biz.commission===t.id?T.sage:T.border}`,background:biz.commission===t.id?T.sageXL:T.bg,cursor:"pointer",textAlign:"center",transition:"all .13s"}}>
-                            <div style={{fontFamily:F.body,fontSize:11,color:biz.commission===t.id?T.sage:T.ink,fontWeight:biz.commission===t.id?700:400}}>{t.rate}%</div>
-                            <div style={{fontFamily:F.body,fontSize:8,color:T.stone2,fontWeight:300}}>{t.label}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Payout calc */}
-                    <div style={{flex:"0 1 160px",textAlign:"right"}}>
-                      <div style={{fontFamily:F.body,fontSize:9,color:T.stone,fontWeight:300,marginBottom:2}}>Est. monthly payout</div>
-                      <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>€{monthlyPayout.toFixed(0)}</div>
-                      <div style={{fontFamily:F.body,fontSize:9,color:T.sage,fontWeight:300}}>Wello earns €{monthlyCommission.toFixed(0)}</div>
-                      {saved[biz.id]&&<div style={{fontFamily:F.body,fontSize:9,color:T.sage,fontWeight:600,marginTop:4}}>✓ Saved</div>}
-                    </div>
-                  </div>
-
-                  {/* Status controls */}
-                  <div style={{padding:"8px 16px",borderTop:`1px solid ${T.border}`,background:T.bg,display:"flex",gap:7,alignItems:"center"}}>
-                    <span style={{fontFamily:F.body,fontSize:9,color:T.stone,fontWeight:300}}>Status:</span>
-                    {["pending","live","suspended"].map(s=>(
-                      <button key={s} onClick={()=>setStatus(biz.id,s)} style={{padding:"3px 9px",background:biz.status===s?T.ink:T.paper,color:biz.status===s?"#fff":T.stone,border:`1px solid ${biz.status===s?T.ink:T.border}`,borderRadius:2,fontFamily:F.body,fontSize:9,cursor:"pointer",fontWeight:biz.status===s?600:300,textTransform:"capitalize"}}>{s}</button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Credit pricing tab */}
-        {tab==="pricing"&&(
-          <div>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,marginBottom:16,lineHeight:1.6}}>Credit pricing is based on Mallorca market research (2025). 1 credit ≈ €9 real-world value. Off-peak = before 9am or after 6pm weekdays.</div>
-            <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden"}}>
-              <div style={{display:"grid",gridTemplateColumns:"1.2fr 1.3fr 1.3fr 1.4fr",padding:"10px 16px",borderBottom:`1px solid ${T.border}`,background:T.bg}}>
-                {["Category","Off-peak","Peak","Market rate reference"].map(h=><div key={h} style={{fontFamily:F.body,fontSize:8,color:T.stone,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:600}}>{h}</div>)}
-              </div>
-              {CREDIT_PRICING.map((r,i)=>(
-                <div key={r.cat} style={{display:"grid",gridTemplateColumns:"1.2fr 1.3fr 1.3fr 1.4fr",padding:"12px 16px",borderBottom:i<CREDIT_PRICING.length-1?`1px solid ${T.border}`:"none",alignItems:"center"}}>
-                  <div><div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{r.cat}</div><div style={{fontFamily:F.body,fontSize:9,color:T.stone2,fontWeight:300}}>{r.example}</div></div>
-                  <div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600}}>{r.offPeak}</div>
-                  <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:400}}>{r.peak}</div>
-                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,lineHeight:1.4}}>
-                    {[
-                      "€18–20 drop-in (Sóller/Palma)",
-                      "€18–22 drop-in (Palma)",
-                      "€15–18 drop-in",
-                      "€15–20 day pass",
-                      "€25–80 hotel day pass",
-                      "€30–60 resort pool",
-                      "€30–50pp guided",
-                      "€60–90 per 60-min treatment",
-                    ][i]}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Payouts tab */}
-        {tab==="payouts"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,marginBottom:4}}>Estimated payouts based on this month's credit redemptions at €9/credit.</div>
-            <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden"}}>
-              <div style={{display:"grid",gridTemplateColumns:"1.4fr .8fr .8fr .8fr .8fr .8fr auto",padding:"10px 16px",borderBottom:`1px solid ${T.border}`,background:T.bg,gap:8}}>
-                {["Business","Bookings","Credits","Gross","Commission","Payout",""].map(h=><div key={h} style={{fontFamily:F.body,fontSize:8,color:T.stone,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:600}}>{h}</div>)}
-              </div>
-              {businesses.filter(b=>b.status==="live").map((biz,i,arr)=>{
-                const tier=COMMISSION_TIERS.find(t=>t.id===biz.commission);
-                const gross=biz.monthlyCredits*9;
-                const commission=gross*(tier.rate/100);
-                const payout=gross-commission;
-                const invNo=`WLO-2026-ADM-${biz.id.toUpperCase()}`;
-                return (
-                  <div key={biz.id} style={{display:"grid",gridTemplateColumns:"1.4fr .8fr .8fr .8fr .8fr .8fr auto",padding:"11px 16px",borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none",alignItems:"center",gap:8}}>
-                    <div><div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{biz.name}</div><div style={{fontFamily:F.body,fontSize:9,color:T.stone2,fontWeight:300}}>{tier.rate}% commission</div></div>
-                    <div style={{fontFamily:F.body,fontSize:11,color:T.stone}}>{biz.monthlyBookings}</div>
-                    <div style={{fontFamily:F.body,fontSize:11,color:T.stone}}>◈ {biz.monthlyCredits}</div>
-                    <div style={{fontFamily:F.body,fontSize:11,color:T.stone}}>€{gross}</div>
-                    <div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600}}>€{commission.toFixed(0)}</div>
-                    <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:12,color:T.ink,fontWeight:700,letterSpacing:"-0.3px"}}>€{payout.toFixed(0)}</div>
-                    <button onClick={()=>printInvoice({
-                      invoiceNo:invNo, date:"31 Mar 2026",
-                      businessName:biz.name, businessAddress:`${biz.loc}, Mallorca`,
-                      vatNo:"—", iban:"On file",
-                      credits:biz.monthlyCredits, bookings:biz.monthlyBookings,
-                      grossValue:gross, commissionRate:tier.rate,
-                      commissionAmt:commission.toFixed(2), netPayout:payout.toFixed(2),
-                    })} style={{padding:"5px 10px",background:T.ink,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:9,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>↓ PDF</button>
-                  </div>
-                );
-              })}
-              {/* Totals row */}
-              <div style={{display:"grid",gridTemplateColumns:"1.4fr .8fr .8fr .8fr .8fr .8fr",padding:"11px 16px",background:T.bg,borderTop:`2px solid ${T.border}`}}>
-                <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:700}}>Total</div>
-                <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:700}}>{totalBookings}</div>
-                <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:700}}>◈ {totalCredits}</div>
-                <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:700}}>€{totalCredits*9}</div>
-                <div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:700}}>€{businesses.filter(b=>b.status==="live").reduce((s,b)=>{const t=COMMISSION_TIERS.find(x=>x.id===b.commission);return s+b.monthlyCredits*9*(t.rate/100);},0).toFixed(0)}</div>
-                <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:12,color:T.ink,fontWeight:700}}>€{businesses.filter(b=>b.status==="live").reduce((s,b)=>{const t=COMMISSION_TIERS.find(x=>x.id===b.commission);return s+b.monthlyCredits*9*(1-t.rate/100);},0).toFixed(0)}</div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Mock applications store (shared across admin + portal) ──────────────────
-const MOCK_APPLICATIONS = [
-  { id:"app1", name:"Tramuntana Flow Yoga",  cat:"Yoga",         loc:"Valldemossa", email:"hola@tramuntanaflow.com", phone:"+34 971 123 456", submittedAt:"28 Mar 2026", status:"pending" },
-  { id:"app2", name:"Alcúdia Surf School",   cat:"Surfing",      loc:"Alcúdia",     email:"info@alcudiasurf.com",   phone:"+34 971 234 567", submittedAt:"29 Mar 2026", status:"pending" },
-  { id:"app3", name:"Palma Hot Yoga",        cat:"Yoga",         loc:"Palma",       email:"hello@palmhotyoga.com",  phone:"+34 971 345 678", submittedAt:"25 Mar 2026", status:"approved" },
-];
-
-// ─── Standalone business console preview (demo only) ─────────────────────────
 function BusinessPortalDashboard({ onExit }) {
   const bizData = { name:"Sol & Alma Yoga", cat:"Yoga", loc:"Soller", monthlyBookings:24, monthlyCredits:86 };
   const [tab, setTab] = useState("calendar");
   const [calWeek, setCalWeek] = useState(0);
-  const TABS = [["calendar","Calendar"],["bookings","Bookings"],["statements","Payout Statements"],["listing","My Listing"],["settings","Settings"]];
+  const TABS = [["calendar","Calendar"],["bookings","Bookings"],["analytics","Analytics"],["statements","Payout Statements"],["listing","My Listing"],["settings","Settings"]];
   const INP3={width:"100%",padding:"9px 11px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:11,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",boxSizing:"border-box"};
   const WEEK_DAYS  = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   const WD0 = ["31 Mar","1 Apr","2 Apr","3 Apr","4 Apr","5 Apr","6 Apr"];
@@ -1679,7 +1639,7 @@ function BusinessPortalDashboard({ onExit }) {
               </div>
             </div>
             <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:3,padding:"12px 14px"}}>
-              <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,lineHeight:1.6}}>Payouts every Friday · 9.00 per credit · Contact hola@wello.es</div>
+              <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,lineHeight:1.6}}>Payouts every Friday · 5.00 per credit · Contact hola@wello.es</div>
             </div>
           </div>
         )}
@@ -1694,6 +1654,163 @@ function BusinessPortalDashboard({ onExit }) {
               </div>
             </div>
             <button style={{padding:"8px 18px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer"}}>Edit listing</button>
+          </div>
+        )}
+
+        {tab==="analytics"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:20}}>
+            {/* Summary cards */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
+              {[
+                {label:"Total sessions",value:"142",sub:"Last 6 months",color:T.sage},
+                {label:"Customer loyalty",value:"68%",sub:"Return booking rate",color:T.sage},
+                {label:"Avg credits/booking",value:"◈ 2.8",sub:"March 2026",color:T.ochre},
+                {label:"Revenue this month",value:"€619",sub:"Paid this Friday",color:T.sage},
+              ].map(({label,value,sub,color})=>(
+                <div key={label} style={{background:T.paper,borderRadius:12,padding:"18px 20px",borderTop:`3px solid ${color}`}}>
+                  <div style={{fontFamily:F.body,fontSize:9,color:T.stone,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:8,fontWeight:500}}>{label}</div>
+                  <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:28,fontWeight:800,color:T.ink,letterSpacing:"-1px",lineHeight:1,marginBottom:4}}>{value}</div>
+                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300}}>{sub}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Monthly revenue bar chart */}
+            <div style={{background:T.paper,borderRadius:12,padding:"22px 24px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:20}}>
+                <div>
+                  <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>Monthly revenue</div>
+                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginTop:2}}>Credits redeemed × €5 · less commission</div>
+                </div>
+                <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:20,fontWeight:800,color:T.sage,letterSpacing:"-0.5px"}}>€619</div>
+              </div>
+              {(()=>{
+                const months = [
+                  {m:"Oct",v:280},{m:"Nov",v:340},{m:"Dec",v:290},{m:"Jan",v:410},
+                  {m:"Feb",v:520},{m:"Mar",v:619},
+                ];
+                const max = Math.max(...months.map(x=>x.v));
+                return (
+                  <div style={{display:"flex",alignItems:"flex-end",gap:8,height:140}}>
+                    {months.map(({m,v},i)=>{
+                      const isLast = i===months.length-1;
+                      const h = Math.round((v/max)*120);
+                      return (
+                        <div key={m} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+                          <div style={{fontFamily:F.body,fontSize:9,color:isLast?T.sage:T.stone2,fontWeight:isLast?700:300}}>€{v}</div>
+                          <div style={{width:"100%",height:h,background:isLast?T.sage:T.bg3,borderRadius:"4px 4px 0 0",transition:"height .3s"}}/>
+                          <div style={{fontFamily:F.body,fontSize:9,color:isLast?T.ink:T.stone2,fontWeight:isLast?700:300}}>{m}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Live bookings feed */}
+            <div style={{background:T.paper,borderRadius:12,overflow:"hidden"}}>
+              <div style={{padding:"16px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>Live bookings</div>
+                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginTop:2}}>Real-time activity feed</div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:5}}>
+                  <span style={{width:6,height:6,borderRadius:"50%",background:"#4caf50",display:"inline-block",animation:"pulse 2s infinite"}}/>
+                  <span style={{fontFamily:F.body,fontSize:9,color:T.sage,fontWeight:600}}>Live</span>
+                </div>
+              </div>
+              <div style={{padding:"0 20px"}}>
+                {RECENT.map((b,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:14,padding:"13px 0",borderBottom:i<RECENT.length-1?`1px solid ${T.border}`:"none"}}>
+                    <div style={{width:38,height:38,borderRadius:"50%",background:b.status==="Confirmed"?T.sageXL:T.ochreXL,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F.body,fontSize:11,color:b.status==="Confirmed"?T.sage:T.ochre,fontWeight:700,flexShrink:0}}>{b.initials}</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>{b.name}</div>
+                      <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{b.cls} · {b.when}</div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontFamily:F.body,fontSize:10,color:T.stone,marginBottom:3}}>◈ {b.cr}</div>
+                      <span style={{background:b.status==="Confirmed"?T.sageXL:T.ochreXL,color:b.status==="Confirmed"?T.sage:T.ochre,fontSize:8,padding:"2px 8px",borderRadius:20,fontFamily:F.body,fontWeight:700,textTransform:"uppercase",letterSpacing:"1px"}}>{b.status}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+
+        {tab==="analytics"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:20}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
+              {[
+                {label:"Total sessions",value:"142",sub:"Last 6 months",color:T.sage},
+                {label:"Customer loyalty",value:"68%",sub:"Return booking rate",color:T.sage},
+                {label:"Avg credits/booking",value:"◈ 2.8",sub:"March 2026",color:T.ochre},
+                {label:"Revenue this month",value:"€619",sub:"Paid this Friday",color:T.sage},
+              ].map(({label,value,sub,color})=>(
+                <div key={label} style={{background:T.paper,borderRadius:12,padding:"18px 20px",borderTop:`3px solid ${color}`}}>
+                  <div style={{fontFamily:F.body,fontSize:9,color:T.stone,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:8,fontWeight:500}}>{label}</div>
+                  <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:28,fontWeight:800,color:T.ink,letterSpacing:"-1px",lineHeight:1,marginBottom:4}}>{value}</div>
+                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300}}>{sub}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{background:T.paper,borderRadius:12,padding:"22px 24px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:20}}>
+                <div>
+                  <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>Monthly revenue</div>
+                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginTop:2}}>Credits redeemed × €5 · less commission</div>
+                </div>
+                <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:20,fontWeight:800,color:T.sage,letterSpacing:"-0.5px"}}>€619</div>
+              </div>
+              {(()=>{
+                const months=[{m:"Oct",v:280},{m:"Nov",v:340},{m:"Dec",v:290},{m:"Jan",v:410},{m:"Feb",v:520},{m:"Mar",v:619}];
+                const max=Math.max(...months.map(x=>x.v));
+                return (
+                  <div style={{display:"flex",alignItems:"flex-end",gap:8,height:140}}>
+                    {months.map(({m,v},i)=>{
+                      const isLast=i===months.length-1;
+                      const h=Math.round((v/max)*120);
+                      return (
+                        <div key={m} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+                          <div style={{fontFamily:F.body,fontSize:9,color:isLast?T.sage:T.stone2,fontWeight:isLast?700:300}}>€{v}</div>
+                          <div style={{width:"100%",height:h,background:isLast?T.sage:T.bg3,borderRadius:"4px 4px 0 0"}}/>
+                          <div style={{fontFamily:F.body,fontSize:9,color:isLast?T.ink:T.stone2,fontWeight:isLast?700:300}}>{m}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+            <div style={{background:T.paper,borderRadius:12,overflow:"hidden"}}>
+              <div style={{padding:"16px 20px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>Live bookings</div>
+                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginTop:2}}>Real-time activity feed</div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:5}}>
+                  <span style={{width:6,height:6,borderRadius:"50%",background:"#4caf50",display:"inline-block",animation:"pulse 2s infinite"}}/>
+                  <span style={{fontFamily:F.body,fontSize:9,color:T.sage,fontWeight:600}}>Live</span>
+                </div>
+              </div>
+              <div style={{padding:"0 20px"}}>
+                {RECENT.map((b,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:14,padding:"13px 0",borderBottom:i<RECENT.length-1?`1px solid ${T.border}`:"none"}}>
+                    <div style={{width:38,height:38,borderRadius:"50%",background:b.status==="Confirmed"?T.sageXL:T.ochreXL,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F.body,fontSize:11,color:b.status==="Confirmed"?T.sage:T.ochre,fontWeight:700,flexShrink:0}}>{b.initials}</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>{b.name}</div>
+                      <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{b.cls} · {b.when}</div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontFamily:F.body,fontSize:10,color:T.stone,marginBottom:3}}>◈ {b.cr}</div>
+                      <span style={{background:b.status==="Confirmed"?T.sageXL:T.ochreXL,color:b.status==="Confirmed"?T.sage:T.ochre,fontSize:8,padding:"2px 8px",borderRadius:20,fontFamily:F.body,fontWeight:700,textTransform:"uppercase",letterSpacing:"1px"}}>{b.status}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -1715,26 +1832,52 @@ function BusinessPortalDashboard({ onExit }) {
 // PAGE: BUSINESS PORTAL  (separate login/register entry point)
 // ═══════════════════════════════════════════════════════════════
 function BusinessPortal({ onSetView }) {
-  const [screen, setScreen]   = useState("landing"); // landing | login | pending | dashboard
-  const [email,  setEmail]    = useState("");
-  const [pw,     setPw]       = useState("");
-  const [loginErr, setLoginErr] = useState(false);
-  const [bizData, setBizData] = useState(null);
+  const [screen, setScreen]     = useState("landing");
+  const [email,  setEmail]      = useState("");
+  const [pw,     setPw]         = useState("");
+  const [loginErr, setLoginErr] = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const [bizData, setBizData]   = useState(null);
 
-  // Simulate login — in reality this hits your auth backend
-  function doLogin() {
-    setLoginErr(false);
-    // Demo: "approved@wello.es" / "demo" → approved dashboard
-    // "pending@wello.es" / "demo" → pending screen
-    if (email==="approved@wello.es" && pw==="demo") {
-      setBizData({ name:"Palma Hot Yoga", cat:"Yoga", loc:"Palma", status:"approved", commission:"standard", monthlyBookings:24, monthlyCredits:86 });
-      setScreen("dashboard");
-    } else if (email==="pending@wello.es" && pw==="demo") {
-      setBizData({ name:"Tramuntana Flow Yoga", submittedAt:"28 Mar 2026" });
-      setScreen("pending");
+  useEffect(()=>{
+    supabase.auth.getSession().then(({data:{session}})=>{
+      if(session) loadBizData(session.user.email);
+    });
+    const {data:{subscription}} = supabase.auth.onAuthStateChange((_event, session)=>{
+      if(session) loadBizData(session.user.email);
+    });
+    return ()=>subscription.unsubscribe();
+  },[]);
+
+  async function loadBizData(userEmail) {
+    const {data} = await supabase.from("businesses").select("*").eq("email", userEmail).single();
+    if(data) {
+      setBizData(data);
+      setScreen(data.status==="approved" ? "dashboard" : "pending");
     } else {
-      setLoginErr(true);
+      setScreen("pending");
     }
+  }
+
+  async function doLogin() {
+    setLoginErr(""); setLoading(true);
+    const {error} = await supabase.auth.signInWithPassword({email, password:pw});
+    setLoading(false);
+    if(error) setLoginErr("Email or password not recognised.");
+  }
+
+  async function doSignOut() {
+    await supabase.auth.signOut();
+    setScreen("landing"); setBizData(null); setEmail(""); setPw("");
+  }
+
+  async function doPasswordReset() {
+    setLoading(true);
+    await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: "https://wello-seven.vercel.app"
+    });
+    setLoading(false); setResetSent(true);
   }
 
   const INP3={width:"100%",padding:"10px 12px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:12,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",marginBottom:12,transition:"border-color .18s"};
@@ -1776,10 +1919,7 @@ function BusinessPortal({ onSetView }) {
           onMouseEnter={e=>{e.target.style.background=T.sageXL;}} onMouseLeave={e=>{e.target.style.background="transparent";}}>
           Register your business
         </button>
-        <div style={{marginTop:24,padding:"12px 14px",background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:2}}>
-          <div style={{fontFamily:F.body,fontSize:10,color:T.ochre,fontWeight:600,marginBottom:2}}>Demo credentials</div>
-          <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,lineHeight:1.6}}>Approved: approved@wello.es / demo<br/>Pending: pending@wello.es / demo</div>
-        </div>
+
       </div>
     </div>
   );
@@ -1791,18 +1931,46 @@ function BusinessPortal({ onSetView }) {
       <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:24,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>Business sign in</h1>
       <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,margin:"0 0 28px"}}>Sign in to your Wello business dashboard.</p>
       <FieldLabel>Email address</FieldLabel>
-      <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setLoginErr(false);}} placeholder="hello@yourstudio.com"
+      <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setLoginErr("");}} placeholder="hello@yourstudio.com"
         style={{...INP3,borderColor:loginErr?T.clay:T.border}} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=loginErr?T.clay:T.border}/>
       <FieldLabel>Password</FieldLabel>
-      <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setLoginErr(false);}} placeholder="••••••••"
+      <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setLoginErr("");}} placeholder="••••••••"
         style={{...INP3,borderColor:loginErr?T.clay:T.border}} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=loginErr?T.clay:T.border}
         onKeyDown={e=>e.key==="Enter"&&doLogin()}/>
-      {loginErr&&<div style={{fontFamily:F.body,fontSize:11,color:T.clay,marginTop:-8,marginBottom:12}}>Email or password not recognised.</div>}
-      <button onClick={doLogin} style={{width:"100%",padding:"11px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:"pointer",marginBottom:14,transition:"background .15s"}}
-        onMouseEnter={e=>e.target.style.background=T.sage2} onMouseLeave={e=>e.target.style.background=T.sage}>
-        Sign in →
+      {loginErr&&<div style={{fontFamily:F.body,fontSize:11,color:T.clay,marginTop:-8,marginBottom:12}}>{loginErr}</div>}
+      <button onClick={doLogin} disabled={loading} style={{width:"100%",padding:"11px",background:loading?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:loading?"not-allowed":"pointer",marginBottom:14,transition:"background .15s"}}
+        onMouseEnter={e=>{if(!loading)e.target.style.background=T.sage2;}} onMouseLeave={e=>{if(!loading)e.target.style.background=T.sage;}}>
+        {loading?"Signing in…":"Sign in →"}
       </button>
-      <div style={{textAlign:"center"}}><span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>Don't have an account? </span><button onClick={()=>onSetView("business")} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer",padding:0}}>Register your business</button></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div><span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>New to Wello? </span><button onClick={()=>onSetView("business")} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer",padding:0}}>Register interest</button></div>
+        <button onClick={()=>setScreen("reset")} style={{background:"transparent",border:"none",color:T.stone,fontFamily:F.body,fontSize:11,cursor:"pointer",padding:0,fontWeight:300}}>Forgot password?</button>
+      </div>
+    </div>
+  );
+
+  // ── Password reset ────────────────────────────────────────────
+  if (screen==="reset") return (
+    <div style={{maxWidth:420,margin:"80px auto",padding:"0 28px"}}>
+      <button onClick={()=>setScreen("login")} style={{background:"transparent",border:"none",color:T.stone,fontFamily:F.body,fontSize:11,cursor:"pointer",marginBottom:24,padding:0,fontWeight:300}}>← Back to sign in</button>
+      <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>Reset your password</h1>
+      <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,margin:"0 0 24px"}}>Enter the email address for your Wello business account and we'll send you a reset link.</p>
+      {resetSent ? (
+        <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:3,padding:"16px",textAlign:"center"}}>
+          <div style={{fontSize:24,marginBottom:8}}>✓</div>
+          <div style={{fontFamily:F.body,fontSize:13,color:T.sage,fontWeight:600,marginBottom:4}}>Reset link sent</div>
+          <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>Check your email and follow the link to set a new password.</div>
+        </div>
+      ) : (
+        <>
+          <FieldLabel>Email address</FieldLabel>
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="hello@yourstudio.com"
+            style={INP3} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=T.border}/>
+          <button onClick={doPasswordReset} disabled={loading||!email.trim()} style={{width:"100%",padding:"11px",background:email.trim()&&!loading?T.sage:T.border,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:email.trim()&&!loading?"pointer":"not-allowed",transition:"background .15s"}}>
+            {loading?"Sending…":"Send reset link →"}
+          </button>
+        </>
+      )}
     </div>
   );
 
@@ -1812,7 +1980,7 @@ function BusinessPortal({ onSetView }) {
       <div style={{width:56,height:56,background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:22}}>⏳</div>
       <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 10px"}}>Application under review</h1>
       <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 6px"}}>Thanks for registering <strong style={{fontWeight:600,color:T.ink}}>{bizData?.name}</strong>.</p>
-      <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 24px"}}>Your application was submitted on {bizData?.submittedAt}. The Wello team will review it and be in touch within 2 working days.</p>
+      <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 24px"}}>The Wello team will review your application and be in touch within 2 working days.</p>
       <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:3,padding:"14px 18px",textAlign:"left",marginBottom:24}}>
         <div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600,marginBottom:6}}>What happens next</div>
         {["We review your venue details and listing","We agree your commission rate with you directly","You receive an approval email and can log in to your dashboard","Your listing goes live on the marketplace"].map((s,i)=>(
@@ -1822,7 +1990,7 @@ function BusinessPortal({ onSetView }) {
           </div>
         ))}
       </div>
-      <button onClick={()=>setScreen("landing")} style={{padding:"9px 22px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>← Back to login</button>
+      <button onClick={doSignOut} style={{padding:"9px 22px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>Sign out</button>
     </div>
   );
 
@@ -1841,12 +2009,12 @@ function BusinessPortal({ onSetView }) {
         </div>
         <div style={{display:"flex",gap:8}}>
           <a href="#" style={{padding:"7px 14px",background:T.sageXL,color:T.sage,border:`1px solid ${T.sageL}`,borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,textDecoration:"none"}}>View listing ↗</a>
-          <button onClick={()=>setScreen("landing")} style={{padding:"7px 14px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:300}}>Sign out</button>
+          <button onClick={doSignOut} style={{padding:"7px 14px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:300}}>Sign out</button>
         </div>
       </div>
       {/* Quick stats */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(148px,1fr))",gap:10,marginBottom:24}}>
-        {[["Bookings this month",bizData.monthlyBookings],["Credits redeemed","◈ "+bizData.monthlyCredits],["Payout due","€"+(bizData.monthlyCredits*9*0.8).toFixed(0)],["Avg rating","4.8 ★"]].map(([l,v])=>(
+        {[["Bookings this month",bizData.monthlyBookings],["Credits redeemed","◈ "+bizData.monthlyCredits],["Payout due","€"+(bizData.monthlyCredits*5*0.8).toFixed(0)],["Avg rating","4.8 ★"]].map(([l,v])=>(
           <div key={l} style={{background:T.paper,borderRadius:3,border:`1px solid ${T.border}`,padding:"12px 14px"}}>
             <Label>{l}</Label><div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>{v}</div>
           </div>
@@ -1904,6 +2072,39 @@ function BusinessPortal({ onSetView }) {
 // ═══════════════════════════════════════════════════════════════
 export default function App() {
   const [view,setView]         = useState("home");
+  const [bizPreview,setBizPreview] = useState(false);
+  const [recovering,setRecovering] = useState(false);
+  const [newPw,setNewPw]       = useState("");
+  const [newPwErr,setNewPwErr] = useState("");
+  const [newPwDone,setNewPwDone] = useState(false);
+
+  // Detect Supabase password recovery or invite redirect
+  useEffect(()=>{
+    const hash = window.location.hash;
+    if(hash.includes("type=recovery") || hash.includes("type=invite") || hash.includes("type=signup")) {
+      setRecovering(true);
+      setView("biz-portal");
+    }
+    // Also handle Supabase auth via onAuthStateChange for invite flow
+    const {data:{subscription}} = supabase.auth.onAuthStateChange((event, session)=>{
+      if(event==="PASSWORD_RECOVERY" || event==="SIGNED_IN") {
+        if(window.location.hash.includes("type=invite") || window.location.hash.includes("type=recovery")) {
+          setRecovering(true);
+          setView("biz-portal");
+        }
+      }
+    });
+    return ()=>subscription.unsubscribe();
+  },[]);
+
+  async function doSetNewPassword() {
+    if(newPw.length < 8) { setNewPwErr("Password must be at least 8 characters."); return; }
+    const {error} = await supabase.auth.updateUser({password: newPw});
+    if(error) { setNewPwErr("Something went wrong. Please try again."); return; }
+    setNewPwDone(true);
+    window.location.hash = "";
+    setTimeout(()=>{ setRecovering(false); setNewPw(""); setNewPwDone(false); }, 2000);
+  }
   const [listings,setListings] = useState(LISTINGS);
   const [syncingIds,setSyncing]= useState({});
   const [selBiz,setSelBiz]     = useState(null);
@@ -1913,11 +2114,6 @@ export default function App() {
   const [saved,setSaved]       = useState([1,5,9]);
   const [isBiz,setIsBiz]       = useState(false);
   const [toast,setToast]       = useState(null);
-  const [adminMode,setAdminMode]= useState(()=>typeof window!=="undefined"&&new URLSearchParams(window.location.search).get("admin")==="true");
-
-  // Admin panel intercepts the whole app
-  if (adminMode) return <AdminPanel onExit={()=>setAdminMode(false)}/>;
-
   const showToast=(msg,type="info")=>{ setToast({msg,type}); setTimeout(()=>setToast(null),2600); };
 
   const onSyncUpdate=useCallback((bizId,slotId,delta)=>{
@@ -1934,24 +2130,17 @@ export default function App() {
     setListings(p=>p.map(b=>b.id!==biz.id?b:{...b,slots:b.slots.map(s=>s.id!==slot.id?s:{...s,booked:s.booked+form.guests})}));
     showToast(`Booked! ◈ ${cost} credits used.`,"success");
   }
-  function onPurchase(bundle){ setCredits(c=>c+bundle.cr); showToast(`◈ ${bundle.cr} credits added!`,"gold"); }
+  function onPurchase(purchase){ setCredits(c=>c+purchase.cr); showToast(`◈ ${purchase.cr} credits added!`,"gold"); }
   function toggleSave(id){ setSaved(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]); showToast(saved.includes(id)?"Removed from saved":"Saved!","success"); }
 
   const NAV=[{id:"home",l:"Home"},{id:"explore",l:"Explore"},{id:"credits",l:"Credits"},{id:"profile",l:"Profile"},{id:"biz-portal",l:"For Business"}];
 
-  // Demo shortcut state — lets you preview biz dashboard & admin without login
-  const [bizPreview, setBizPreview]   = useState(false);
-  const [adminPreview, setAdminPreview] = useState(false);
-
-  // Preview intercepts — show full pages without auth
-  if (adminPreview) return <AdminPanel onExit={()=>setAdminPreview(false)} skipAuth={true}/>;
-
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=Jost:wght@300;400;500;600;700&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
-        body{background:${T.bg};color:${T.ink};}
+        body{background:${T.bg};color:${T.ink};font-family:'Manrope','Jost',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
         @keyframes su{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
         @keyframes fi{from{opacity:0}to{opacity:1}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
@@ -1961,81 +2150,106 @@ export default function App() {
         input,select,textarea,button{font-family:'Jost',system-ui,sans-serif;}
       `}</style>
 
+      <SEO title="Wello — The Wellness Pass" />
       <Toast t={toast}/>
 
-      {/* ── DEMO PREVIEW BAR ── only shown in prototype, remove before launch */}
-      <div style={{background:T.ink,padding:"7px 28px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-        <span style={{fontFamily:F.body,fontSize:9,color:T.stone2,letterSpacing:"1px"}}>PROTOTYPE PREVIEW — demo shortcuts</span>
-        <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>setBizPreview(v=>!v)}
-            style={{padding:"4px 12px",background:bizPreview?T.sage:"transparent",color:bizPreview?"#fff":T.stone,border:`1px solid ${bizPreview?T.sage:T.stone2}`,borderRadius:2,fontFamily:F.body,fontSize:9,fontWeight:600,cursor:"pointer",letterSpacing:".5px"}}>
-            {bizPreview?"✓ Viewing business console":"👁 Preview business console"}
-          </button>
-          <button onClick={()=>setAdminPreview(true)}
-            style={{padding:"4px 12px",background:"transparent",color:T.ochre,border:`1px solid ${T.ochre}`,borderRadius:2,fontFamily:F.body,fontSize:9,fontWeight:600,cursor:"pointer",letterSpacing:".5px"}}>
-            👁 Preview admin panel
-          </button>
-        </div>
-      </div>
-
-      <div style={{minHeight:"100vh",background:T.bg}}>
-        {/* NAV — Wello brand identity */}
-        <header style={{background:T.paper,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,zIndex:200,boxShadow:"0 1px 12px rgba(0,0,0,.06)"}}>
-          <div style={{maxWidth:1140,margin:"0 auto",padding:"0 28px",display:"flex",alignItems:"center",justifyContent:"space-between",height:58}}>
-
-            {/* F1 wordmark — sage name, ochre descriptor */}
-            <div onClick={()=>setView("home")} style={{cursor:"pointer",userSelect:"none",flexShrink:0}}>
-              <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:26,fontWeight:700,color:T.sage,lineHeight:1,letterSpacing:"-1px"}}>wello</div>
-              <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:7,fontWeight:400,color:T.ochre,letterSpacing:"4px",marginTop:1,textTransform:"uppercase"}}>the wellness pass</div>
-            </div>
-
-            {/* Nav links */}
-            <nav style={{display:"flex",alignItems:"center",gap:2}}>
-              {NAV.map(n=>(
-                <button key={n.id} onClick={()=>setView(n.id)}
-                  style={{padding:"5px 13px",border:"none",background:view===n.id?T.sageXL:"transparent",color:view===n.id?T.sage:T.stone,borderRadius:2,fontFamily:"'Jost',system-ui,sans-serif",fontSize:11,cursor:"pointer",fontWeight:view===n.id?600:300,letterSpacing:".3px",transition:"all .13s",outline:view===n.id?`1px solid ${T.sageL}`:"1px solid transparent"}}>
-                  {n.l}
-                </button>
-              ))}
-
-              {/* G1 pill credit chip — sage pill, ochre token badge */}
-              <div onClick={()=>setView("credits")} style={{position:"relative",marginLeft:8,cursor:"pointer"}}>
-                <div style={{display:"flex",alignItems:"center",gap:5,background:T.sage,borderRadius:50,padding:"6px 14px 6px 12px",transition:"background .15s"}}
-                  onMouseEnter={e=>e.currentTarget.style.background=T.sage2}
-                  onMouseLeave={e=>e.currentTarget.style.background=T.sage}>
-                  <span style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:12,color:"#fff",fontWeight:700}}>◈ {credits}</span>
-                </div>
-                {/* ochre token badge */}
-                <div style={{position:"absolute",top:-5,right:-5,width:16,height:16,borderRadius:"50%",background:T.ochre,display:"flex",alignItems:"center",justifyContent:"center",border:`1.5px solid ${T.paper}`}}>
-                  <span style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:7,fontWeight:700,color:"#fff"}}>+</span>
-                </div>
+      {/* PASSWORD RECOVERY SCREEN */}
+      {recovering&&(
+        <div style={{position:"fixed",inset:0,background:T.bg,zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:28}}>
+          <div style={{maxWidth:400,width:"100%",background:T.paper,border:`1px solid ${T.border}`,borderRadius:4,padding:"36px 32px"}}>
+            <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.sage,letterSpacing:"-0.5px",marginBottom:4}}>wello</div>
+            <div style={{fontFamily:F.body,fontSize:8,color:T.ochre,letterSpacing:"4px",textTransform:"uppercase",marginBottom:24}}>business portal</div>
+            {newPwDone ? (
+              <div style={{textAlign:"center",padding:"12px 0"}}>
+                <div style={{fontSize:32,marginBottom:12}}>✓</div>
+                <div style={{fontFamily:F.body,fontSize:14,color:T.sage,fontWeight:600}}>Password updated! Signing you in…</div>
               </div>
-            </nav>
+            ) : (
+              <>
+                <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:18,fontWeight:700,color:T.ink,margin:"0 0 6px"}}>Set your password</h2>
+                <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,margin:"0 0 20px"}}>Choose a password for your Wello business account.</p>
+                <FieldLabel>New password</FieldLabel>
+                <input type="password" value={newPw} onChange={e=>{setNewPw(e.target.value);setNewPwErr("");}}
+                  placeholder="Minimum 8 characters"
+                  style={{width:"100%",padding:"10px 12px",border:`1px solid ${newPwErr?T.clay:T.border}`,borderRadius:2,fontSize:12,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",marginBottom:8}}
+                  onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=newPwErr?T.clay:T.border}
+                  onKeyDown={e=>e.key==="Enter"&&doSetNewPassword()}/>
+                {newPwErr&&<div style={{fontFamily:F.body,fontSize:11,color:T.clay,marginBottom:10}}>{newPwErr}</div>}
+                <button onClick={doSetNewPassword} style={{width:"100%",padding:"11px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:"pointer",marginTop:4}}>
+                  Set password & sign in →
+                </button>
+              </>
+            )}
           </div>
-        </header>
+        </div>
+      )}
+
+      {/* PROTOTYPE PREVIEW BAR — remove before public launch */}
+      {!bizPreview&&<div style={{background:T.ink2,padding:"6px 20px",display:"flex",gap:10,alignItems:"center",justifyContent:"center",flexWrap:"wrap"}}>
+        <span style={{fontFamily:F.body,fontSize:9,color:T.stone2,letterSpacing:"1px",textTransform:"uppercase"}}>Demo</span>
+        <button onClick={()=>setBizPreview(true)} style={{padding:"4px 12px",background:"transparent",color:T.ochreL,border:`1px solid ${T.ochre}`,borderRadius:2,fontFamily:F.body,fontSize:9,cursor:"pointer",fontWeight:600,letterSpacing:".3px"}}>
+          👁 Preview business console
+        </button>
+      </div>}
+      {bizPreview&&<div style={{background:T.ink,padding:"5px 16px",display:"flex",gap:8,alignItems:"center",justifyContent:"flex-end"}}>
+        <span style={{fontFamily:F.body,fontSize:9,color:T.stone2}}>Business console preview</span>
+        <button onClick={()=>setBizPreview(false)} style={{padding:"3px 10px",background:"transparent",color:T.stone2,border:`1px solid ${T.border2}`,borderRadius:2,fontFamily:F.body,fontSize:9,cursor:"pointer"}}>✕ Exit preview</button>
+      </div>}
+      {bizPreview&&<BusinessPortalDashboard onExit={()=>setBizPreview(false)}/>}
+
+      <div className={`min-h-screen bg-surface${bizPreview?" hidden":""}`}>
+
+        {/* NAV — Stitch glassmorphism */}
+        <nav className="fixed top-0 w-full z-50 bg-[#FBF9F4]/80 backdrop-blur-xl transition-all duration-300" style={{borderBottom:"1px solid rgba(195,200,188,0.2)"}}>
+          <div className="flex justify-between items-center px-8 py-4 max-w-7xl mx-auto">
+            <div className="flex items-center gap-12">
+              <a onClick={()=>setView("home")} className="text-2xl font-bold tracking-tighter text-primary cursor-pointer select-none">wello</a>
+              <div className="hidden md:flex items-center gap-8">
+                {[{id:"explore",l:"Explore"},{id:"credits",l:"Credits"},{id:"biz-portal",l:"For Business"}].map(n=>(
+                  <a key={n.id} onClick={()=>setView(n.id)}
+                    className={`font-medium tracking-tight cursor-pointer transition-colors duration-300 ${view===n.id?"text-primary font-bold border-b-2 border-primary pb-1":"text-on-surface-variant hover:text-primary"}`}>
+                    {n.l}
+                  </a>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-5">
+              <div className="hidden lg:flex items-center bg-surface-container rounded-full px-4 py-2 gap-2 text-on-surface-variant">
+                <span className="text-sm">🔍</span>
+                <span className="text-sm font-medium">Search</span>
+              </div>
+              <button onClick={()=>setView("profile")} className="text-primary hover:opacity-80 transition-opacity text-xl">🔔</button>
+              <div onClick={()=>setView("credits")} className="flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-full cursor-pointer hover:opacity-90 transition-opacity">
+                <span className="font-bold text-sm">◈ {credits}</span>
+              </div>
+              <div onClick={()=>setView("profile")} className="w-9 h-9 rounded-full bg-surface-container-highest flex items-center justify-center cursor-pointer font-bold text-sm text-primary">J</div>
+            </div>
+          </div>
+        </nav>
 
         {/* PAGES */}
-        {bizPreview          &&<BusinessPortalDashboard onExit={()=>setBizPreview(false)}/>}
-        {!bizPreview && view==="home"       &&<HomePage listings={listings} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds}/>}
-        {!bizPreview && view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds}/>}
-        {!bizPreview && view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
-        {!bizPreview && view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
-        {!bizPreview && view==="business"   &&<BusinessPage isBiz={true} onSetView={setView} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
-        {!bizPreview && view==="credits"    &&<CreditsPage credits={credits} onPurchase={onPurchase}/>}
+        {view==="home"       &&<HomePage listings={listings} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds}/>}
+        {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds}/>}
+        {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
+        {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
+        {view==="business"   &&<BusinessPage isBiz={true} onSetView={setView} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
+        {view==="credits"    &&<CreditsPage credits={credits} onPurchase={onPurchase}/>}
 
-        <footer style={{background:T.ink,padding:"28px"}}>
-          <div style={{maxWidth:1140,margin:"0 auto",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
-            {/* F1 reversed — sage name, ochre descriptor on ink */}
-            <div>
-              <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.sage,lineHeight:1,letterSpacing:"-0.5px"}}>wello</div>
-              <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:7,fontWeight:400,color:T.ochre,letterSpacing:"4px",marginTop:3,textTransform:"uppercase"}}>the wellness pass</div>
+        {/* FOOTER — Stitch style */}
+        <footer className="w-full py-12 bg-[#F5F3EE] border-t border-[#C3C8BC]/20">
+          <div className="flex flex-col md:flex-row justify-between items-start px-12 max-w-7xl mx-auto gap-8">
+            <div className="flex flex-col gap-3">
+              <span className="font-bold text-[#213C18] text-xl tracking-tighter">wello</span>
+              <p className="text-[#43483F] text-sm leading-relaxed max-w-xs">© 2026 Wello. Our Sustainability Commitment.</p>
             </div>
-            <div style={{display:"flex",gap:20}}>
-              {["About","For Business","Privacy","Contact"].map(l=>(
-                <span key={l} style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:10,color:T.stone,cursor:"pointer",fontWeight:300,letterSpacing:".3px"}}>{l}</span>
+            <div className="flex flex-wrap gap-8">
+              {["Privacy","Terms","Marketplace","Our Mission","Contact"].map(l=>(
+                <a key={l} className="text-[#43483F] text-sm hover:underline decoration-2 underline-offset-4 opacity-80 hover:opacity-100 transition-opacity cursor-pointer">{l}</a>
               ))}
             </div>
-            <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:9,color:T.stone2,fontWeight:300,letterSpacing:".5px"}}>© 2026 Wello · Mallorca</div>
+            <div className="flex gap-4">
+              <button className="w-10 h-10 rounded-full border border-outline-variant/30 flex items-center justify-center hover:bg-surface-container transition-colors text-sm">🌐</button>
+            </div>
           </div>
         </footer>
       </div>
@@ -2044,6 +2258,18 @@ export default function App() {
       {bkData   &&<BookingModal biz={bkData.biz} slot={bkData.slot} onClose={()=>setBkData(null)} onConfirm={onConfirm} credits={credits} onBuyCredits={()=>{setBkData(null);setView("credits");}}/>}
       <SyncEngine listings={listings} onUpdate={onSyncUpdate}/>
       <Chatbot listings={listings} credits={credits} bookings={bookings} onSelectBiz={onSelect}/>
+
+      {/* Mobile bottom nav — Stitch Destination Rule */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-surface/95 backdrop-blur-lg border-t border-outline-variant/10 px-6 py-3 z-50">
+        <div className="flex justify-between items-center">
+          {[{id:"home",icon:"🏠",l:"Home"},{id:"explore",icon:"🧭",l:"Explore"},{id:"credits",icon:"◈",l:"Credits"},{id:"profile",icon:"👤",l:"Profile"}].map(({id,icon,l})=>(
+            <button key={id} onClick={()=>setView(id)} className={`flex flex-col items-center gap-1 bg-transparent border-none cursor-pointer ${view===id?"text-primary":"text-on-surface-variant"}`}>
+              <span className="text-xl">{icon}</span>
+              <span className={`text-[10px] font-medium ${view===id?"font-bold":""}`}>{l}</span>
+            </button>
+          ))}
+        </div>
+      </div>
     </>
   );
 }
