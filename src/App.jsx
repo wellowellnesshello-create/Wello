@@ -1,6 +1,16 @@
 import { supabase } from './supabase.js'
 import { useState, useEffect, useCallback, useRef } from "react";
 
+function useWindowWidth() {
+  const [w, setW] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  useEffect(() => {
+    const handle = () => setW(window.innerWidth);
+    window.addEventListener('resize', handle);
+    return () => window.removeEventListener('resize', handle);
+  }, []);
+  return w;
+}
+
 // ── SEO Meta Tags ─────────────────────────────────────────────
 function SEO({ title, description, path="" }) {
   useEffect(()=>{
@@ -241,8 +251,8 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) 
   }
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(27,28,25,0.75)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
-      <div style={{background:"#fff",borderRadius:20,maxWidth:460,width:"100%",overflow:"hidden",boxShadow:"0 32px 80px rgba(0,0,0,0.22)",animation:"su .28s ease"}} onClick={e=>e.stopPropagation()}>
+    <div style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(27,28,25,0.75)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:0}} onClick={onClose}>
+      <div style={{background:"#fff",borderRadius:"20px 20px 0 0",maxWidth:480,width:"100%",maxHeight:"92vh",overflowY:"auto",boxShadow:"0 -8px 40px rgba(0,0,0,0.22)",animation:"slideUp .3s ease"}} onClick={e=>e.stopPropagation()}>
 
         {step===1&&(
           <>
@@ -262,7 +272,7 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) 
               </div>
             </div>
 
-            <div style={{padding:"20px 24px",maxHeight:"65vh",overflowY:"auto"}}>
+            <div style={{padding:"clamp(14px,3vw,20px) clamp(16px,3vw,24px)",maxHeight:"70vh",overflowY:"auto"}}>
               {/* Balance */}
               <div style={{background:canAfford?"#F5F3EE":"#FFF5F5",borderRadius:10,padding:"10px 14px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
@@ -395,11 +405,15 @@ function BizPanel({ biz, onClose, onBook }) {
   const allDates = dates;
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:900,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 20px",overflowY:"auto"}} onClick={onClose}>
-      <div style={{background:"#fff",borderRadius:20,maxWidth:640,width:"100%",overflow:"hidden",boxShadow:"0 32px 80px rgba(0,0,0,0.2)",animation:"su .24s ease",marginBottom:40}} onClick={e=>e.stopPropagation()}>
+    <div style={{position:"fixed",inset:0,zIndex:900,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"0"}} onClick={onClose}>
+      <div style={{background:"#fff",borderRadius:"20px 20px 0 0",maxWidth:640,width:"100%",maxHeight:"92vh",overflow:"hidden",overflowY:"auto",boxShadow:"0 -8px 40px rgba(0,0,0,0.2)",animation:"slideUp .3s ease"}} onClick={e=>e.stopPropagation()}>
 
+        {/* Drag handle */}
+        <div style={{display:"flex",justifyContent:"center",padding:"12px 0 0"}}>
+          <div style={{width:40,height:4,borderRadius:999,background:"rgba(195,200,188,0.5)"}}/>
+        </div>
         {/* Hero image */}
-        <div style={{position:"relative",height:220}}>
+        <div style={{position:"relative",height:200}}>
           <img src={biz.img} alt={biz.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
           <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(27,28,25,0.88) 0%,rgba(27,28,25,0.05) 55%)"}}/>
           <button onClick={onClose} style={{position:"absolute",top:14,right:14,background:"rgba(255,255,255,0.15)",backdropFilter:"blur(8px)",border:"none",color:"#fff",width:32,height:32,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
@@ -425,7 +439,7 @@ function BizPanel({ biz, onClose, onBook }) {
           </div>
         </div>
 
-        <div style={{padding:"20px 24px"}}>
+        <div style={{padding:"clamp(14px,3vw,20px) clamp(16px,3vw,24px)"}}>
           <p style={{fontFamily:F2,fontSize:14,color:"#74796E",lineHeight:1.7,margin:"0 0 20px"}}>{biz.desc}</p>
 
           {/* Calendar date pills */}
@@ -468,7 +482,7 @@ function BizPanel({ biz, onClose, onBook }) {
                       const full = avail===0;
                       const pct = (sl.booked/sl.spots)*100;
                       return (
-                        <div key={sl.id} style={{display:"flex",alignItems:"center",gap:14,padding:"14px 16px",background:full?"#F5F3EE":"#FBF9F4",borderRadius:12,border:`1px solid ${full?"rgba(195,200,188,0.3)":"rgba(195,200,188,0.5)"}`,opacity:full?0.6:1,transition:"all .15s"}}
+                        <div key={sl.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",flexWrap:"wrap",background:full?"#F5F3EE":"#FBF9F4",borderRadius:12,border:`1px solid ${full?"rgba(195,200,188,0.3)":"rgba(195,200,188,0.5)"}`,opacity:full?0.6:1,transition:"all .15s"}}
                           onMouseEnter={e=>{if(!full)e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.06)"}}
                           onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
                           {/* Time */}
@@ -520,7 +534,7 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave }) {
   return (
     <div onClick={()=>onSelect(biz)} style={{cursor:"pointer"}}>
       {/* 4:5 image */}
-      <div style={{position:"relative",paddingBottom:"125%",borderRadius:12,overflow:"hidden",marginBottom:16,background:"#E4E2DD"}}>
+      <div style={{position:"relative",paddingBottom:"clamp(60%,25vw,125%)",borderRadius:12,overflow:"hidden",marginBottom:16,background:"#E4E2DD"}}>
         <img src={biz.img} alt={biz.name}
           style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",transition:"transform .7s ease"}}
           onMouseEnter={e=>e.target.style.transform="scale(1.05)"}
@@ -590,7 +604,7 @@ function Chatbot({ listings, credits, bookings, onSelectBiz }) {
   return (
     <>
       {/* Wello G1 pill FAB — sage pill, ochre token */}
-      <div onClick={()=>setOpen(o=>!o)} style={{position:"fixed",bottom:24,right:24,zIndex:500,cursor:"pointer",transition:"transform .18s"}}
+      <div onClick={()=>setOpen(o=>!o)} style={{position:"fixed",bottom:90,right:16,zIndex:1100,cursor:"pointer",transition:"transform .18s"}}
         onMouseEnter={e=>e.currentTarget.style.transform="scale(1.05)"} onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
         <div style={{display:"flex",alignItems:"center",gap:8,background:T.sage,borderRadius:50,padding:"10px 18px",boxShadow:"0 5px 20px rgba(78,107,67,.35)"}}>
           <span style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:15,fontWeight:700,color:"#fff",letterSpacing:"-0.5px"}}>wello</span>
@@ -599,7 +613,7 @@ function Chatbot({ listings, credits, bookings, onSelectBiz }) {
         <div style={{position:"absolute",top:-6,right:-6,width:18,height:18,borderRadius:"50%",background:T.ochre,display:"flex",alignItems:"center",justifyContent:"center",border:`2px solid ${T.paper}`,fontSize:9,color:"#fff",fontWeight:700,fontFamily:"'Jost',system-ui,sans-serif"}}>◈</div>
       </div>
       {open&&(
-        <div style={{position:"fixed",bottom:82,right:24,zIndex:500,width:306,background:T.paper,borderRadius:4,boxShadow:"0 14px 42px rgba(0,0,0,.16)",overflow:"hidden",animation:"su .22s ease",display:"flex",flexDirection:"column",maxHeight:440,border:`1px solid ${T.border}`}}>
+        <div style={{position:"fixed",bottom:164,right:16,zIndex:1100,width:"min(306px,calc(100vw - 32px))",background:T.paper,borderRadius:4,boxShadow:"0 14px 42px rgba(0,0,0,.16)",overflow:"hidden",animation:"su .22s ease",display:"flex",flexDirection:"column",maxHeight:440,border:`1px solid ${T.border}`}}>
           {/* C1 header — white wordmark on sage, ochre rule */}
           <div style={{background:T.sage,padding:"13px 15px",flexShrink:0}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
@@ -663,7 +677,7 @@ function SyncEngine({ listings, onUpdate }) {
 // ═══════════════════════════════════════════════════════════════
 // PAGE: HOME
 // ═══════════════════════════════════════════════════════════════
-function HomePage({ listings, bookings, onSelect, savedIds, onToggleSave, onSetView, syncingIds }) {
+function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onToggleSave, onSetView, syncingIds }) {
   const [aiQ,setAiQ]=useState(""); const [aiLoading,setAiLoading]=useState(false);
   const [aiNote,setAiNote]=useState(""); const [aiResults,setAiResults]=useState(null);
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
@@ -681,113 +695,123 @@ function HomePage({ listings, bookings, onSelect, savedIds, onToggleSave, onSetV
   return (
     <div>
       {/* ── IMMERSIVE HERO — giant wordmark, gradient, AI search ── */}
-      <section style={{position:"relative",minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"80px 24px 60px",overflow:"hidden",background:"linear-gradient(to bottom, #FBF9F4 0%, #FBF9F4 60%, rgba(250,222,192,0.2) 100%)"}}>
+      <section style={{position:"relative",minHeight:"calc(100svh - 60px)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"clamp(24px,6vw,80px) clamp(16px,4vw,24px) 80px",background:"linear-gradient(to bottom, #FBF9F4 0%, #FBF9F4 60%, rgba(250,222,192,0.2) 100%)",overflow:"hidden"}}>
         {/* Blur blobs */}
-        <div style={{position:"absolute",top:"20%",left:"10%",width:384,height:384,borderRadius:"50%",background:"rgba(202,236,186,0.15)",filter:"blur(120px)",pointerEvents:"none"}}/>
-        <div style={{position:"absolute",bottom:"20%",right:"10%",width:500,height:500,borderRadius:"50%",background:"rgba(250,222,192,0.2)",filter:"blur(150px)",pointerEvents:"none"}}/>
+        <div style={{position:"absolute",top:"20%",left:"10%",width:"min(384px,80vw)",height:"min(384px,80vw)",borderRadius:"50%",background:"rgba(202,236,186,0.15)",filter:"blur(120px)",pointerEvents:"none"}}/>
+        <div style={{position:"absolute",bottom:"20%",right:"10%",width:"min(500px,90vw)",height:"min(500px,90vw)",borderRadius:"50%",background:"rgba(250,222,192,0.2)",filter:"blur(150px)",pointerEvents:"none"}}/>
 
-        <div style={{position:"relative",zIndex:1,maxWidth:840,width:"100%",textAlign:"center"}}>
-          <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#A3B18A",letterSpacing:"5px",textTransform:"uppercase",margin:"0 0 16px"}}>The Wellness Pass</p>
-          {/* Giant wordmark */}
-          <h1 style={{fontFamily:F2,fontWeight:800,fontSize:"clamp(80px,15vw,180px)",color:"#213C18",lineHeight:1,letterSpacing:"-6px",margin:"0 0 24px",userSelect:"none"}}>wello</h1>
-          <p style={{fontFamily:F2,fontSize:18,color:"#74796E",fontWeight:500,lineHeight:1.6,maxWidth:520,margin:"0 auto 48px",letterSpacing:"-0.2px"}}>
+        <div style={{position:"relative",zIndex:1,maxWidth:840,width:"100%",textAlign:"center",padding:"0 4px"}}>
+          <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#A3B18A",letterSpacing:"4px",textTransform:"uppercase",margin:"0 0 8px"}}>The Wellness Pass</p>
+          <h1 style={{fontFamily:F2,fontWeight:800,fontSize:"clamp(40px,11vw,160px)",color:"#213C18",lineHeight:1,letterSpacing:"clamp(-2px,-0.04em,-6px)",margin:"0 0 clamp(6px,2vw,20px)",userSelect:"none"}}>wello</h1>
+          <p style={{fontFamily:F2,fontSize:"clamp(12px,2vw,18px)",color:"#74796E",fontWeight:500,lineHeight:1.5,maxWidth:480,margin:"0 auto clamp(10px,2.5vw,32px)",letterSpacing:"-0.2px",padding:"0 8px"}}>
             Book yoga classes, gym access, hotel pools, spa treatments and outdoor adventures — all with one pass. No membership needed.
           </p>
-
           {/* AI Search bar */}
-          <div style={{maxWidth:600,margin:"0 auto 12px",background:"#fff",borderRadius:999,padding:"6px 6px 6px 24px",display:"flex",alignItems:"center",boxShadow:"0 1px 12px rgba(27,28,25,0.06)",border:"1px solid rgba(195,200,188,0.3)"}}>
-            <span style={{color:"#74796E",fontSize:14,marginRight:8,flexShrink:0}}>✦</span>
+          <div style={{maxWidth:560,margin:"0 auto 8px",background:"#fff",borderRadius:999,padding:"4px 4px 4px 16px",display:"flex",alignItems:"center",boxShadow:"0 1px 12px rgba(27,28,25,0.06)",border:"1px solid rgba(195,200,188,0.3)"}}>
+            <span style={{color:"#74796E",fontSize:13,marginRight:6,flexShrink:0}}>✦</span>
             <input value={aiQ} onChange={e=>setAiQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runAI()}
-              style={{flex:1,border:"none",outline:"none",fontFamily:F2,fontSize:14,background:"transparent",color:"#1B1C19",fontWeight:500}}
-              placeholder="Find a yoga class, spa, gym or adventure near you..."/>
+              style={{flex:1,border:"none",outline:"none",fontFamily:F2,fontSize:13,background:"transparent",color:"#1B1C19",fontWeight:500,minWidth:0}}
+              placeholder="Find a yoga class, spa, gym or adventure..."/>
             {aiResults&&<button onClick={()=>{setAiResults(null);setAiQ("");setAiNote("");}}
-              style={{background:"transparent",border:"none",color:"#74796E",cursor:"pointer",fontSize:14,padding:"0 8px"}}>✕</button>}
+              style={{background:"transparent",border:"none",color:"#74796E",cursor:"pointer",fontSize:13,padding:"0 6px",flexShrink:0}}>✕</button>}
             <button onClick={runAI} disabled={aiLoading||!aiQ.trim()}
-              style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"12px 28px",fontFamily:F2,fontSize:14,fontWeight:700,cursor:aiLoading||!aiQ.trim()?"not-allowed":"pointer",opacity:aiLoading||!aiQ.trim()?0.5:1,flexShrink:0,transition:"transform .15s"}}
-              onMouseEnter={e=>{if(!aiLoading&&aiQ.trim())e.target.style.transform="scale(1.02)"}}
-              onMouseLeave={e=>e.target.style.transform="scale(1)"}>
+              style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"10px 20px",fontFamily:F2,fontSize:13,fontWeight:700,cursor:aiLoading||!aiQ.trim()?"not-allowed":"pointer",opacity:aiLoading||!aiQ.trim()?0.5:1,flexShrink:0}}>
               {aiLoading?"…":"Search"}
             </button>
           </div>
-          {aiNote&&<p style={{fontFamily:F2,fontSize:12,color:"#74796E",fontStyle:"italic",margin:"0 0 20px"}}>✦ {aiNote}</p>}
-
+          {aiNote&&<p style={{fontFamily:F2,fontSize:11,color:"#74796E",fontStyle:"italic",margin:"0 0 16px"}}>✦ {aiNote}</p>}
           {/* CTAs */}
-          <div style={{display:"flex",gap:16,justifyContent:"center",flexWrap:"wrap",marginTop:32}}>
+          <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginTop:"clamp(16px,3vw,28px)"}}>
             <button onClick={()=>onSetView("credits")}
-              style={{display:"flex",alignItems:"center",gap:8,padding:"16px 36px",borderRadius:999,background:"#213C18",color:"#fff",border:"none",fontFamily:F2,fontSize:15,fontWeight:700,cursor:"pointer",transition:"all .2s"}}
-              onMouseEnter={e=>e.currentTarget.style.opacity="0.9"}
-              onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-              Get Your Pass <span>→</span>
+              style={{display:"flex",alignItems:"center",gap:8,padding:"12px clamp(16px,4vw,36px)",borderRadius:999,background:"#213C18",color:"#fff",border:"none",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>
+              Get Your Pass →
             </button>
             <button onClick={()=>onSetView("explore")}
-              style={{padding:"16px 36px",borderRadius:999,background:"transparent",color:"#213C18",border:"2px solid #213C18",fontFamily:F2,fontSize:15,fontWeight:700,cursor:"pointer",transition:"all .2s"}}
-              onMouseEnter={e=>e.currentTarget.style.background="rgba(33,60,24,0.05)"}
-              onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              style={{padding:"12px clamp(16px,4vw,36px)",borderRadius:999,background:"transparent",color:"#213C18",border:"2px solid #213C18",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>
               Explore all
             </button>
           </div>
         </div>
+
       </section>
 
+      {/* Scroll indicator — desktop only */}
+      <div className="scroll-indicator" style={{position:"absolute",bottom:24,left:0,right:0,display:"flex",justifyContent:"center",zIndex:10}}>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:8,animation:"bounce 2s ease-in-out infinite"}}>
+          <div style={{width:40,height:40,borderRadius:"50%",background:"#213C18",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 16px rgba(33,60,24,0.25)"}}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M3 6L8 11L13 6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </div>
+        </div>
+      </div>
+
       {/* ── STATEMENT STRIP ── */}
-      <div style={{background:"#213C18",padding:"18px 32px"}}>
+      <div style={{background:"#213C18",padding:"14px 24px"}}>
         <div style={{maxWidth:1200,margin:"0 auto",display:"flex",justifyContent:"center",alignItems:"center",gap:0,flexWrap:"wrap"}}>
           {["Get your pass","Book any venue","No membership needed"].map((s,i)=>(
             <div key={s} style={{display:"flex",alignItems:"center",gap:0}}>
-              <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,fontWeight:600,color:"#CAECBA",letterSpacing:"-0.2px",padding:"0 24px",whiteSpace:"nowrap"}}>{s}</span>
-              {i<2&&<span style={{color:"rgba(163,177,138,0.4)",fontSize:16}}>·</span>}
+              <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,fontWeight:600,color:"#CAECBA",letterSpacing:"-0.2px",padding:"4px 10px",whiteSpace:"nowrap"}}>{s}</span>
+              {i<2&&<span style={{color:"rgba(163,177,138,0.4)",fontSize:14}}>·</span>}
             </div>
           ))}
         </div>
       </div>
 
-      {/* ── HOW IT WORKS ── */}
-      <section style={{padding:"80px 32px",background:"#F5F3EE"}}>
-        <div style={{maxWidth:1200,margin:"0 auto"}}>
-          <div style={{textAlign:"center",marginBottom:52}}>
-            <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:"clamp(28px,4vw,44px)",fontWeight:700,color:"#213C18",letterSpacing:"-1.5px",margin:"0 0 12px",lineHeight:1.1}}>How Wello works</h2>
-            <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:16,color:"#74796E",margin:0}}>Three steps to your next wellness experience.</p>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:24}}>
-            {[
-              {n:"01",icon:"◈",title:"Buy your pass",desc:"Choose how many credits you want. Load them onto your Wello pass — no subscription, no commitment."},
-              {n:"02",icon:"⊞",title:"Browse & book",desc:"Explore studios, gyms, hotel pools, spas and outdoor adventures. Book any slot in seconds."},
-              {n:"03",icon:"✓",title:"Walk in ready",desc:"Show your booking confirmation at the venue and enjoy. Your credits are deducted automatically."},
-            ].map(({n,icon,title,desc})=>(
-              <div key={n} style={{background:"#fff",borderRadius:16,padding:"32px 28px",position:"relative",overflow:"hidden"}}>
-                <div style={{position:"absolute",top:20,right:24,fontFamily:"'Manrope',system-ui,sans-serif",fontSize:48,fontWeight:800,color:"rgba(33,60,24,0.05)",letterSpacing:"-2px",lineHeight:1}}>{n}</div>
-                <div style={{width:48,height:48,background:"rgba(33,60,24,0.08)",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,marginBottom:20,color:"#213C18"}}>{icon}</div>
-                <h3 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:18,fontWeight:700,color:"#213C18",margin:"0 0 10px",letterSpacing:"-0.3px"}}>{title}</h3>
-                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,color:"#74796E",margin:0,lineHeight:1.7}}>{desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ── FEATURED SECTION ── */}
-      <section style={{padding:"80px 32px",maxWidth:1200,margin:"0 auto"}}>
-        <div style={{display:"flex",flexWrap:"wrap",alignItems:"flex-end",justifyContent:"space-between",marginBottom:52,gap:20}}>
-          <div>
-            <h2 style={{fontFamily:F2,fontSize:"clamp(32px,5vw,56px)",fontWeight:700,color:"#1B1C19",letterSpacing:"-2px",margin:0,lineHeight:1}}>Featured on Wello</h2>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:24}}>
-            <p style={{fontFamily:F2,fontSize:16,color:"#74796E",maxWidth:320,lineHeight:1.6,margin:0}}>Hand-picked spaces and experiences for your wellbeing.</p>
+      <section style={{padding:"clamp(40px,6vw,80px) clamp(16px,4vw,32px)",maxWidth:1200,margin:"0 auto"}}>
+        <div style={{display:"flex",flexWrap:"wrap",alignItems:"flex-end",justifyContent:"space-between",marginBottom:"clamp(24px,4vw,48px)",gap:12}}>
+          <h2 style={{fontFamily:F2,fontSize:"clamp(28px,5vw,56px)",fontWeight:700,color:"#1B1C19",letterSpacing:"-2px",margin:0,lineHeight:1}}>Featured on Wello</h2>
+          <div style={{display:"flex",alignItems:"center",gap:16}}>
+            <p style={{fontFamily:F2,fontSize:14,color:"#74796E",maxWidth:280,lineHeight:1.6,margin:0,display:"none"}}>Hand-picked spaces and experiences.</p>
             <button onClick={()=>onSetView("explore")}
-              style={{background:"transparent",border:"none",fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",cursor:"pointer",whiteSpace:"nowrap",padding:0}}
-              onMouseEnter={e=>e.target.style.textDecoration="underline"}
-              onMouseLeave={e=>e.target.style.textDecoration="none"}>
+              style={{background:"transparent",border:"none",fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",cursor:"pointer",whiteSpace:"nowrap",padding:0}}>
               See all →
             </button>
           </div>
         </div>
-        {/* 4-col card grid */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:32}}>
-          {featured.slice(0,4).map((biz,i)=>(
-            <div key={biz.id} style={{marginTop:i===1||i===3?40:0}}>
-              <Card biz={biz} onSelect={onSelect} syncing={!!syncingIds[biz.id]} saved={savedIds.includes(biz.id)} onToggleSave={onToggleSave}/>
+        {/* Responsive card grid — 1 col mobile, 2 col tablet, 4 col desktop */}
+        {listingsLoading
+          ? <div style={{display:"flex",gap:16,overflowX:"hidden"}}>
+              {[1,2,3,4].map(i=>(
+                <div key={i} style={{minWidth:"clamp(200px,60vw,260px)",flexShrink:0}}>
+                  <div style={{paddingBottom:"125%",borderRadius:12,background:"linear-gradient(90deg,#E4E2DD 25%,#EAE8E3 50%,#E4E2DD 75%)",backgroundSize:"200% 100%",animation:"shimmer 1.5s infinite",marginBottom:12}}/>
+                  <div style={{height:16,borderRadius:8,background:"#E4E2DD",marginBottom:8,width:"70%"}}/>
+                  <div style={{height:12,borderRadius:8,background:"#E4E2DD",width:"50%"}}/>
+                </div>
+              ))}
             </div>
-          ))}
+          : <div style={{display:"flex",overflowX:"auto",gap:16,paddingBottom:12,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
+              {featured.slice(0,4).map((biz,i)=>(
+                <div key={biz.id} style={{minWidth:"clamp(200px,60vw,260px)",flexShrink:0}}>
+                  <Card biz={biz} onSelect={onSelect} syncing={!!syncingIds[biz.id]} saved={savedIds.includes(biz.id)} onToggleSave={onToggleSave}/>
+                </div>
+              ))}
+            </div>
+        }
+      </section>
+
+      {/* ── HOW IT WORKS ── */}
+      <section style={{padding:"clamp(40px,6vw,80px) clamp(16px,4vw,32px) clamp(80px,10vw,80px)",background:"#F5F3EE"}}>
+        <div style={{maxWidth:1200,margin:"0 auto"}}>
+          <div style={{textAlign:"center",marginBottom:"clamp(28px,4vw,48px)"}}>
+            <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:"clamp(24px,4vw,44px)",fontWeight:700,color:"#213C18",letterSpacing:"-1.5px",margin:"0 0 10px",lineHeight:1.1}}>How Wello works</h2>
+            <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:15,color:"#74796E",margin:0}}>Three steps to your next wellness experience.</p>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,240px),1fr))",gap:16}}>
+            {[
+              {n:"01",icon:"◈",title:"Buy your pass",desc:"Choose how many credits you want. Load them onto your Wello pass — no subscription, no commitment."},
+              {n:"02",icon:"⊞",title:"Browse & book",desc:"Explore studios, gyms, hotel pools, spas and outdoor adventures. Book any slot in seconds."},
+              {n:"03",icon:"✓",title:"Walk in ready",desc:"Show your booking confirmation at the venue and enjoy. Credits are deducted automatically."},
+            ].map(({n,icon,title,desc})=>(
+              <div key={n} style={{background:"#fff",borderRadius:16,padding:"clamp(20px,3vw,32px)",position:"relative",overflow:"hidden"}}>
+                <div style={{position:"absolute",top:16,right:20,fontFamily:"'Manrope',system-ui,sans-serif",fontSize:40,fontWeight:800,color:"rgba(33,60,24,0.05)",lineHeight:1}}>{n}</div>
+                <div style={{width:44,height:44,background:"rgba(33,60,24,0.08)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,marginBottom:16,color:"#213C18"}}>{icon}</div>
+                <h3 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:17,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.3px"}}>{title}</h3>
+                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#74796E",margin:0,lineHeight:1.7}}>{desc}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -811,10 +835,10 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
   });
 
   return (
-    <div style={{paddingTop:32,paddingBottom:96}}>
+    <div style={{paddingTop:24,paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
       {/* Header */}
-      <div style={{maxWidth:1200,margin:"0 auto",padding:"0 32px 0"}}>
-        <div style={{display:"flex",flexWrap:"wrap",alignItems:"flex-end",justifyContent:"space-between",marginBottom:32,gap:16}}>
+      <div style={{maxWidth:1200,margin:"0 auto",padding:"0 clamp(16px,4vw,32px) 0"}}>
+        <div style={{display:"flex",flexWrap:"wrap",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20,gap:10}}>
           <div>
             <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#6F5B44",letterSpacing:"4px",textTransform:"uppercase",display:"block",marginBottom:8}}>Curated Sanctuary</span>
             <h1 style={{fontFamily:F2,fontSize:"clamp(28px,4vw,44px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:0,lineHeight:1}}>Find your flow.</h1>
@@ -827,7 +851,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
       </div>
 
       {/* Sticky filter bar */}
-      <div style={{position:"sticky",top:0,zIndex:40,background:"rgba(251,249,244,0.95)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",borderBottom:"1px solid rgba(195,200,188,0.2)",padding:"12px 32px"}}>
+      <div style={{position:"sticky",top:60,zIndex:40,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",borderBottom:"1px solid rgba(195,200,188,0.2)",padding:"10px clamp(12px,3vw,32px)"}}>
         <div style={{maxWidth:1200,margin:"0 auto"}}>
           {/* Category pills */}
           <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:8,scrollbarWidth:"none",alignItems:"center"}}>
@@ -842,7 +866,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
             <div style={{marginLeft:"auto",flexShrink:0,display:"flex",alignItems:"center",gap:8,background:"#F0EEE9",borderRadius:999,padding:"8px 16px"}}>
               <span style={{color:"#74796E",fontSize:14}}>⌕</span>
               <input value={search} onChange={e=>setSearch(e.target.value)}
-                style={{border:"none",outline:"none",fontFamily:F2,fontSize:13,background:"transparent",color:"#1B1C19",width:140}}
+                style={{border:"none",outline:"none",fontFamily:F2,fontSize:13,background:"transparent",color:"#1B1C19",width:"clamp(60px,20vw,140px)"}}
                 placeholder="Search..."/>
               {search&&<button onClick={()=>setSearch("")} style={{background:"transparent",border:"none",cursor:"pointer",color:"#74796E",fontSize:12}}>✕</button>}
             </div>
@@ -863,14 +887,14 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
       </div>
 
       {/* Grid */}
-      <div style={{maxWidth:1200,margin:"32px auto 0",padding:"0 32px"}}>
+      <div style={{maxWidth:1200,margin:"24px auto 0",padding:"0 clamp(16px,4vw,32px)"}}>
         {filtered.length===0
           ? <div style={{textAlign:"center",padding:"96px 20px"}}>
               <div style={{fontSize:36,marginBottom:12,color:"#C3C8BC"}}>∅</div>
               <h3 style={{fontFamily:F2,fontSize:20,color:"#213C18",fontWeight:700,marginBottom:8}}>No results</h3>
               <p style={{fontFamily:F2,color:"#74796E",fontSize:14}}>Try adjusting your filters</p>
             </div>
-          : <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:32}}>
+          : <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,200px),1fr))",gap:"clamp(12px,2vw,24px)"}}>
               {filtered.map(b=><Card key={b.id} biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave}/>)}
             </div>
         }
@@ -899,14 +923,14 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
   const F2="'Manrope','Jost',system-ui,sans-serif";
 
   return (
-    <div style={{paddingTop:32,paddingBottom:96}}>
-      <div style={{maxWidth:1200,margin:"0 auto",padding:"0 32px"}}>
+    <div style={{paddingTop:24,paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
+      <div style={{maxWidth:1200,margin:"0 auto",padding:"0 clamp(16px,4vw,32px)"}}>
 
         {/* Hero profile header */}
-        <header style={{display:"flex",flexWrap:"wrap",alignItems:"flex-end",gap:32,marginBottom:48,paddingTop:16}}>
+        <header style={{display:"flex",flexWrap:"wrap",alignItems:"flex-start",gap:20,marginBottom:32,paddingTop:12}}>
           <div style={{position:"relative"}}>
-            <div style={{width:120,height:120,borderRadius:12,overflow:"hidden",background:"#213C18",display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <span style={{fontFamily:F2,fontSize:48,fontWeight:800,color:"#fff"}}>J</span>
+            <div style={{width:"clamp(72px,15vw,120px)",height:"clamp(72px,15vw,120px)",borderRadius:12,overflow:"hidden",background:"#213C18",display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <span style={{fontFamily:F2,fontSize:"clamp(28px,8vw,48px)",fontWeight:800,color:"#fff"}}>J</span>
             </div>
             <button style={{position:"absolute",bottom:-10,right:-10,background:"#213C18",color:"#fff",border:"none",width:32,height:32,borderRadius:"50%",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>✏</button>
           </div>
@@ -933,7 +957,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
         </header>
 
         {/* Tabs */}
-        <div style={{display:"flex",borderBottom:"1px solid rgba(195,200,188,0.3)",marginBottom:36,gap:0,overflowX:"auto"}}>
+        <div style={{display:"flex",borderBottom:"1px solid rgba(195,200,188,0.3)",marginBottom:24,gap:0,overflowX:"auto",scrollbarWidth:"none"}}>
           {TABS.map(([k,l])=>(
             <button key={k} onClick={()=>setTab(k)}
               style={{fontFamily:F2,fontSize:14,fontWeight:tab===k?700:500,color:tab===k?"#213C18":"#74796E",background:"transparent",border:"none",borderBottom:tab===k?"2px solid #213C18":"2px solid transparent",padding:"0 4px 16px",cursor:"pointer",marginRight:32,marginBottom:-1,whiteSpace:"nowrap",transition:"all .15s"}}>
@@ -962,7 +986,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                     <div key={bk.id} style={{display:"flex",flexWrap:"wrap",background:"#F5F3EE",borderRadius:12,overflow:"hidden",transition:"background .2s"}}
                       onMouseEnter={e=>e.currentTarget.style.background="#EAE8E3"}
                       onMouseLeave={e=>e.currentTarget.style.background="#F5F3EE"}>
-                      <div style={{width:160,minHeight:120,flexShrink:0,overflow:"hidden"}}>
+                      <div style={{width:"clamp(80px,30vw,160px)",minHeight:100,flexShrink:0,overflow:"hidden"}}>
                         <img src={bk.biz.img} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
                       </div>
                       <div style={{flex:1,padding:"20px 24px",display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"center",gap:16}}>
@@ -994,7 +1018,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                 <p style={{fontFamily:F2,color:"#74796E",marginBottom:20,fontSize:14}}>Tap ♡ on any listing to save it</p>
                 <button onClick={()=>onSetView("explore")} style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"12px 28px",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>Explore</button>
               </div>
-            : <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:24}}>
+            : <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(45%,200px),1fr))",gap:16}}>
                 {saved.map(b=>(
                   <div key={b.id} style={{cursor:"pointer"}} onClick={()=>onSelect(b)}>
                     <div style={{borderRadius:12,overflow:"hidden",marginBottom:12,aspectRatio:"4/5",background:"#E4E2DD"}}>
@@ -1081,8 +1105,8 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
         )}
 
         {/* Insights */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:24,marginTop:60}}>
-          <div style={{background:"#213C18",color:"#fff",padding:"40px",borderRadius:16,display:"flex",flexDirection:"column",justifyContent:"space-between",minHeight:240}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,280px),1fr))",gap:16,marginTop:40}}>
+          <div style={{background:"#213C18",color:"#fff",padding:"clamp(20px,4vw,40px)",borderRadius:16,display:"flex",flexDirection:"column",justifyContent:"space-between",minHeight:240}}>
             <div>
               <div style={{fontSize:32,opacity:0.4,marginBottom:12}}>✦</div>
               <h4 style={{fontFamily:F2,fontSize:24,fontWeight:700,lineHeight:1.2,margin:"0 0 8px"}}>Your Wellness Journey</h4>
@@ -1093,7 +1117,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
               <div style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"3px",textTransform:"uppercase",opacity:0.5,marginTop:4}}>Sessions booked</div>
             </div>
           </div>
-          <div style={{background:"#E4E2DD",padding:"40px",borderRadius:16,position:"relative",overflow:"hidden"}}>
+          <div style={{background:"#E4E2DD",padding:"clamp(20px,4vw,40px)",borderRadius:16,position:"relative",overflow:"hidden"}}>
             <div style={{position:"relative",zIndex:1}}>
               <h4 style={{fontFamily:F2,fontSize:22,fontWeight:700,color:"#213C18",margin:"0 0 12px"}}>Recommended for you</h4>
               <p style={{fontFamily:F2,fontSize:14,color:"#74796E",maxWidth:320,margin:"0 0 20px",lineHeight:1.6}}>Discover new experiences based on what you've enjoyed so far.</p>
@@ -1442,9 +1466,9 @@ function CreditsPage({ credits, onPurchase }) {
   );
 
   return (
-    <div style={{paddingTop:48,paddingBottom:96}}>
+    <div style={{paddingTop:"clamp(24px,4vw,48px)",paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
       {step===1&&(
-        <div style={{maxWidth:1100,margin:"0 auto",padding:"0 32px",display:"grid",gridTemplateColumns:"1fr 420px",gap:48,alignItems:"start"}}>
+        <div style={{maxWidth:1100,margin:"0 auto",padding:"0 clamp(16px,4vw,32px)",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,340px),1fr))",gap:"clamp(20px,4vw,40px)",alignItems:"start"}}>
 
           {/* Left column */}
           <div>
@@ -1459,7 +1483,7 @@ function CreditsPage({ credits, onPurchase }) {
             <div style={{background:"#213C18",borderRadius:16,padding:"24px 28px",marginBottom:24,position:"relative",overflow:"hidden"}}>
               <div style={{position:"absolute",top:-20,right:-20,width:120,height:120,borderRadius:"50%",background:"rgba(255,255,255,0.05)"}}/>
               <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",letterSpacing:"3px",textTransform:"uppercase",marginBottom:8,fontWeight:600}}>Your balance</p>
-              <p style={{fontFamily:F2,fontSize:48,fontWeight:800,color:"#fff",letterSpacing:"-2px",margin:"0 0 6px",lineHeight:1}}>◈ {credits}</p>
+              <p style={{fontFamily:F2,fontSize:"clamp(28px,8vw,48px)",fontWeight:800,color:"#fff",letterSpacing:"-2px",margin:"0 0 6px",lineHeight:1}}>◈ {credits}</p>
               <p style={{fontFamily:F2,fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>10% fee included at checkout · no charges per booking</p>
             </div>
 
@@ -1469,22 +1493,22 @@ function CreditsPage({ credits, onPurchase }) {
               <p style={{fontFamily:F2,fontSize:12,color:"#74796E",fontWeight:500,marginBottom:24,position:"relative"}}>How many credits?</p>
               <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:28,marginBottom:28,position:"relative"}}>
                 <button onClick={()=>setCustomCr(c=>Math.max(1,c-1))}
-                  style={{width:52,height:52,borderRadius:"50%",background:"#fff",border:"1px solid rgba(195,200,188,0.3)",color:"#213C18",fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",transition:"transform .15s"}}
+                  style={{width:"clamp(40px,10vw,52px)",height:"clamp(40px,10vw,52px)",borderRadius:"50%",background:"#fff",border:"1px solid rgba(195,200,188,0.3)",color:"#213C18",fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",transition:"transform .15s"}}
                   onMouseEnter={e=>e.target.style.transform="scale(1.05)"}
                   onMouseLeave={e=>e.target.style.transform="scale(1)"}>−</button>
                 <div style={{textAlign:"center"}}>
                   <input type="number" min="1" max="200" value={customCr}
                     onChange={e=>{const v=parseInt(e.target.value);if(!isNaN(v))setCustomCr(Math.min(200,Math.max(1,v)));}}
-                    style={{fontFamily:F2,fontSize:80,fontWeight:800,color:"#213C18",letterSpacing:"-4px",lineHeight:1,textAlign:"center",width:160,background:"transparent",border:"none",outline:"none"}}/>
+                    style={{fontFamily:F2,fontSize:"clamp(48px,15vw,80px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",lineHeight:1,textAlign:"center",width:"clamp(100px,30vw,160px)",background:"transparent",border:"none",outline:"none"}}/>
                   <p style={{fontFamily:F2,fontSize:12,color:"rgba(33,60,24,0.5)",fontWeight:600,letterSpacing:"3px",textTransform:"uppercase",margin:0}}>Credits</p>
                 </div>
                 <button onClick={()=>setCustomCr(c=>Math.min(200,c+1))}
-                  style={{width:52,height:52,borderRadius:"50%",background:"#213C18",border:"none",color:"#fff",fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 14px rgba(33,60,24,0.3)",transition:"transform .15s"}}
+                  style={{width:"clamp(40px,10vw,52px)",height:"clamp(40px,10vw,52px)",borderRadius:"50%",background:"#213C18",border:"none",color:"#fff",fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 14px rgba(33,60,24,0.3)",transition:"transform .15s"}}
                   onMouseEnter={e=>e.target.style.transform="scale(1.05)"}
                   onMouseLeave={e=>e.target.style.transform="scale(1)"}>+</button>
               </div>
               {/* Quick add pills */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,position:"relative"}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:8,position:"relative"}}>
                 {[1,5,10,25].map(n=>(
                   <button key={n} onClick={()=>setCustomCr(c=>Math.min(200,c+n))}
                     style={{padding:"12px 8px",borderRadius:12,border:"1px solid rgba(195,200,188,0.3)",background:n===10?"#FADEC0":"#fff",color:n===10?"#766149":"#43483F",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer",transition:"all .15s"}}
@@ -1496,7 +1520,7 @@ function CreditsPage({ credits, onPurchase }) {
             </div>
 
             {/* Info cards */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,160px),1fr))",gap:10,marginBottom:16}}>
               {[{icon:"⏱",title:"6 Month Validity",desc:"Your pass is valid for 6 months from top-up."},{icon:"◈",title:"Use Anywhere",desc:"Use across any venue, class or experience."}].map(({icon,title,desc})=>(
                 <div key={title} style={{background:"rgba(228,226,221,0.5)",borderRadius:12,padding:"20px"}}>
                   <div style={{fontSize:20,marginBottom:8}}>{icon}</div>
@@ -1532,7 +1556,7 @@ function CreditsPage({ credits, onPurchase }) {
           </div>
 
           {/* Right — sticky order summary */}
-          <div style={{position:"sticky",top:96}}>
+          <div style={{position:"sticky",top:80}}>
             <div style={{background:"#fff",borderRadius:16,padding:"32px",boxShadow:"0 12px 32px rgba(27,28,25,0.06)",border:"1px solid rgba(195,200,188,0.2)"}}>
               <h3 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:"#213C18",margin:"0 0 24px",letterSpacing:"-0.5px"}}>Order Summary</h3>
               <div style={{display:"flex",flexDirection:"column",gap:0}}>
@@ -1592,7 +1616,7 @@ function CreditsPage({ credits, onPurchase }) {
             <p style={{fontFamily:F2,fontSize:24,fontWeight:800,color:"#fff",letterSpacing:"-1px",margin:0}}>€{totalPrice}</p>
           </div>
           <h2 style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"3px",textTransform:"uppercase",margin:"0 0 14px"}}>Payment method</h2>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,160px),1fr))",gap:8,marginBottom:16}}>
             {PAY.map(pm=>(
               <div key={pm.id} onClick={()=>setPay(pm.id)}
                 style={{border:`2px solid ${pay===pm.id?"#213C18":"rgba(195,200,188,0.3)"}`,borderRadius:12,padding:"14px 16px",cursor:"pointer",background:pay===pm.id?"rgba(33,60,24,0.04)":"#fff",display:"flex",alignItems:"center",gap:10,transition:"all .15s"}}>
@@ -1697,7 +1721,7 @@ function BusinessPortalDashboard({ onExit }) {
     <div style={{minHeight:"100vh",background:"#FBF9F4",fontFamily:F2}}>
 
       {/* Header */}
-      <div style={{background:"#213C18",padding:"28px 32px 0"}}>
+      <div style={{background:"#213C18",padding:"clamp(16px,3vw,28px) clamp(16px,3vw,32px) 0"}}>
         <div style={{maxWidth:1100,margin:"0 auto"}}>
           <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:12,marginBottom:24}}>
             <div>
@@ -1717,7 +1741,7 @@ function BusinessPortalDashboard({ onExit }) {
             </div>
           </div>
           {/* Stats row */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:0}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(140px,1fr))",gap:8,marginBottom:0,overflowX:"auto"}}>
             {[
               {label:"Bookings this month",value:"24",sub:"April 2026",accent:"#CAECBA"},
               {label:"Credits redeemed",value:"◈ 86",sub:"this month",accent:"rgba(255,255,255,0.25)"},
@@ -1732,7 +1756,7 @@ function BusinessPortalDashboard({ onExit }) {
             ))}
           </div>
           {/* Tabs */}
-          <div style={{display:"flex",marginTop:4,gap:0}}>
+          <div style={{display:"flex",marginTop:4,gap:0,overflowX:"auto",scrollbarWidth:"none"}}>
             {TABS.map(([k,l])=>(
               <button key={k} onClick={()=>setTab(k)}
                 style={{padding:"12px 20px",border:"none",borderBottom:`3px solid ${tab===k?"#fff":"transparent"}`,background:tab===k?"rgba(255,255,255,0.1)":"transparent",color:tab===k?"#fff":"rgba(255,255,255,0.45)",fontFamily:F2,fontSize:12,fontWeight:tab===k?700:400,cursor:"pointer",transition:"all .15s"}}>
@@ -1744,13 +1768,13 @@ function BusinessPortalDashboard({ onExit }) {
       </div>
 
       {/* Content */}
-      <div style={{maxWidth:1100,margin:"0 auto",padding:"28px 32px 80px"}}>
+      <div style={{maxWidth:1100,margin:"0 auto",padding:"clamp(16px,3vw,28px) clamp(16px,3vw,32px) 80px"}}>
 
         {/* ── OVERVIEW ── */}
         {tab==="overview"&&(
           <div style={{display:"flex",flexDirection:"column",gap:20}}>
             {/* Summary cards */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(45%,200px),1fr))",gap:10}}>
               {[
                 {label:"Total sessions",value:"142",sub:"Last 6 months",color:"#213C18"},
                 {label:"Customer return rate",value:"68%",sub:"booked more than once",color:"#213C18"},
@@ -1766,7 +1790,7 @@ function BusinessPortalDashboard({ onExit }) {
             </div>
 
             {/* Revenue chart + live feed */}
-            <div style={{display:"grid",gridTemplateColumns:"1.5fr 1fr",gap:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,300px),1fr))",gap:14}}>
               {/* Bar chart */}
               <div style={{background:"#fff",borderRadius:12,padding:"22px 24px",boxShadow:"0 1px 8px rgba(0,0,0,0.04)"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:20}}>
@@ -1983,7 +2007,7 @@ function BusinessPortalDashboard({ onExit }) {
 
         {/* ── MY LISTING ── */}
         {tab==="listing"&&(
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,alignItems:"start"}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,300px),1fr))",gap:16,alignItems:"start"}}>
             {/* Listing preview */}
             <div style={{background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
               <div style={{position:"relative",height:180}}>
@@ -2152,9 +2176,9 @@ function BusinessPortal({ onSetView }) {
 
   // ── Landing ───────────────────────────────────────────────────
   if (screen==="landing") return (
-    <div style={{minHeight:"calc(100vh - 58px)",display:"flex",alignItems:"stretch",flexWrap:"wrap"}}>
+    <div style={{minHeight:"calc(100vh - 60px)",display:"flex",alignItems:"stretch",flexWrap:"wrap"}}>
       {/* Left — pitch */}
-      <div style={{flex:"1 1 420px",background:T.sage,padding:"64px 52px",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+      <div style={{flex:"1 1 300px",background:T.sage,padding:"clamp(32px,5vw,64px) clamp(24px,5vw,52px)",display:"flex",flexDirection:"column",justifyContent:"center"}}>
         <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:11,fontWeight:400,color:T.ochreL,letterSpacing:"5px",textTransform:"uppercase",marginBottom:20}}>For businesses</div>
         <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:"clamp(28px,3.5vw,44px)",fontWeight:700,color:"#fff",lineHeight:1.1,letterSpacing:"-1px",margin:"0 0 18px"}}>Fill your off-peak slots.<br/>Reach more people.</h1>
         <p style={{fontFamily:F.body,fontSize:13,color:"rgba(255,255,255,.65)",lineHeight:1.75,margin:"0 0 32px",fontWeight:300,maxWidth:380}}>Wello connects your studio, gym or pool to local fitness enthusiasts, expats and tourists who want flexibility while on the island.</p>
@@ -2170,7 +2194,7 @@ function BusinessPortal({ onSetView }) {
         </div>
       </div>
       {/* Right — actions */}
-      <div style={{flex:"1 1 340px",background:T.paper,padding:"64px 52px",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+      <div style={{flex:"1 1 280px",background:T.paper,padding:"clamp(32px,5vw,64px) clamp(24px,5vw,52px)",display:"flex",flexDirection:"column",justifyContent:"center"}}>
         <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>Welcome back</h2>
         <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,margin:"0 0 28px"}}>Already have a business account? Sign in to your dashboard.</p>
         <button onClick={()=>setScreen("login")} style={{width:"100%",padding:"12px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:12,letterSpacing:".3px",transition:"background .15s"}}
@@ -2378,15 +2402,76 @@ export default function App() {
     window.location.hash = "";
     setTimeout(()=>{ setRecovering(false); setNewPw(""); setNewPwDone(false); }, 2000);
   }
-  const [listings,setListings] = useState(LISTINGS);
+  const [listings,setListings] = useState([]);
+  const [listingsLoading,setListingsLoading] = useState(true);
   const [syncingIds,setSyncing]= useState({});
   const [selBiz,setSelBiz]     = useState(null);
   const [bkData,setBkData]     = useState(null);
   const [credits,setCredits]   = useState(6);
   const [bookings,setBookings] = useState([]);
-  const [saved,setSaved]       = useState([1,5,9]);
+  const [saved,setSaved]       = useState([]);
   const [isBiz,setIsBiz]       = useState(false);
   const [toast,setToast]       = useState(null);
+
+  // Fetch listings + slots from Supabase (with localStorage cache for instant load)
+  useEffect(()=>{
+    function transformRows(listingRows) {
+      return listingRows.map(row => ({
+        id: row.id,
+        name: row.name,
+        cat: row.cat,
+        cat2: row.cat2,
+        loc: row.loc,
+        desc: row.description,
+        img: row.img,
+        rating: parseFloat(row.rating),
+        reviews: row.reviews,
+        cr: row.cr,
+        tags: row.tags || [],
+        slots: (row.slots || []).map(s => ({
+          id: s.id.toString(),
+          name: s.name,
+          date: s.date,
+          time: s.time,
+          dur: s.dur,
+          spots: s.spots,
+          booked: s.booked,
+          credits: s.credits,
+        }))
+      }));
+    }
+
+    async function fetchListings() {
+      // Show cached data instantly if available
+      try {
+        const cached = localStorage.getItem("wello_listings");
+        if (cached) {
+          setListings(JSON.parse(cached));
+          setListingsLoading(false);
+        }
+      } catch(e) {}
+
+      // Fetch fresh data from Supabase in background
+      const { data: listingRows, error } = await supabase
+        .from("listings")
+        .select("*, slots(*)")
+        .eq("status","active")
+        .order("id");
+
+      if (error) {
+        console.error("Error fetching listings:", error);
+        if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
+      } else if (listingRows && listingRows.length > 0) {
+        const transformed = transformRows(listingRows);
+        setListings(transformed);
+        try { localStorage.setItem("wello_listings", JSON.stringify(transformed)); } catch(e) {}
+      } else {
+        if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
+      }
+      setListingsLoading(false);
+    }
+    fetchListings();
+  }, []);
   const showToast=(msg,type="info")=>{ setToast({msg,type}); setTimeout(()=>setToast(null),2600); };
 
   const onSyncUpdate=useCallback((bizId,slotId,delta)=>{
@@ -2406,7 +2491,7 @@ export default function App() {
   function onPurchase(purchase){ setCredits(c=>c+purchase.cr); showToast(`◈ ${purchase.cr} credits added!`,"gold"); }
   function toggleSave(id){ setSaved(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]); showToast(saved.includes(id)?"Removed from saved":"Saved!","success"); }
 
-  const NAV=[{id:"home",l:"Home"},{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"profile",l:"Profile"},{id:"biz-portal",l:"For Business"}];
+  const NAV=[{id:"home",l:"Home"},{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"profile",l:"Profile"},{id:"biz-portal",l:"Business"}];
 
   return (
     <>
@@ -2417,7 +2502,7 @@ export default function App() {
         @keyframes su{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
         @keyframes fi{from{opacity:0}to{opacity:1}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
-        @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+        @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}} @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}} @keyframes bounce{0%,100%{transform:translateY(0);opacity:0.5}50%{transform:translateY(8px);opacity:1}} @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
         ::-webkit-scrollbar{width:4px;height:4px}
         ::-webkit-scrollbar-thumb{background:${T.border2};border-radius:2px}
         input,select,textarea,button{font-family:'Jost',system-ui,sans-serif;}
@@ -2461,42 +2546,36 @@ export default function App() {
 
       <div style={{minHeight:"100vh",background:"#FBF9F4",display:bizPreview?"none":"block"}}>
 
-        {/* NAV — Stitch glassmorphism */}
-        <nav style={{position:"fixed",top:0,width:"100%",zIndex:500,background:"rgba(251,249,244,0.85)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"1px solid rgba(195,200,188,0.2)"}}>
-          <div style={{maxWidth:1200,margin:"0 auto",padding:"0 32px",display:"flex",alignItems:"center",justifyContent:"space-between",height:72}}>
-            {/* Wordmark */}
-            <div style={{display:"flex",alignItems:"center",gap:48}}>
-              <a onClick={()=>setView("home")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:22,fontWeight:800,color:"#213C18",letterSpacing:"-1px",cursor:"pointer",userSelect:"none",textDecoration:"none"}}>wello</a>
-              <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                {[{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"biz-portal",l:"For Business"}].map(n=>(
-                  <button key={n.id} onClick={()=>setView(n.id)}
-                    style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,fontWeight:view===n.id?700:500,color:view===n.id?"#213C18":"#43483F",background:"transparent",border:"none",borderBottom:view===n.id?"2px solid #213C18":"2px solid transparent",padding:"4px 4px 8px",cursor:"pointer",letterSpacing:"-0.2px",transition:"color .2s",outline:"none"}}
-                    onMouseEnter={e=>{if(view!==n.id)e.target.style.color="#213C18"}}
-                    onMouseLeave={e=>{if(view!==n.id)e.target.style.color="#43483F"}}>
-                    {n.l}
-                  </button>
-                ))}
-              </div>
+        {/* NAV — responsive mobile + desktop */}
+        <nav style={{position:"fixed",top:0,left:0,right:0,zIndex:1000,background:"rgba(251,249,244,0.96)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"1px solid rgba(195,200,188,0.2)"}}>
+          <style>{`@media(max-width:640px){.wello-nav-links{display:none!important}.wello-footer{display:none!important}} .wello-nav-links{display:flex;} .scroll-indicator{display:flex;} @media(max-width:767px){.scroll-indicator{display:none!important}}  `}</style>
+          <div style={{maxWidth:1200,margin:"0 auto",padding:"0 clamp(16px,4vw,32px)",display:"flex",alignItems:"center",height:60,gap:16}}>
+            {/* Wordmark — left */}
+            <a onClick={()=>setView("home")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:20,fontWeight:800,color:"#213C18",letterSpacing:"-1px",cursor:"pointer",userSelect:"none",textDecoration:"none",flexShrink:0}}>wello</a>
+            {/* Links — centred */}
+            <div className="wello-nav-links" style={{flex:1,justifyContent:"center",gap:6,alignItems:"center"}}>
+              {[{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"biz-portal",l:"Business"}].map(n=>(
+                <button key={n.id} onClick={()=>setView(n.id)}
+                  style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,fontWeight:view===n.id?700:500,color:view===n.id?"#213C18":"#43483F",background:"transparent",border:"none",borderBottom:view===n.id?"2px solid #213C18":"2px solid transparent",padding:"4px 10px 8px",cursor:"pointer",transition:"color .15s",outline:"none"}}>
+                  {n.l}
+                </button>
+              ))}
             </div>
-            {/* Right side */}
-            <div style={{display:"flex",alignItems:"center",gap:20}}>
-              <button onClick={()=>setView("profile")} style={{background:"transparent",border:"none",fontSize:13,cursor:"pointer",color:"#213C18",padding:"6px 14px",fontFamily:"'Manrope',system-ui,sans-serif",fontWeight:500,border:"1px solid rgba(195,200,188,0.4)",borderRadius:999,transition:"opacity .15s"}}
-                onMouseEnter={e=>e.target.style.opacity="0.7"} onMouseLeave={e=>e.target.style.opacity="1"}>Profile</button>
+            {/* Right — credits + avatar */}
+            <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0,marginLeft:"auto"}}>
               <div onClick={()=>setView("credits")}
-                style={{display:"flex",alignItems:"center",gap:6,background:"#213C18",color:"#fff",borderRadius:999,padding:"8px 18px",cursor:"pointer",transition:"opacity .15s"}}
-                onMouseEnter={e=>e.currentTarget.style.opacity="0.85"}
-                onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,fontWeight:700}}>◈ {credits}</span>
+                style={{display:"flex",alignItems:"center",gap:5,background:"#213C18",color:"#fff",borderRadius:999,padding:"7px 14px",cursor:"pointer"}}>
+                <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,fontWeight:700}}>◈ {credits}</span>
               </div>
               <div onClick={()=>setView("profile")}
-                style={{width:36,height:36,borderRadius:"50%",background:"#213C18",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,fontWeight:800,color:"#fff",flexShrink:0}}>J</div>
+                style={{width:32,height:32,borderRadius:"50%",background:"#213C18",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,fontWeight:800,color:"#fff",flexShrink:0}}>J</div>
             </div>
           </div>
         </nav>
 
         {/* PAGES — padded for fixed nav */}
-        <div style={{paddingTop:72}}>
-          {view==="home"       &&<HomePage listings={listings} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds}/>}
+        <div style={{paddingTop:60}}>
+          {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds}/>}
           {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds}/>}
           {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
           {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
@@ -2505,7 +2584,7 @@ export default function App() {
         </div>
 
         {/* FOOTER — Stitch linen style */}
-        <footer style={{background:"#F5F3EE",borderTop:"1px solid rgba(195,200,188,0.2)",padding:"48px 32px"}}>
+        <footer className="wello-footer" style={{background:"#F5F3EE",borderTop:"1px solid rgba(195,200,188,0.2)",padding:"clamp(32px,5vw,48px) clamp(16px,4vw,32px)"}}>
           <div style={{maxWidth:1200,margin:"0 auto",display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"flex-start",gap:32}}>
             <div>
               <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:20,fontWeight:800,color:"#213C18",letterSpacing:"-0.5px",display:"block",marginBottom:8}}>wello</span>
@@ -2626,7 +2705,7 @@ export default function App() {
 
       {/* Prototype preview — goes straight to dashboard demo */}
       {!bizPreview&&(
-        <div style={{position:"fixed",bottom:80,right:16,zIndex:400}}>
+        <div style={{position:"fixed",bottom:148,right:12,zIndex:1050}}>
           <button onClick={()=>setBizPreview(true)}
             style={{background:"#1B1C19",color:"#D6B47C",border:"1px solid #B8925C",borderRadius:999,padding:"8px 16px",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,fontWeight:600,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,0,0,0.3)",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
             👁 Business dashboard
@@ -2634,7 +2713,7 @@ export default function App() {
         </div>
       )}
       {bizPreview&&(
-        <div style={{position:"fixed",bottom:80,right:16,zIndex:400}}>
+        <div style={{position:"fixed",bottom:148,right:12,zIndex:1050}}>
           <button onClick={()=>setBizPreview(false)}
             style={{background:"#1B1C19",color:"#A89E8C",border:"1px solid #43483F",borderRadius:999,padding:"8px 16px",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,0,0,0.3)"}}>
             ✕ Exit preview
@@ -2643,10 +2722,10 @@ export default function App() {
       )}
 
       {/* Mobile bottom nav */}
-      <div style={{position:"fixed",bottom:0,left:0,right:0,background:"rgba(251,249,244,0.95)",backdropFilter:"blur(16px)",WebkitBackdropFilter:"blur(16px)",borderTop:"1px solid rgba(195,200,188,0.2)",padding:"8px 24px calc(8px + env(safe-area-inset-bottom))"}}>
+      <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:999,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"1px solid rgba(195,200,188,0.25)",padding:"8px 16px calc(8px + env(safe-area-inset-bottom))"}}>
         <style>{`@media (min-width: 768px) { .mob-nav { display: none !important; } }`}</style>
         <div className="mob-nav" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          {[{id:"home",icon:"🏠",l:"Home"},{id:"explore",icon:"🧭",l:"Explore"},{id:"credits",icon:"◈",l:"Pass"},{id:"profile",icon:"👤",l:"Profile"}].map(({id,icon,l})=>(
+          {[{id:"explore",icon:"🧭",l:"Explore"},{id:"credits",icon:"◈",l:"Pass"},{id:"biz-portal",icon:"🏢",l:"Business"},{id:"profile",icon:"👤",l:"Profile"}].map(({id,icon,l})=>(
             <button key={id} onClick={()=>setView(id)}
               style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"transparent",border:"none",cursor:"pointer",padding:"4px 12px",fontFamily:"'Manrope',system-ui,sans-serif"}}>
               <span style={{fontSize:20}}>{icon}</span>
