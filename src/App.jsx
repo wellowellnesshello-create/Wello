@@ -730,10 +730,17 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
   return (
     <div>
       {/* ── IMMERSIVE HERO — giant wordmark, gradient, AI search ── */}
+<<<<<<< HEAD
       <section style={{position:"relative",minHeight:"calc(100svh - 60px)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"clamp(24px,6vw,80px) clamp(16px,4vw,24px) 80px",background:"linear-gradient(to bottom, #FBF9F4 0%, #FBF9F4 60%, rgba(250,222,192,0.2) 100%)",overflow:"hidden"}}>
         {/* Blur blobs */}
         <div style={{position:"absolute",top:"20%",left:"10%",width:"min(384px,80vw)",height:"min(384px,80vw)",borderRadius:"50%",background:"rgba(202,236,186,0.15)",filter:"blur(120px)",pointerEvents:"none"}}/>
         <div style={{position:"absolute",bottom:"20%",right:"10%",width:"min(500px,90vw)",height:"min(500px,90vw)",borderRadius:"50%",background:"rgba(250,222,192,0.2)",filter:"blur(150px)",pointerEvents:"none"}}/>
+=======
+      <section style={{position:"relative",minHeight:"calc(100svh - 91px)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"clamp(24px,6vw,80px) clamp(16px,4vw,24px) 80px",background:"linear-gradient(to bottom, #FBF9F4 0%, #FBF9F4 60%, rgba(250,222,192,0.2) 100%)",overflow:"hidden"}}>
+        {/* Blur blobs */}
+        <div style={{position:"absolute",top:"10%",left:"-10%",width:"60%",height:"60%",borderRadius:"50%",background:"rgba(202,236,186,0.12)",filter:"blur(120px)",pointerEvents:"none"}}/>
+        <div style={{position:"absolute",bottom:"10%",right:"-10%",width:"70%",height:"70%",borderRadius:"50%",background:"rgba(250,222,192,0.15)",filter:"blur(150px)",pointerEvents:"none"}}/>
+>>>>>>> dev
 
         <div style={{position:"relative",zIndex:1,maxWidth:840,width:"100%",textAlign:"center",padding:"0 4px"}}>
           <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#A3B18A",letterSpacing:"4px",textTransform:"uppercase",margin:"0 0 8px"}}>The Wellness Pass</p>
@@ -1018,7 +1025,11 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
       </div>
 
       {/* Sticky filter bar */}
+<<<<<<< HEAD
       <div style={{position:"sticky",top:94,zIndex:40,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",borderBottom:"1px solid rgba(195,200,188,0.2)",padding:"10px clamp(12px,3vw,32px)"}}>
+=======
+      <div style={{position:"sticky",top:91,zIndex:40,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",borderBottom:"1px solid rgba(195,200,188,0.2)",padding:"10px clamp(12px,3vw,32px)"}}>
+>>>>>>> dev
         <div style={{maxWidth:1200,margin:"0 auto"}}>
           {/* Category pills */}
           <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:8,scrollbarWidth:"none",alignItems:"center"}}>
@@ -1746,11 +1757,16 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
             <div style={{background:"rgba(250,222,192,0.3)",borderRadius:12,padding:"14px 18px"}}>
               <button onClick={()=>setShowPricing(p=>!p)}
                 style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",background:"transparent",border:"none",cursor:"pointer",fontFamily:F2,fontSize:13,fontWeight:600,color:"#766149",padding:0}}>
+<<<<<<< HEAD
                 <span>How credits work · 1 credit = €1</span>
+=======
+                <span>How credits work</span>
+>>>>>>> dev
                 <span>{showPricing?"↑":"↓"}</span>
               </button>
               {showPricing&&(
                 <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid rgba(182,142,92,0.2)"}}>
+<<<<<<< HEAD
                   {/* Column headers */}
                   <div style={{display:"grid",gridTemplateColumns:"1.4fr .9fr .9fr",gap:8,padding:"0 0 8px",borderBottom:"1px solid rgba(182,142,92,0.15)"}}>
                     <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#74796E",margin:0,textTransform:"uppercase",letterSpacing:"1px"}}>Category</p>
@@ -1779,6 +1795,51 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
                     );
                   })()}
                   <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:"10px 0 0",lineHeight:1.5}}>A 10% service fee (max €5) is added at the point of credit purchase — not per booking. Your pass is valid for 6 months from top-up.</p>
+=======
+                  {/* Three key facts */}
+                  {[
+                    ["◈","Credits are used to book sessions","Each listing shows its credit price upfront. No surprises at checkout."],
+                    ["→","10% service fee, max £5","Added once when you purchase credits — never charged again per booking."],
+                    ["◷","Valid for 6 months","Credits don't expire for 6 months from the date of purchase."],
+                  ].map(([icon,title,body])=>(
+                    <div key={title} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid rgba(182,142,92,0.1)"}}>
+                      <span style={{fontSize:16,flexShrink:0,marginTop:1,color:"#213C18"}}>{icon}</span>
+                      <div style={{textAlign:"left"}}>
+                        <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#1B1C19",margin:"0 0 2px"}}>{title}</p>
+                        <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0,lineHeight:1.5}}>{body}</p>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Live category price ranges from listings */}
+                  {listings.length > 0 && (()=>{
+                    const cats = {};
+                    listings.forEach(l=>{
+                      if(!cats[l.cat]) cats[l.cat] = [];
+                      cats[l.cat].push(l.cr);
+                    });
+                    return (
+                      <div style={{marginTop:12}}>
+                        <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#74796E",textTransform:"uppercase",letterSpacing:"1.5px",margin:"0 0 8px"}}>Live prices on Wello</p>
+                        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                          {Object.entries(cats).map(([cat,crs])=>{
+                            const min=Math.min(...crs), max=Math.max(...crs);
+                            return (
+                              <div key={cat} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid rgba(182,142,92,0.08)"}}>
+                                <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>{cat}</p>
+                                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",margin:0}}>◈{min}{min!==max?`–◈${max}`:""}</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div style={{marginTop:8,display:"flex",alignItems:"center",gap:5}}>
+                          <span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block",flexShrink:0}}/>
+                          <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>Prices set by venues · updated in real time</p>
+                        </div>
+                      </div>
+                    );
+                  })()}
+>>>>>>> dev
                 </div>
               )}
             </div>
@@ -1792,7 +1853,11 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",paddingBottom:12}}>
                   <div>
                     <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 4px"}}>Credits</p>
+<<<<<<< HEAD
                     <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#213C18",margin:0}}>{customCr} × €1.00</p>
+=======
+                    <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#213C18",margin:0}}>{customCr} credits</p>
+>>>>>>> dev
                   </div>
                   <p style={{fontFamily:F2,fontSize:15,fontWeight:600,color:"#213C18",margin:0}}>€{totalPrice}</p>
                 </div>
@@ -2801,6 +2866,10 @@ export default function App() {
         @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=Jost:wght@300;400;500;600;700&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
         body{background:${T.bg};color:${T.ink};font-family:'Manrope','Jost',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+<<<<<<< HEAD
+=======
+        @media(min-width:768px){.mob-nav{display:none!important}}
+>>>>>>> dev
         @keyframes su{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
         @keyframes fi{from{opacity:0}to{opacity:1}}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
@@ -2846,7 +2915,11 @@ export default function App() {
 
       {bizPreview&&<BusinessPortalDashboard onExit={()=>setBizPreview(false)}/>}
 
+<<<<<<< HEAD
       <div style={{minHeight:"100vh",background:"#FBF9F4",display:bizPreview?"none":"block"}}>
+=======
+      <div style={{minHeight:"100vh",background:"#FBF9F4",display:bizPreview?"none":"block",overflowX:"hidden"}}>
+>>>>>>> dev
 
         {/* ── COOKIE CONSENT BANNER ── */}
       {!cookieConsent&&(
@@ -2867,6 +2940,7 @@ export default function App() {
         </div>
       )}
 
+<<<<<<< HEAD
       {/* ── DEMO BANNER ── */}
         <div style={{position:"fixed",top:0,left:0,right:0,zIndex:1001,background:"#213C18",padding:"7px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:12}}>
           <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"rgba(255,255,255,0.7)",letterSpacing:"0.2px"}}>Early demo — not yet live.</span>
@@ -2878,6 +2952,17 @@ export default function App() {
         {/* NAV — responsive mobile + desktop */}
         <nav style={{position:"fixed",top:34,left:0,right:0,zIndex:1000,background:"rgba(251,249,244,0.96)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"1px solid rgba(195,200,188,0.2)"}}>
           <style>{`@media(max-width:640px){.wello-nav-links{display:none!important}.wello-footer{display:none!important}} .wello-nav-links{display:flex;} .scroll-indicator{display:flex;} @media(max-width:767px){.scroll-indicator{display:none!important}}  `}</style>
+=======
+      {/* ── DEMO BANNER + NAV wrapper ── */}
+        <div style={{position:"fixed",top:0,left:0,right:0,zIndex:1000,display:"flex",flexDirection:"column"}}>
+          <div style={{background:"#213C18",padding:"8px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:8,overflow:"hidden"}}>
+            <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"}}>Early demo — not yet live.</span>
+            <span style={{width:1,height:12,background:"rgba(255,255,255,0.2)",display:"inline-block",flexShrink:0}}/>
+            <a href="mailto:hello@wello-wellness.com" style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,fontWeight:700,color:"#CAECBA",textDecoration:"none",whiteSpace:"nowrap"}}>hello@wello-wellness.com</a>
+          </div>
+        <nav style={{background:"rgba(251,249,244,0.96)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"1px solid rgba(195,200,188,0.2)"}}>
+          <style>{`body{overflow-x:hidden;} @media(max-width:640px){.wello-nav-links{display:none!important}.wello-footer{display:none!important}} .wello-nav-links{display:flex;} .scroll-indicator{display:flex;} @media(max-width:767px){.scroll-indicator{display:none!important}}`}</style>
+>>>>>>> dev
           <div style={{maxWidth:1200,margin:"0 auto",padding:"0 clamp(16px,4vw,32px)",display:"flex",alignItems:"center",height:60,gap:16}}>
             {/* Wordmark — left */}
             <a onClick={()=>setView("home")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:20,fontWeight:800,color:"#213C18",letterSpacing:"-1px",cursor:"pointer",userSelect:"none",textDecoration:"none",flexShrink:0}}>wello</a>
@@ -2901,9 +2986,16 @@ export default function App() {
             </div>
           </div>
         </nav>
+<<<<<<< HEAD
 
         {/* PAGES — padded for fixed nav */}
         <div style={{paddingTop:94}}>
+=======
+        </div>{/* end banner+nav wrapper */}
+
+        {/* PAGES — padded for fixed banner+nav */}
+        <div style={{paddingTop:91}}>
+>>>>>>> dev
           {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds}/>}
           {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds}/>}
           {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
@@ -3064,6 +3156,7 @@ export default function App() {
       )}
 
       {/* Mobile bottom nav */}
+<<<<<<< HEAD
       <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:999,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"1px solid rgba(195,200,188,0.25)",padding:"8px 16px calc(8px + env(safe-area-inset-bottom))"}}>
         <style>{`@media (min-width: 768px) { .mob-nav { display: none !important; } }`}</style>
         <div className="mob-nav" style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -3072,6 +3165,14 @@ export default function App() {
               style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"transparent",border:"none",cursor:"pointer",padding:"4px 12px",fontFamily:"'Manrope',system-ui,sans-serif"}}>
               <span style={{fontSize:20}}>{icon}</span>
               <span style={{fontSize:10,fontWeight:view===id?700:500,color:view===id?"#213C18":"#74796E"}}>{l}</span>
+=======
+      <div className="mob-nav" style={{position:"fixed",bottom:0,left:0,right:0,zIndex:999,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"1px solid rgba(195,200,188,0.25)",padding:"8px 16px calc(8px + env(safe-area-inset-bottom))"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          {[{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"biz-portal",l:"Business"},{id:"profile",l:"Profile"}].map(({id,l})=>(
+            <button key={id} onClick={()=>setView(id)}
+              style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"transparent",border:"none",cursor:"pointer",padding:"4px 12px",fontFamily:"'Manrope',system-ui,sans-serif",borderBottom:view===id?"2px solid #213C18":"2px solid transparent"}}>
+              <span style={{fontSize:13,fontWeight:view===id?700:500,color:view===id?"#213C18":"#74796E"}}>{l}</span>
+>>>>>>> dev
             </button>
           ))}
         </div>
