@@ -730,7 +730,7 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
   return (
     <div>
       {/* ── IMMERSIVE HERO — giant wordmark, gradient, AI search ── */}
-      <section style={{position:"relative",minHeight:"calc(100svh - 94px)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"clamp(24px,6vw,80px) clamp(16px,4vw,24px) 80px",background:"linear-gradient(to bottom, #FBF9F4 0%, #FBF9F4 60%, rgba(250,222,192,0.2) 100%)",overflow:"hidden"}}>
+      <section style={{position:"relative",minHeight:"calc(100svh - 91px)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"clamp(24px,6vw,80px) clamp(16px,4vw,24px) 80px",background:"linear-gradient(to bottom, #FBF9F4 0%, #FBF9F4 60%, rgba(250,222,192,0.2) 100%)",overflow:"hidden"}}>
         {/* Blur blobs */}
         <div style={{position:"absolute",top:"10%",left:"-10%",width:"60%",height:"60%",borderRadius:"50%",background:"rgba(202,236,186,0.12)",filter:"blur(120px)",pointerEvents:"none"}}/>
         <div style={{position:"absolute",bottom:"10%",right:"-10%",width:"70%",height:"70%",borderRadius:"50%",background:"rgba(250,222,192,0.15)",filter:"blur(150px)",pointerEvents:"none"}}/>
@@ -1018,7 +1018,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
       </div>
 
       {/* Sticky filter bar */}
-      <div style={{position:"sticky",top:94,zIndex:40,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",borderBottom:"1px solid rgba(195,200,188,0.2)",padding:"10px clamp(12px,3vw,32px)"}}>
+      <div style={{position:"sticky",top:91,zIndex:40,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",borderBottom:"1px solid rgba(195,200,188,0.2)",padding:"10px clamp(12px,3vw,32px)"}}>
         <div style={{maxWidth:1200,margin:"0 auto"}}>
           {/* Category pills */}
           <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:8,scrollbarWidth:"none",alignItems:"center"}}>
@@ -2883,15 +2883,14 @@ export default function App() {
         </div>
       )}
 
-      {/* ── DEMO BANNER ── */}
-        <div style={{position:"fixed",top:0,left:0,right:0,zIndex:1001,background:"#213C18",padding:"7px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:8,overflow:"hidden"}}>
-          <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"}}>Early demo — not yet live.</span>
-          <span style={{width:1,height:12,background:"rgba(255,255,255,0.2)",display:"inline-block",flexShrink:0}}/>
-          <a href="mailto:hello@wello-wellness.com" style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,fontWeight:700,color:"#CAECBA",textDecoration:"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>hello@wello-wellness.com</a>
-        </div>
-
-        {/* NAV — responsive mobile + desktop */}
-        <nav style={{position:"fixed",top:34,left:0,right:0,zIndex:1000,background:"rgba(251,249,244,0.96)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"1px solid rgba(195,200,188,0.2)"}}>
+      {/* ── DEMO BANNER + NAV wrapper ── */}
+        <div style={{position:"fixed",top:0,left:0,right:0,zIndex:1000,display:"flex",flexDirection:"column"}}>
+          <div style={{background:"#213C18",padding:"8px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:8,overflow:"hidden"}}>
+            <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"}}>Early demo — not yet live.</span>
+            <span style={{width:1,height:12,background:"rgba(255,255,255,0.2)",display:"inline-block",flexShrink:0}}/>
+            <a href="mailto:hello@wello-wellness.com" style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,fontWeight:700,color:"#CAECBA",textDecoration:"none",whiteSpace:"nowrap"}}>hello@wello-wellness.com</a>
+          </div>
+        <nav style={{background:"rgba(251,249,244,0.96)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"1px solid rgba(195,200,188,0.2)"}}>
           <style>{`body{overflow-x:hidden;} @media(max-width:640px){.wello-nav-links{display:none!important}.wello-footer{display:none!important}} .wello-nav-links{display:flex;} .scroll-indicator{display:flex;} @media(max-width:767px){.scroll-indicator{display:none!important}}`}</style>
           <div style={{maxWidth:1200,margin:"0 auto",padding:"0 clamp(16px,4vw,32px)",display:"flex",alignItems:"center",height:60,gap:16}}>
             {/* Wordmark — left */}
@@ -2916,9 +2915,10 @@ export default function App() {
             </div>
           </div>
         </nav>
+        </div>{/* end banner+nav wrapper */}
 
-        {/* PAGES — padded for fixed nav */}
-        <div style={{paddingTop:94}}>
+        {/* PAGES — padded for fixed banner+nav */}
+        <div style={{paddingTop:91}}>
           {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds}/>}
           {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds}/>}
           {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
@@ -3081,11 +3081,10 @@ export default function App() {
       {/* Mobile bottom nav */}
       <div className="mob-nav" style={{position:"fixed",bottom:0,left:0,right:0,zIndex:999,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"1px solid rgba(195,200,188,0.25)",padding:"8px 16px calc(8px + env(safe-area-inset-bottom))"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          {[{id:"explore",icon:"🧭",l:"Explore"},{id:"credits",icon:"◈",l:"Pass"},{id:"biz-portal",icon:"🏢",l:"Business"},{id:"profile",icon:"👤",l:"Profile"}].map(({id,icon,l})=>(
+          {[{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"biz-portal",l:"Business"},{id:"profile",l:"Profile"}].map(({id,l})=>(
             <button key={id} onClick={()=>setView(id)}
-              style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"transparent",border:"none",cursor:"pointer",padding:"4px 12px",fontFamily:"'Manrope',system-ui,sans-serif"}}>
-              <span style={{fontSize:20}}>{icon}</span>
-              <span style={{fontSize:10,fontWeight:view===id?700:500,color:view===id?"#213C18":"#74796E"}}>{l}</span>
+              style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"transparent",border:"none",cursor:"pointer",padding:"4px 12px",fontFamily:"'Manrope',system-ui,sans-serif",borderBottom:view===id?"2px solid #213C18":"2px solid transparent"}}>
+              <span style={{fontSize:13,fontWeight:view===id?700:500,color:view===id?"#213C18":"#74796E"}}>{l}</span>
             </button>
           ))}
         </div>
