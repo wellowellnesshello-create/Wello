@@ -746,11 +746,11 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
             <span style={{color:"#74796E",fontSize:13,marginRight:6,flexShrink:0}}>✦</span>
             <input value={aiQ} onChange={e=>setAiQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runAI()}
               style={{flex:1,border:"none",outline:"none",fontFamily:F2,fontSize:13,background:"transparent",color:"#1B1C19",fontWeight:500,minWidth:0}}
-              placeholder="Find a yoga class, spa, gym or adventure..."/>
+              placeholder="Find a class, spa, gym or adventure..."/>
             {aiResults&&<button onClick={()=>{setAiResults(null);setAiQ("");setAiNote("");}}
               style={{background:"transparent",border:"none",color:"#74796E",cursor:"pointer",fontSize:13,padding:"0 6px",flexShrink:0}}>✕</button>}
             <button onClick={runAI} disabled={aiLoading||!aiQ.trim()}
-              style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"10px 20px",fontFamily:F2,fontSize:13,fontWeight:700,cursor:aiLoading||!aiQ.trim()?"not-allowed":"pointer",opacity:aiLoading||!aiQ.trim()?0.5:1,flexShrink:0}}>
+              style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"10px clamp(12px,3vw,20px)",fontFamily:F2,fontSize:13,fontWeight:700,cursor:aiLoading||!aiQ.trim()?"not-allowed":"pointer",opacity:aiLoading||!aiQ.trim()?0.5:1,flexShrink:0}}>
               {aiLoading?"…":"Search"}
             </button>
           </div>
@@ -838,11 +838,11 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
                 <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:10,color:"rgba(255,255,255,0.2)",letterSpacing:"1px"}}>April 2026</span>
               </div>
 
-              {/* Two-column: collage left, identity right */}
-              <div style={{display:"grid",gridTemplateColumns:"clamp(280px,55%,640px) 1fr",gap:"clamp(20px,4vw,56px)",alignItems:"center"}}>
+              {/* Two-column: collage left, identity right — stacks on mobile */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,320px),1fr))",gap:"clamp(24px,4vw,56px)",alignItems:"center"}}>
 
                 {/* ── 3-photo collage ── */}
-                <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr",gridTemplateRows:"1fr 1fr",gap:8,height:"clamp(280px,40vw,460px)"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1.4fr 1fr",gridTemplateRows:"1fr 1fr",gap:8,height:"clamp(220px,50vw,460px)"}}>
                   {/* Large portrait — spans both rows */}
                   <div style={{gridRow:"1 / 3",borderRadius:12,overflow:"hidden",background:"#2A2B27"}}>
                     <img src={photos[0]} alt={partner.name}
@@ -857,8 +857,8 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
                       onMouseEnter={e=>e.target.style.transform="scale(1.05)"}
                       onMouseLeave={e=>e.target.style.transform="scale(1)"}/>
                   </div>
-                  {/* Bottom-right smallest — slight overlap feel via negative margin */}
-                  <div style={{borderRadius:12,overflow:"hidden",background:"#2A2B27",marginTop:-4}}>
+                  {/* Bottom-right */}
+                  <div style={{borderRadius:12,overflow:"hidden",background:"#2A2B27"}}>
                     <img src={photos[2]} alt=""
                       style={{width:"100%",height:"100%",objectFit:"cover",filter:"saturate(0.8) contrast(1.08)",transition:"transform .8s ease"}}
                       onMouseEnter={e=>e.target.style.transform="scale(1.06)"}
@@ -868,36 +868,23 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
 
                 {/* ── Identity panel ── */}
                 <div style={{display:"flex",flexDirection:"column",justifyContent:"center",gap:0}}>
-                  {/* Category pill */}
-                  <span style={{display:"inline-block",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:10,fontWeight:700,color:"#A3B18A",letterSpacing:"2px",textTransform:"uppercase",marginBottom:16}}>{partner.cat}</span>
-
-                  {/* Name — big and confident */}
-                  <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:"clamp(28px,4vw,52px)",fontWeight:800,color:"#fff",letterSpacing:"-2px",margin:"0 0 14px",lineHeight:1.0}}>{partner.name}</h2>
-
-                  {/* Location */}
-                  <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 32px",fontWeight:500,letterSpacing:"0.2px"}}>📍 {partner.loc}, Mallorca</p>
-
-                  {/* Thin divider */}
-                  <div style={{width:40,height:1,background:"rgba(255,255,255,0.15)",marginBottom:32}}/>
-
-                  {/* Rating & credits */}
-                  <div style={{display:"flex",gap:24,marginBottom:36}}>
+                  <span style={{display:"inline-block",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:10,fontWeight:700,color:"#A3B18A",letterSpacing:"2px",textTransform:"uppercase",marginBottom:12}}>{partner.cat}</span>
+                  <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:"clamp(24px,4vw,52px)",fontWeight:800,color:"#fff",letterSpacing:"-1.5px",margin:"0 0 10px",lineHeight:1.0}}>{partner.name}</h2>
+                  <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"rgba(255,255,255,0.4)",margin:"0 0 20px",fontWeight:500}}>📍 {partner.loc}, Mallorca</p>
+                  <div style={{width:40,height:1,background:"rgba(255,255,255,0.15)",marginBottom:20}}/>
+                  <div style={{display:"flex",gap:24,marginBottom:28}}>
                     <div>
-                      <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:"clamp(20px,2.5vw,28px)",fontWeight:800,color:"#fff",margin:"0 0 3px",letterSpacing:"-0.5px"}}>◈ {partner.cr}</p>
+                      <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:"clamp(18px,2.5vw,28px)",fontWeight:800,color:"#fff",margin:"0 0 3px",letterSpacing:"-0.5px"}}>◈ {partner.cr}</p>
                       <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:10,color:"rgba(255,255,255,0.3)",margin:0,textTransform:"uppercase",letterSpacing:"1.5px"}}>Per session</p>
                     </div>
                     <div style={{width:1,background:"rgba(255,255,255,0.08)"}}/>
                     <div>
-                      <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:"clamp(20px,2.5vw,28px)",fontWeight:800,color:"#fff",margin:"0 0 3px",letterSpacing:"-0.5px"}}>{partner.rating} ★</p>
+                      <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:"clamp(18px,2.5vw,28px)",fontWeight:800,color:"#fff",margin:"0 0 3px",letterSpacing:"-0.5px"}}>{partner.rating} ★</p>
                       <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:10,color:"rgba(255,255,255,0.3)",margin:0,textTransform:"uppercase",letterSpacing:"1.5px"}}>{partner.reviews} reviews</p>
                     </div>
                   </div>
-
-                  {/* CTA */}
                   <button onClick={()=>onSelect(partner)}
-                    style={{alignSelf:"flex-start",padding:"13px 28px",background:"#fff",color:"#1B1C19",border:"none",borderRadius:999,fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,fontWeight:800,cursor:"pointer",letterSpacing:"-0.2px",transition:"opacity .15s"}}
-                    onMouseEnter={e=>e.target.style.opacity="0.85"}
-                    onMouseLeave={e=>e.target.style.opacity="1"}>
+                    style={{alignSelf:"flex-start",padding:"13px 28px",background:"#fff",color:"#1B1C19",border:"none",borderRadius:999,fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,fontWeight:800,cursor:"pointer",letterSpacing:"-0.2px"}}>
                     Explore partner →
                   </button>
                 </div>
