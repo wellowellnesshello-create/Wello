@@ -906,7 +906,7 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
             {[
 
               {icon:"📍",title:"Mallorca first",body:"Every venue on Wello is handpicked and locally verified. Quality over quantity."},
-              {icon:"🤝",title:"Venues set their price",body:"We strive to be fair in our practice with venues and welcome two-way feedback on how Wello can best serve the island's wellness community."},
+              {icon:"🤝",title:"Built with venues in mind",body:"We strive to be fair in our practice with venues and welcome two-way feedback on how Wello can best serve the island's wellness community."},
               {icon:"📊",title:"Transparent earnings",body:"Venues see exactly what they earn per booking. No surprises, no hidden calculations."},
             ].map(({icon,title,body})=>(
               <div key={title} style={{background:"#fff",borderRadius:16,padding:"clamp(18px,2.5vw,28px)"}}>
