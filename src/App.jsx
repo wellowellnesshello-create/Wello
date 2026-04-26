@@ -900,13 +900,13 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
           <div style={{textAlign:"center",marginBottom:"clamp(24px,3vw,40px)"}}>
             <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:10,fontWeight:700,letterSpacing:"4px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:10}}>Why Wello</span>
             <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:"clamp(22px,3.5vw,38px)",fontWeight:800,color:"#213C18",letterSpacing:"-1.5px",margin:"0 0 10px",lineHeight:1.1}}>Mallorca's wellness community.</h2>
-            <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,color:"#74796E",margin:"0 auto",maxWidth:520,lineHeight:1.7}}>We're not a global platform trying to scale everywhere. We're a local product built specifically for Mallorca — for the studios, the people, and the pace of life here.</p>
+            <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,color:"#74796E",margin:"0 auto",maxWidth:520,lineHeight:1.7}}>We're a local platform built for Mallorca's wellness & fitness community.</p>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,220px),1fr))",gap:16}}>
             {[
 
               {icon:"📍",title:"Mallorca first",body:"Every venue on Wello is handpicked and locally verified. Quality over quantity."},
-              {icon:"🤝",title:"Venues set their price",body:"Studios and gyms list at a price they choose. Fair for venues means better quality for you."},
+              {icon:"🤝",title:"Venues set their price",body:"We strive to be fair in our practice with venues and welcome two-way feedback on how Wello can best serve the island's wellness community."},
               {icon:"📊",title:"Transparent earnings",body:"Venues see exactly what they earn per booking. No surprises, no hidden calculations."},
             ].map(({icon,title,body})=>(
               <div key={title} style={{background:"#fff",borderRadius:16,padding:"clamp(18px,2.5vw,28px)"}}>
@@ -2486,7 +2486,7 @@ function BusinessPortal({ onSetView }) {
         <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:"clamp(28px,3.5vw,44px)",fontWeight:700,color:"#fff",lineHeight:1.1,letterSpacing:"-1px",margin:"0 0 18px"}}>Fill your off-peak slots.<br/>Reach more people.</h1>
         <p style={{fontFamily:F.body,fontSize:13,color:"rgba(255,255,255,.65)",lineHeight:1.75,margin:"0 0 32px",fontWeight:300,maxWidth:380}}>Wello connects your studio, gym or pool to local fitness enthusiasts, expats and tourists who want flexibility while on the island.</p>
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          {[["Access a ready market","Locals, expats and tourists actively searching"],["Fill your off-peak slots","Turn quieter sessions into real revenue"],["Built here, for here","A Mallorca-first platform that gets the island"]].map(([t,d])=>(
+          {[["Grow your customer base","Reach people actively searching for new wellness experiences who haven't discovered you yet"],["Fill your quieter sessions","Turn off-peak slots into bookings and real revenue"],["Built here, for here","A Mallorca-first platform that understands the island"]].map(([t,d])=>(
             <div key={t} style={{display:"flex",gap:10}}>
               <div style={{width:16,height:16,borderRadius:"50%",background:"rgba(255,255,255,.15)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2}}>
                 <span style={{fontSize:8,color:"#fff"}}>✓</span>
