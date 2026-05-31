@@ -2968,20 +2968,26 @@ function BusinessPortal({ onSetView }) {
   const [magicSent, setMagicSent] = useState(false);
 
   useEffect(()=>{
-    supabase.auth.getSession().then(({data:{session}})=>{
-      if(session) loadBizData(session.user.email);
-    });
-    const {data:{subscription}} = supabase.auth.onAuthStateChange((_event, session)=>{
-      if(session) loadBizData(session.user.email);
+    const {data:{subscription}} = supabase.auth.onAuthStateChange((event, session)=>{
+      if((event==="INITIAL_SESSION"||event==="SIGNED_IN") && session) {
+        loadBizData(session.user.email);
+      } else if(event==="SIGNED_OUT") {
+        setScreen("landing"); setBizData(null); setEmail(""); setPw("");
+      }
     });
     return ()=>subscription.unsubscribe();
   },[]);
 
   async function loadBizData(userEmail) {
-    const {data} = await supabase.from("businesses").select("*").eq("email", userEmail).single();
+    setScreen("loading");
+    const {data, error} = await supabase.from("businesses").select("*").eq("email", userEmail).single();
+    if(error && error.code !== "PGRST116") console.error("loadBizData:", error.message);
     if(data) {
       setBizData(data);
-      setScreen(data.status==="approved" ? "dashboard" : data.status==="setting_up" ? "onboarding" : data.status==="submitted" ? "submitted" : "pending");
+      if(data.status==="approved")       setScreen("dashboard");
+      else if(data.status==="setting_up") setScreen("onboarding");
+      else if(data.status==="submitted")  setScreen("submitted");
+      else                                setScreen("pending");
     } else {
       setScreen("pending");
     }
@@ -3020,6 +3026,13 @@ function BusinessPortal({ onSetView }) {
   }
 
   const INP3={width:"100%",padding:"10px 12px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:12,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",marginBottom:12,transition:"border-color .18s"};
+
+  // ── Loading ───────────────────────────────────────────────────
+  if (screen==="loading") return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"60vh"}}>
+      <span style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300}}>Loading…</span>
+    </div>
+  );
 
   // ── Landing ───────────────────────────────────────────────────
   if (screen==="landing") return (
