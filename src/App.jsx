@@ -2637,6 +2637,325 @@ function BusinessPortalDashboard({ onExit }) {
   );
 }
 
+function cropToSquare(file) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const min = Math.min(img.width, img.height);
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 800;
+      canvas.getContext('2d').drawImage(img, (img.width-min)/2, (img.height-min)/2, min, min, 0, 0, 800, 800);
+      URL.revokeObjectURL(img.src);
+      canvas.toBlob(resolve, 'image/jpeg', 0.85);
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
+  const TOTAL = 6;
+  const [step, setStep] = useState(bizData.onboarding_step > 0 ? Math.min(bizData.onboarding_step, TOTAL) : 1);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [desc, setDesc] = useState(bizData.description || "");
+  const [address, setAddress] = useState(bizData.address || "");
+  const [website, setWebsite] = useState(bizData.website || "");
+  const [instagram, setInstagram] = useState(bizData.instagram || "");
+  const [img, setImg] = useState(bizData.img || null);
+  const [gallery, setGallery] = useState(bizData.gallery || []);
+  const [availType, setAvailType] = useState(bizData.acuity_key ? "acuity" : "manual");
+  const [acuityKey, setAcuityKey] = useState(bizData.acuity_key || "");
+  const [slots, setSlots] = useState(bizData.slots || []);
+  const [cr, setCr] = useState(bizData.cr ? String(bizData.cr) : "");
+  const [newSlot, setNewSlot] = useState({ name:"", days:[], time:"09:00", dur:"60 min", spots:10 });
+
+  const firstName = bizData.name.split(' ')[0];
+  const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const DURS = ["30 min","45 min","60 min","75 min","90 min","2 hours","Open"];
+  const catAvg = {Yoga:20,Pilates:20,Surfing:40,"Paddle Boarding":30,Kayaking:30,Cycling:20,"Hotel Gym":25,"Pool Access":25,"Fitness Class":15,HIIT:15,Tennis:25,Padel:25,Pickleball:20,"Massage & Spa":60,Meditation:15,"Sound Healing":20,Breathwork:15,Dance:15,"Martial Arts":20,"Outdoor adventure":30}[bizData.category] ?? 20;
+  const INP = {width:"100%",padding:"10px 12px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:12,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",boxSizing:"border-box",transition:"border-color .18s"};
+  const FL = {display:"block",fontSize:9,letterSpacing:"1.5px",textTransform:"uppercase",color:T.stone,fontFamily:F.body,marginBottom:4};
+  const onFi = e => e.target.style.borderColor = T.sage;
+  const onBl = e => e.target.style.borderColor = T.border;
+
+  async function saveProgress(updates) {
+    setSaving(true);
+    await supabase.from('businesses').update(updates).eq('id', bizData.id);
+    setSaving(false);
+  }
+
+  async function uploadPhoto(file, slot) {
+    setUploading(true);
+    try {
+      const blob = await cropToSquare(file);
+      const path = `${bizData.id}/${slot}-${Date.now()}.jpg`;
+      await supabase.storage.from('venue-photos').upload(path, blob, { contentType:'image/jpeg', upsert:true });
+      return supabase.storage.from('venue-photos').getPublicUrl(path).data.publicUrl;
+    } finally { setUploading(false); }
+  }
+
+  async function goNext(updates={}) {
+    await saveProgress({ ...updates, onboarding_step: step + 1 });
+    setStep(s => s + 1);
+    window.scrollTo(0, 0);
+  }
+
+  async function handleSubmit() {
+    setSaving(true);
+    await supabase.from('businesses').update({ status:'submitted', onboarding_step:6 }).eq('id', bizData.id);
+    setSaving(false);
+    onSubmitted();
+  }
+
+  function addSlot() {
+    if (!newSlot.name.trim() || !newSlot.days.length) return;
+    setSlots(s => [...s, { id:`sl${Date.now()}`, ...newSlot }]);
+    setNewSlot({ name:"", days:[], time:"09:00", dur:"60 min", spots:10 });
+  }
+
+  const progressBar = (
+    <div style={{position:"sticky",top:0,zIndex:10,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"14px 28px"}}>
+      <div style={{maxWidth:640,margin:"0 auto",display:"flex",alignItems:"center",gap:12}}>
+        <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,whiteSpace:"nowrap"}}>Step {step} of {TOTAL}</span>
+        <div style={{flex:1,height:3,background:T.border,borderRadius:999}}>
+          <div style={{height:3,background:T.sage,borderRadius:999,width:`${(step/TOTAL)*100}%`,transition:"width .35s"}}/>
+        </div>
+        <button onClick={doSignOut} style={{background:"none",border:"none",color:T.stone,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:300,padding:0}}>Sign out</button>
+      </div>
+    </div>
+  );
+
+  const OBtn = ({onClick,label,disabled,variant="primary"}) => (
+    <button onClick={onClick} disabled={disabled||saving}
+      style={{padding:"11px 24px",background:variant==="primary"&&!disabled&&!saving?T.sage:variant==="secondary"?"transparent":T.border,color:variant==="secondary"?T.stone:"#fff",border:variant==="secondary"?`1px solid ${T.border}`:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:variant==="secondary"?300:600,cursor:disabled||saving?"not-allowed":"pointer",transition:"background .15s"}}
+      onMouseEnter={e=>{if(!disabled&&!saving&&variant==="primary")e.target.style.background=T.sage2;}}
+      onMouseLeave={e=>{if(!disabled&&!saving&&variant==="primary")e.target.style.background=T.sage;}}>
+      {saving&&variant==="primary"?"Saving…":label}
+    </button>
+  );
+
+  const Wrap = ({title,sub,children,footer}) => (
+    <>{progressBar}
+      <div style={{maxWidth:600,margin:"0 auto",padding:"40px 28px 80px"}}>
+        <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>{title}</h1>
+        {sub&&<p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,margin:"0 0 28px",lineHeight:1.6}}>{sub}</p>}
+        {children}
+        {footer&&<div style={{display:"flex",gap:10,marginTop:32}}>{footer}</div>}
+      </div>
+    </>
+  );
+
+  if (step===1) return (
+    <>{progressBar}
+      <div style={{maxWidth:520,margin:"0 auto",padding:"80px 28px",textAlign:"center"}}>
+        <div style={{width:64,height:64,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",fontSize:28}}>👋</div>
+        <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:26,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 12px"}}>Welcome to Wello, {firstName}.</h1>
+        <p style={{fontFamily:F.body,fontSize:14,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 8px"}}>Let's get <strong style={{color:T.ink,fontWeight:600}}>{bizData.name}</strong> set up.</p>
+        <p style={{fontFamily:F.body,fontSize:13,color:T.stone2,fontWeight:300,margin:"0 0 36px",lineHeight:1.6}}>This takes about 5 minutes. We'll save your progress as you go.</p>
+        <button onClick={()=>goNext()} style={{padding:"13px 36px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:13,fontWeight:600,cursor:"pointer"}}
+          onMouseEnter={e=>e.target.style.background=T.sage2} onMouseLeave={e=>e.target.style.background=T.sage}>
+          Let's start →
+        </button>
+      </div>
+    </>
+  );
+
+  if (step===2) return (
+    <Wrap title="Tell us about your venue" sub="This is what guests will see when they find you on Wello."
+      footer={[<OBtn key="b" onClick={()=>setStep(1)} label="← Back" variant="secondary"/>,
+               <OBtn key="n" onClick={()=>goNext({description:desc,address,website,instagram})} label="Save & continue →" disabled={!desc.trim()}/>]}>
+      <label style={FL}>Description</label>
+      <textarea value={desc} onChange={e=>setDesc(e.target.value)} rows={4} placeholder="Describe your venue, what makes it special, and what guests can expect…"
+        style={{...INP,resize:"vertical",lineHeight:1.6,marginBottom:16}} onFocus={onFi} onBlur={onBl}/>
+      <label style={FL}>Address</label>
+      <input value={address} onChange={e=>setAddress(e.target.value)} placeholder="Street address, Mallorca"
+        style={{...INP,marginBottom:16}} onFocus={onFi} onBlur={onBl}/>
+      <label style={FL}>Website (optional)</label>
+      <input value={website} onChange={e=>setWebsite(e.target.value)} placeholder="https://yourstudio.com"
+        style={{...INP,marginBottom:16}} onFocus={onFi} onBlur={onBl}/>
+      <label style={FL}>Instagram (optional)</label>
+      <input value={instagram} onChange={e=>setInstagram(e.target.value)} placeholder="@yourstudio"
+        style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+    </Wrap>
+  );
+
+  if (step===3) {
+    async function handlePrimary(e) {
+      const file=e.target.files?.[0]; if(!file) return;
+      const url=await uploadPhoto(file,'primary'); setImg(url);
+    }
+    async function handleGallery(e) {
+      const files=Array.from(e.target.files||[]).slice(0,4-gallery.length);
+      const urls=await Promise.all(files.map((f,i)=>uploadPhoto(f,`gallery-${gallery.length+i}`)));
+      setGallery(prev=>[...prev,...urls]);
+    }
+    return (
+      <Wrap title="Add photos" sub="Square (1:1) photos work best — we crop automatically. A great primary photo makes a real difference."
+        footer={[<OBtn key="b" onClick={()=>setStep(2)} label="← Back" variant="secondary"/>,
+                 <OBtn key="n" onClick={()=>goNext({img,gallery})} label="Save & continue →" disabled={!img||uploading}/>]}>
+        <label style={FL}>Primary photo</label>
+        <div onClick={()=>!uploading&&document.getElementById('wph-primary').click()}
+          style={{width:"100%",maxWidth:240,aspectRatio:"1",background:img?"transparent":T.bg2,border:img?"none":`2px dashed ${T.border}`,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",cursor:uploading?"wait":"pointer",marginBottom:24,overflow:"hidden",position:"relative"}}>
+          {img ? <>
+            <img src={img} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+            <div onClick={e=>{e.stopPropagation();setImg(null);}} style={{position:"absolute",top:6,right:6,background:"rgba(0,0,0,0.55)",borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+              <span style={{color:"#fff",fontSize:11,lineHeight:1}}>×</span>
+            </div>
+          </> : <div style={{textAlign:"center",padding:16}}>
+            <div style={{fontSize:24,marginBottom:4}}>📷</div>
+            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>{uploading?"Uploading…":"Click to upload"}</div>
+          </div>}
+        </div>
+        <input id="wph-primary" type="file" accept="image/*" style={{display:"none"}} onChange={handlePrimary}/>
+        <label style={FL}>Gallery photos (up to 4)</label>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:8}}>
+          {gallery.map((url,i)=>(
+            <div key={i} style={{aspectRatio:"1",borderRadius:6,overflow:"hidden",position:"relative"}}>
+              <img src={url} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+              <div onClick={()=>setGallery(g=>g.filter((_,gi)=>gi!==i))} style={{position:"absolute",top:3,right:3,background:"rgba(0,0,0,0.55)",borderRadius:"50%",width:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                <span style={{color:"#fff",fontSize:10,lineHeight:1}}>×</span>
+              </div>
+            </div>
+          ))}
+          {gallery.length<4&&(
+            <div onClick={()=>!uploading&&document.getElementById('wph-gallery').click()} style={{aspectRatio:"1",background:T.bg2,border:`2px dashed ${T.border}`,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",cursor:uploading?"wait":"pointer"}}>
+              <span style={{fontSize:20,color:T.stone2}}>+</span>
+            </div>
+          )}
+        </div>
+        <input id="wph-gallery" type="file" accept="image/*" multiple style={{display:"none"}} onChange={handleGallery}/>
+        {uploading&&<p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"8px 0 0"}}>Uploading…</p>}
+      </Wrap>
+    );
+  }
+
+  if (step===4) return (
+    <Wrap title="How do you manage bookings?" sub="Connect your existing system or add your sessions manually — you can always change this later."
+      footer={[<OBtn key="b" onClick={()=>setStep(3)} label="← Back" variant="secondary"/>,
+               <OBtn key="n" onClick={()=>goNext(availType==="acuity"?{acuity_key:acuityKey}:{slots})} label="Save & continue →"/>]}>
+      <div style={{display:"flex",background:T.bg2,borderRadius:3,padding:3,marginBottom:24}}>
+        {[["acuity","Connect Acuity"],["manual","Add manually"]].map(([mode,label])=>(
+          <button key={mode} onClick={()=>setAvailType(mode)} style={{flex:1,padding:"9px 0",background:availType===mode?T.paper:"transparent",color:availType===mode?T.ink:T.stone,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:availType===mode?600:300,cursor:"pointer",transition:"all .15s",boxShadow:availType===mode?"0 1px 3px rgba(0,0,0,0.08)":"none"}}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {availType==="acuity" ? (
+        <>
+          <label style={FL}>Acuity API key</label>
+          <input value={acuityKey} onChange={e=>setAcuityKey(e.target.value)} placeholder="Your Acuity API key"
+            style={{...INP,marginBottom:10}} onFocus={onFi} onBlur={onBl}/>
+          <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.6,margin:0}}>Find your API key in Acuity → Integrations → API. Your schedule will sync automatically.</p>
+        </>
+      ) : (
+        <>
+          <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:8,padding:16,marginBottom:16}}>
+            <div style={{fontFamily:F.body,fontSize:11,fontWeight:600,color:T.ink,marginBottom:12}}>Add a session</div>
+            <label style={FL}>Session name</label>
+            <input value={newSlot.name} onChange={e=>setNewSlot(p=>({...p,name:e.target.value}))} placeholder="e.g. Morning Yoga"
+              style={{...INP,marginBottom:12}} onFocus={onFi} onBlur={onBl}/>
+            <label style={FL}>Days</label>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:12}}>
+              {DAYS.map(d=>(
+                <button key={d} onClick={()=>setNewSlot(p=>({...p,days:p.days.includes(d)?p.days.filter(x=>x!==d):[...p.days,d]}))}
+                  style={{padding:"5px 10px",background:newSlot.days.includes(d)?T.sage:T.bg2,color:newSlot.days.includes(d)?"#fff":T.stone,border:"none",borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:newSlot.days.includes(d)?600:300,cursor:"pointer"}}>
+                  {d}
+                </button>
+              ))}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
+              <div>
+                <label style={FL}>Start time</label>
+                <input type="time" value={newSlot.time} onChange={e=>setNewSlot(p=>({...p,time:e.target.value}))} style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+              </div>
+              <div>
+                <label style={FL}>Duration</label>
+                <select value={newSlot.dur} onChange={e=>setNewSlot(p=>({...p,dur:e.target.value}))} style={{...INP}} onFocus={onFi} onBlur={onBl}>
+                  {DURS.map(d=><option key={d}>{d}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={FL}>Max spots</label>
+                <input type="number" min="1" value={newSlot.spots} onChange={e=>setNewSlot(p=>({...p,spots:parseInt(e.target.value)||1}))} style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+              </div>
+            </div>
+            <button onClick={addSlot} disabled={!newSlot.name.trim()||!newSlot.days.length}
+              style={{padding:"8px 18px",background:newSlot.name.trim()&&newSlot.days.length?T.sage:T.border,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:newSlot.name.trim()&&newSlot.days.length?"pointer":"not-allowed"}}>
+              Add session
+            </button>
+          </div>
+          {slots.length>0&&(
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {slots.map(sl=>(
+                <div key={sl.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:T.paper,border:`1px solid ${T.border}`,borderRadius:6}}>
+                  <div>
+                    <span style={{fontFamily:F.body,fontSize:12,fontWeight:600,color:T.ink}}>{sl.name}</span>
+                    <span style={{fontFamily:F.body,fontSize:10,color:T.stone,marginLeft:8,fontWeight:300}}>{sl.days.join(", ")} · {sl.time} · {sl.dur} · {sl.spots} spots</span>
+                  </div>
+                  <button onClick={()=>setSlots(s=>s.filter(x=>x.id!==sl.id))} style={{background:"none",border:"none",color:T.stone2,cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </Wrap>
+  );
+
+  if (step===5) return (
+    <Wrap title="Set your credit price" sub="Guests pay using Wello credits. 1 credit = €1. You decide what to charge per session."
+      footer={[<OBtn key="b" onClick={()=>setStep(4)} label="← Back" variant="secondary"/>,
+               <OBtn key="n" onClick={()=>goNext({cr:parseInt(cr)||catAvg})} label="Save & continue →" disabled={!cr}/>]}>
+      <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:6,padding:"12px 16px",marginBottom:20}}>
+        <span style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600}}>Platform average for {bizData.category||"your category"}: </span>
+        <span style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:300}}>{catAvg} credits (€{catAvg})</span>
+      </div>
+      <label style={FL}>Credits per session</label>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+        <span style={{fontFamily:F.body,fontSize:22,color:T.ochre}}>◈</span>
+        <input type="number" min="1" value={cr} onChange={e=>setCr(e.target.value)} placeholder={String(catAvg)}
+          style={{...INP,maxWidth:100,fontSize:18,fontWeight:700}} onFocus={onFi} onBlur={onBl}/>
+        {cr&&<span style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300}}>= €{cr} per session</span>}
+      </div>
+      <p style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300,margin:0,lineHeight:1.6}}>You can adjust this at any time from your dashboard once you're live.</p>
+    </Wrap>
+  );
+
+  if (step===6) return (
+    <Wrap title="Review your listing" sub="Here's how you'll appear on Wello. You can edit anything from your dashboard after you go live."
+      footer={[<OBtn key="b" onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
+               <button key="s" onClick={handleSubmit} disabled={saving}
+                 style={{padding:"11px 28px",background:saving?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:saving?"not-allowed":"pointer"}}
+                 onMouseEnter={e=>{if(!saving)e.target.style.background=T.sage2;}}
+                 onMouseLeave={e=>{if(!saving)e.target.style.background=T.sage;}}>
+                 {saving?"Submitting…":"Submit for review →"}
+               </button>]}>
+      <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:24}}>
+        {img&&<img src={img} alt="" style={{width:"100%",aspectRatio:"4/3",objectFit:"cover",display:"block"}}/>}
+        <div style={{padding:"16px 18px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+            <div>
+              <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,marginBottom:2}}>{bizData.name}</div>
+              <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{bizData.category} · {bizData.location}</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{fontFamily:F.body,fontSize:13,color:T.ochre,fontWeight:700}}>◈ {cr||catAvg}</div>
+              <div style={{fontFamily:F.body,fontSize:9,color:T.stone2,fontWeight:300}}>per session</div>
+            </div>
+          </div>
+          {desc&&<p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.65,margin:"8px 0 0"}}>{desc.slice(0,140)}{desc.length>140?"…":""}</p>}
+        </div>
+      </div>
+      <div style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:6,padding:"13px 16px"}}>
+        <div style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:600,marginBottom:3}}>What happens next?</div>
+        <div style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:300,lineHeight:1.6}}>We'll review your listing and get back to you within 2 working days. We may suggest a few small tweaks before you go live.</div>
+      </div>
+    </Wrap>
+  );
+
+  return null;
+}
+
 function BusinessPortal({ onSetView }) {
   const [screen, setScreen]     = useState("landing");
   const [email,  setEmail]      = useState("");
@@ -2662,7 +2981,7 @@ function BusinessPortal({ onSetView }) {
     const {data} = await supabase.from("businesses").select("*").eq("email", userEmail).single();
     if(data) {
       setBizData(data);
-      setScreen(data.status==="approved" ? "dashboard" : "pending");
+      setScreen(data.status==="approved" ? "dashboard" : data.status==="setting_up" ? "onboarding" : data.status==="submitted" ? "submitted" : "pending");
     } else {
       setScreen("pending");
     }
@@ -2824,6 +3143,21 @@ function BusinessPortal({ onSetView }) {
           </button>
         </>
       )}
+    </div>
+  );
+
+  // ── Onboarding wizard ─────────────────────────────────────────
+  if (screen==="onboarding") return (
+    <PartnerOnboarding bizData={bizData} onSubmitted={()=>setScreen("submitted")} doSignOut={doSignOut}/>
+  );
+
+  // ── Submitted ─────────────────────────────────────────────────
+  if (screen==="submitted") return (
+    <div style={{maxWidth:520,margin:"80px auto",padding:"0 28px",textAlign:"center"}}>
+      <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:22}}>✓</div>
+      <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 10px"}}>Listing submitted</h1>
+      <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 24px"}}>We've received your listing for <strong style={{fontWeight:600,color:T.ink}}>{bizData?.name}</strong>. We'll review it and be in touch within 2 working days.</p>
+      <button onClick={doSignOut} style={{padding:"9px 22px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>Sign out</button>
     </div>
   );
 
