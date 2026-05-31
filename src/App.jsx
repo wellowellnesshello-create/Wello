@@ -56,7 +56,7 @@ function SEO({ title, description, path="" }) {
       if(!el){ el=document.createElement("meta"); prop?el.setAttribute("property",name):el.setAttribute("name",name); document.head.appendChild(el); }
       el.setAttribute("content", content);
     };
-    const desc = description || "Wello is your wellness pass. Book studio classes, gym access, hotel pools, spa treatments and outdoor adventures wherever you are.";
+    const desc = description || "Wello is your wellness pass. Book yoga classes, courts, gym access, hotel pools, spa treatments and outdoor adventures wherever you are.";
     const url = "https://wello-seven.vercel.app" + path;
     setMeta("description", desc);
     setMeta("keywords", "wellness pass, studio classes, yoga, pilates, gym day pass, spa, outdoor adventures, hotel pool, island wellness, ClassPass alternative");
@@ -83,11 +83,22 @@ function SEO({ title, description, path="" }) {
   return null;
 }
 
+const AI_ENDPOINT = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`;
 async function ai(sys, usr, tok = 900) {
   try {
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
+    const r = await fetch(AI_ENDPOINT, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: tok, system: sys, messages: [{ role: "user", content: usr }] }),
+      body: JSON.stringify({ system: sys, messages: [{ role: "user", content: usr }], max_tokens: tok }),
+    });
+    const d = await r.json();
+    return d.content?.map(b => b.text || "").join("") || "";
+  } catch { return ""; }
+}
+async function aiChat(sys, messages, tok = 600) {
+  try {
+    const r = await fetch(AI_ENDPOINT, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ system: sys, messages, max_tokens: tok }),
     });
     const d = await r.json();
     return d.content?.map(b => b.text || "").join("") || "";
@@ -162,7 +173,7 @@ const INTEGRATIONS = [
   { id:"ical",       name:"iCal Feed",   desc:"Any calendar, 15-min sync",    auth:"Feed URL",    col:T.ochre },
   { id:"custom",     name:"Custom API",  desc:"Your own booking system",      auth:"Bearer Token",col:T.stone },
 ];
-const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","HIIT","Crossfit","Tennis","Padel","Horse Riding","Meditation","Sound Healing","Massage & Spa","Cold Water Therapy","Breathwork","Nutrition & Wellness","Dance","Martial Arts","Other"];
+const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","HIIT","Crossfit","Tennis","Padel","Pickleball","Horse Riding","Meditation","Sound Healing","Massage & Spa","Cold Water Therapy","Breathwork","Nutrition & Wellness","Dance","Martial Arts","Other"];
 const LOCS = ["All Mallorca","Palma","Sóller","Deià","Pollença","Alcúdia","Santanyí","Valldemossa"];
 const SYNC = {1:"Mindbody",2:"Acuity",3:"Acuity",4:"FareHarbor",5:"Custom API",6:"Mindbody",7:"Gympass",8:"iCal",9:"Custom API"};
 
@@ -184,7 +195,7 @@ const LISTINGS = [
     slots:[{id:"s8",date:"2026-03-22",time:"09:00",dur:"55 min",spots:6,booked:6,name:"Reformer"},{id:"s9",date:"2026-03-22",time:"11:00",dur:"55 min",spots:6,booked:2,name:"Mat Pilates"},{id:"s10",date:"2026-03-23",time:"09:00",dur:"55 min",spots:6,booked:0,name:"Intro Reformer"}] },
   { id:4, name:"Marea Surf & Yoga", cat:"Surfing", loc:"Alcúdia", rating:4.7, reviews:89, cr:40,
     desc:"North coast beach packages — paddle out at dawn, practice yoga as the sun rises over the bay.",
-    img:"https://images.unsplash.com/photo-1515016886654-94c06b8a8c7d?w=600&q=80",
+    img:"https://images.unsplash.com/photo-1659107727370-c5296d8df5de?w=600&q=80",
     tags:["Beach","Surf","Full Experience"],
     slots:[{id:"s12",date:"2026-03-22",time:"08:00",dur:"Half Day",spots:8,booked:5,name:"Surf + Yoga"},{id:"s13",date:"2026-03-23",time:"08:00",dur:"Half Day",spots:8,booked:1,name:"Surf + Yoga"}] },
   { id:5, name:"Mirador Pool Club", cat:"Pool Access", loc:"Palma", rating:4.9, reviews:52, cr:40,
@@ -212,6 +223,29 @@ const LISTINGS = [
     img:"https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=600&q=80",
     tags:["Rooftop Pool","Lap Lanes","Day Pass"],
     slots:[{id:"s28",date:"2026-03-22",time:"08:00",dur:"Full Day",spots:20,booked:8,name:"Pool Day Pass"},{id:"s29",date:"2026-03-23",time:"08:00",dur:"Full Day",spots:20,booked:3,name:"Pool Day Pass"}] },
+];
+
+const COURT_LISTINGS = [
+  { id:101, name:"Sa Marina Padel", cat:"Padel", sport:"Padel", court:true, loc:"Palma", rating:4.8, reviews:62, cr:30, cr90:42,
+    desc:"Two floodlit courts with marina views. Rackets and balls provided, evening sessions available.",
+    img:"https://images.unsplash.com/photo-1761644541691-2a746c638881?w=600&q=80",
+    tags:["Marina Views","Floodlit","Equipment Included"],
+    slots:[{id:"c1",date:"2026-03-22",time:"08:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court A"},{id:"c2",date:"2026-03-22",time:"09:30",dur:"60 or 90 min",spots:1,booked:0,name:"Court B"},{id:"c3",date:"2026-03-22",time:"18:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court A"},{id:"c4",date:"2026-03-23",time:"08:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court A"},{id:"c5",date:"2026-03-23",time:"11:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court B"}] },
+  { id:102, name:"Tramuntana Tennis", cat:"Tennis", sport:"Tennis", court:true, loc:"Palma", rating:4.7, reviews:45, cr:35, cr90:48,
+    desc:"Four clay courts with mountain backdrop. Coaching available on request, rackets for hire at reception.",
+    img:"https://images.unsplash.com/photo-1747647455910-6356d52f45da?w=600&q=80",
+    tags:["Clay Courts","Coaching Available","Racket Hire"],
+    slots:[{id:"c6",date:"2026-03-22",time:"09:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court 1"},{id:"c7",date:"2026-03-22",time:"10:30",dur:"60 or 90 min",spots:1,booked:0,name:"Court 2"},{id:"c8",date:"2026-03-22",time:"14:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court 1"},{id:"c9",date:"2026-03-23",time:"09:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court 2"}] },
+  { id:103, name:"Finca Nova Tennis", cat:"Tennis", sport:"Tennis", court:true, loc:"Palma", rating:5.0, reviews:34, cr:45, cr90:62,
+    desc:"Clay and hard courts set within a private finca estate. No membership required — book by the session.",
+    img:"https://images.unsplash.com/photo-1751275061863-db6d9d0857ce?w=600&q=80",
+    tags:["Clay & Hard","Private Estate","No Membership"],
+    slots:[{id:"c10",date:"2026-03-22",time:"08:30",dur:"60 or 90 min",spots:1,booked:0,name:"Clay Court 1"},{id:"c11",date:"2026-03-22",time:"11:00",dur:"60 or 90 min",spots:1,booked:0,name:"Hard Court 1"},{id:"c12",date:"2026-03-23",time:"09:00",dur:"60 or 90 min",spots:1,booked:0,name:"Clay Court 1"}] },
+  { id:104, name:"Nord Pickleball", cat:"Pickleball", sport:"Pickleball", court:true, loc:"Alcúdia", rating:4.6, reviews:28, cr:20, cr90:28,
+    desc:"Four purpose-built pickleball courts on the north coast. Paddles and balls included, all levels welcome.",
+    img:"https://images.unsplash.com/photo-1747027694225-cbf12dd20826?w=600&q=80",
+    tags:["4 Courts","Paddles Included","All Levels"],
+    slots:[{id:"c13",date:"2026-03-22",time:"10:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court 1"},{id:"c14",date:"2026-03-22",time:"11:30",dur:"60 or 90 min",spots:1,booked:0,name:"Court 2"},{id:"c15",date:"2026-03-22",time:"16:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court 1"},{id:"c16",date:"2026-03-23",time:"10:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court 1"}] },
 ];
 
 const FRIENDS = [
@@ -428,9 +462,182 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) 
   );
 }
 
+// ─── Court Booking Modal ──────────────────────────────────────────────────────
+function CourtBookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) {
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  const [step, setSt] = useState(1);
+  const [myName, setMyName] = useState("");
+  const [myEmail, setMyEmail] = useState("");
+  const [dur60, setDur60] = useState(true);
+  const [players, setPlayers] = useState([]);
+  const [newEmail, setNewEmail] = useState("");
+
+  const PLAYERS_LIST = [
+    { id:1, init:"AK", name:"Anna K.",   email:"anna@example.com" },
+    { id:2, init:"MT", name:"Marcus T.", email:"marcus@example.com" },
+    { id:3, init:"LM", name:"Léa M.",    email:"lea@example.com" },
+  ];
+
+  const cost = dur60 ? biz.cr : (biz.cr90 || Math.round(biz.cr * 1.4));
+  const canAfford = credits >= cost;
+  const canProceed = myName && myEmail && canAfford;
+  const durLabel = dur60 ? "60 min" : "90 min";
+
+  function togglePlayer(f) {
+    if (players.find(p => p.id === f.id)) setPlayers(p => p.filter(pl => pl.id !== f.id));
+    else setPlayers(p => [...p, {type:"friend", ...f}]);
+  }
+  function addNewPlayer() {
+    if (!newEmail.trim()) return;
+    setPlayers(p => [...p, {type:"new", id:Date.now(), name:newEmail, email:newEmail}]);
+    setNewEmail("");
+  }
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(27,28,25,0.75)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={onClose}>
+      <div style={{background:"#fff",borderRadius:"20px 20px 0 0",maxWidth:480,width:"100%",maxHeight:"92vh",overflowY:"auto",boxShadow:"0 -8px 40px rgba(0,0,0,0.22)",animation:"slideUp .3s ease"}} onClick={e=>e.stopPropagation()}>
+        {step===1&&(
+          <>
+            <div style={{background:"#213C18",padding:"20px 24px",position:"relative"}}>
+              <button onClick={onClose} style={{position:"absolute",top:14,right:14,background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",width:28,height:28,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+              <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",letterSpacing:"2px",textTransform:"uppercase",margin:"0 0 6px",fontWeight:600}}>Reserve your court</p>
+              <h2 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.5px"}}>{slot.name} · {biz.name}</h2>
+              <p style={{fontFamily:F2,fontSize:13,color:"rgba(255,255,255,0.65)",margin:"0 0 14px"}}>{biz.sport} · {fd(slot.date)} · {slot.time}</p>
+              <div style={{display:"flex",gap:16}}>
+                {[["From",`◈ ${biz.cr} / 60 min`],["Sport",biz.sport]].map(([k,v])=>(
+                  <div key={k}>
+                    <p style={{fontFamily:F2,fontSize:9,color:"rgba(255,255,255,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>{k}</p>
+                    <p style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{v}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{padding:"clamp(14px,3vw,20px) clamp(16px,3vw,24px)"}}>
+              {/* Balance */}
+              <div style={{background:canAfford?"#F5F3EE":"#FFF5F5",borderRadius:10,padding:"10px 14px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <p style={{fontFamily:F2,fontSize:9,color:"#74796E",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>Your balance</p>
+                  <p style={{fontFamily:F2,fontSize:18,fontWeight:800,color:"#213C18",margin:0,letterSpacing:"-0.5px"}}>◈ {credits}</p>
+                </div>
+                {!canAfford
+                  ? <button onClick={onBuyCredits} style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"8px 16px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>Add Credits</button>
+                  : <p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:0}}>◈ {credits-cost} remaining</p>}
+              </div>
+
+              {/* Duration */}
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Duration</p>
+              <div style={{display:"flex",gap:10,marginBottom:20}}>
+                {[[true,"60 min",biz.cr],[false,"90 min",biz.cr90||Math.round(biz.cr*1.4)]].map(([is60,label,cr])=>(
+                  <button key={label} onClick={()=>setDur60(is60)}
+                    style={{flex:1,padding:"12px",borderRadius:12,border:`2px solid ${dur60===is60?"#213C18":"rgba(195,200,188,0.5)"}`,background:dur60===is60?"rgba(33,60,24,0.06)":"transparent",cursor:"pointer",textAlign:"center",transition:"all .15s"}}>
+                    <p style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>{label}</p>
+                    <p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:0}}>◈ {cr} credits</p>
+                  </button>
+                ))}
+              </div>
+
+              {/* Details */}
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Your details</p>
+              <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:20}}>
+                {[{l:"Name",v:myName,set:setMyName,p:"Your full name"},{l:"Email",v:myEmail,set:setMyEmail,p:"you@example.com",t:"email"}].map(f=>(
+                  <div key={f.l}>
+                    <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:4}}>{f.l}</label>
+                    <input type={f.t||"text"} placeholder={f.p} value={f.v} onChange={e=>f.set(e.target.value)}
+                      style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s"}}
+                      onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  </div>
+                ))}
+              </div>
+
+              {/* Players */}
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 4px"}}>Add players <span style={{fontFamily:F2,fontSize:10,color:"#74796E",fontWeight:400,letterSpacing:0,textTransform:"none"}}>— they play free</span></p>
+              <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:"0 0 10px",lineHeight:1.5}}>You cover the court hire. Friends join the session at no extra cost.</p>
+              <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
+                {PLAYERS_LIST.map(f=>{
+                  const added=players.find(p=>p.id===f.id);
+                  return (
+                    <div key={f.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:added?"rgba(33,60,24,0.06)":"#F5F3EE",borderRadius:10,border:added?"1px solid rgba(33,60,24,0.15)":"1px solid transparent",transition:"all .15s"}}>
+                      <div style={{width:32,height:32,borderRadius:"50%",background:"#213C18",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:11,fontWeight:700,color:"#fff",flexShrink:0}}>{f.init}</div>
+                      <div style={{flex:1}}>
+                        <p style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#1B1C19",margin:0}}>{f.name}</p>
+                        <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>{f.email}</p>
+                      </div>
+                      <button onClick={()=>togglePlayer(f)} style={{width:28,height:28,borderRadius:"50%",border:"none",background:added?"#213C18":"rgba(33,60,24,0.1)",color:added?"#fff":"#213C18",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,transition:"all .15s"}}>
+                        {added?"−":"+"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{display:"flex",gap:8,marginBottom:20}}>
+                <input type="email" placeholder="Friend's email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addNewPlayer()}
+                  style={{flex:1,border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:13,color:"#1B1C19",outline:"none",background:"#FBF9F4",transition:"border-color .15s"}}
+                  onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                <button onClick={addNewPlayer} disabled={!newEmail.trim()}
+                  style={{padding:"10px 16px",background:newEmail.trim()?"#213C18":"#E4E2DD",color:newEmail.trim()?"#fff":"#74796E",border:"none",borderRadius:8,fontFamily:F2,fontSize:13,fontWeight:700,cursor:newEmail.trim()?"pointer":"not-allowed",whiteSpace:"nowrap",transition:"all .15s"}}>
+                  + Add
+                </button>
+              </div>
+
+              {/* Summary */}
+              <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 14px",marginBottom:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontFamily:F2,fontSize:13,color:"#74796E"}}>Court hire · {durLabel}</span>
+                  <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>◈ {cost}</span>
+                </div>
+                {players.length>0&&(
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                    <span style={{fontFamily:F2,fontSize:13,color:"#74796E"}}>{players.length} player{players.length!==1?"s":""} added</span>
+                    <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600}}>◈ 0 (free)</span>
+                  </div>
+                )}
+                <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid rgba(195,200,188,0.3)",paddingTop:6}}>
+                  <span style={{fontFamily:F2,fontSize:13,color:"#74796E"}}>Balance after</span>
+                  <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:canAfford?"#213C18":"#e05c5c"}}>{canAfford?`◈ ${credits-cost}`:"Insufficient credits"}</span>
+                </div>
+              </div>
+
+              <button onClick={()=>{if(canProceed){onConfirm({biz,slot,form:{name:myName,email:myEmail,guests:1,players},cost});setSt(2);}}}
+                disabled={!canProceed}
+                style={{width:"100%",padding:"16px 0",borderRadius:999,background:canProceed?"#213C18":"#E4E2DD",color:canProceed?"#fff":"#74796E",border:"none",fontFamily:F2,fontSize:15,fontWeight:700,cursor:canProceed?"pointer":"not-allowed",transition:"all .15s",boxShadow:canProceed?"0 4px 14px rgba(33,60,24,0.2)":"none"}}>
+                {!canAfford?"Insufficient Credits":`Confirm court · ◈ ${cost} credits`}
+              </button>
+            </div>
+          </>
+        )}
+
+        {step===2&&(
+          <div style={{padding:"48px 32px",textAlign:"center"}}>
+            <div style={{width:64,height:64,background:"#CAECBA",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>✓</div>
+            <h2 style={{fontFamily:F2,fontSize:22,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.5px"}}>Court booked!</h2>
+            <p style={{fontFamily:F2,fontSize:14,color:"#74796E",margin:"0 0 4px"}}>{slot.name} · {biz.name}</p>
+            <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 4px"}}>{fd(slot.date)} · {slot.time} · {durLabel}</p>
+            {players.filter(p=>p.type==="new").length>0&&(
+              <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 16px",margin:"16px 0",textAlign:"left"}}>
+                <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#213C18",margin:"0 0 6px"}}>📧 Invites sent to:</p>
+                {players.filter(p=>p.type==="new").map(p=>(
+                  <p key={p.id} style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:"0 0 2px"}}>{p.email}</p>
+                ))}
+              </div>
+            )}
+            {players.length>0&&<p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:"0 0 16px"}}>Session shared with {players.length} player{players.length!==1?"s":""}.</p>}
+            <div style={{background:"#F5F3EE",borderRadius:10,padding:"10px 16px",marginBottom:24,display:"inline-block"}}>
+              <span style={{fontFamily:F2,fontSize:13,color:"#74796E"}}>◈ {cost} used · balance ◈ {credits-cost}</span>
+            </div>
+            <br/>
+            <button onClick={onClose} style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"12px 32px",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Business Panel ───────────────────────────────────────────────────────────
 function BizPanel({ biz, onClose, onBook }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  const isCourt = !!biz.court;
   const dates = [...new Set(biz.slots.map(s=>s.date))].sort();
   const [selDate, setSel] = useState(dates[0]||null);
   const sys = SYNC[biz.id];
@@ -507,11 +714,11 @@ function BizPanel({ biz, onClose, onBook }) {
           {selDate&&(
             <>
               <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>
-                Classes on {fd(selDate)}
+                {isCourt?"Sessions":"Classes"} on {fd(selDate)}
               </p>
               <div style={{display:"flex",flexDirection:"column",gap:8,paddingBottom:8}}>
                 {slotsForDate.length===0
-                  ? <p style={{fontFamily:F2,fontSize:13,color:"#74796E",padding:"20px 0",textAlign:"center"}}>No classes on this day</p>
+                  ? <p style={{fontFamily:F2,fontSize:13,color:"#74796E",padding:"20px 0",textAlign:"center"}}>No {isCourt?"sessions":"classes"} on this day</p>
                   : slotsForDate.map(sl=>{
                       const avail = sl.spots - sl.booked;
                       const full = avail===0;
@@ -523,30 +730,32 @@ function BizPanel({ biz, onClose, onBook }) {
                           {/* Time */}
                           <div style={{textAlign:"center",minWidth:48,flexShrink:0}}>
                             <p style={{fontFamily:F2,fontSize:16,fontWeight:800,color:"#213C18",margin:0,letterSpacing:"-0.5px"}}>{sl.time}</p>
-                            <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>{sl.dur}</p>
+                            <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>{isCourt?"60 or 90 min":sl.dur}</p>
                           </div>
                           <div style={{width:1,height:32,background:"rgba(195,200,188,0.5)",flexShrink:0}}/>
                           {/* Info */}
                           <div style={{flex:1}}>
                             <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#1B1C19",margin:"0 0 4px"}}>{sl.name}</p>
-                            {/* Capacity bar */}
-                            <div style={{display:"flex",alignItems:"center",gap:8}}>
-                              <div style={{width:80,height:4,background:"#E4E2DD",borderRadius:999}}>
-                                <div style={{width:`${pct}%`,height:"100%",background:pct>80?"#B8925C":"#213C18",borderRadius:999,transition:"width .3s"}}/>
-                              </div>
-                              <span style={{fontFamily:F2,fontSize:11,color:full?"#e05c5c":pct>80?"#B8925C":"#213C18",fontWeight:600}}>
-                                {full?"Full":`${avail} of ${sl.spots} left`}
-                              </span>
-                            </div>
+                            {isCourt
+                              ? <p style={{fontFamily:F2,fontSize:11,color:full?"#e05c5c":"#213C18",fontWeight:600,margin:0}}>{full?"Booked":"Available · you + friends"}</p>
+                              : <div style={{display:"flex",alignItems:"center",gap:8}}>
+                                  <div style={{width:80,height:4,background:"#E4E2DD",borderRadius:999}}>
+                                    <div style={{width:`${pct}%`,height:"100%",background:pct>80?"#B8925C":"#213C18",borderRadius:999,transition:"width .3s"}}/>
+                                  </div>
+                                  <span style={{fontFamily:F2,fontSize:11,color:full?"#e05c5c":pct>80?"#B8925C":"#213C18",fontWeight:600}}>
+                                    {full?"Full":`${avail} of ${sl.spots} left`}
+                                  </span>
+                                </div>
+                            }
                           </div>
                           {/* Book button */}
                           <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-                            <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18"}}>◈ {biz.cr}</span>
+                            <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18"}}>◈ {biz.cr}{isCourt?"+":" "}</span>
                             <button onClick={()=>!full&&onBook(biz,sl)} disabled={full}
                               style={{padding:"10px 20px",background:full?"#E4E2DD":"#213C18",color:full?"#74796E":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:full?"not-allowed":"pointer",transition:"all .15s",whiteSpace:"nowrap"}}
                               onMouseEnter={e=>{if(!full)e.currentTarget.style.opacity="0.85"}}
                               onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                              {full?"Full":"Book →"}
+                              {full?(isCourt?"Booked":"Full"):(isCourt?"Book court →":"Book →")}
                             </button>
                           </div>
                         </div>
@@ -568,8 +777,8 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   return (
     <div onClick={()=>onSelect(biz)} style={{cursor:"pointer"}}>
-      {/* 4:5 image */}
-      <div style={{position:"relative",paddingBottom:"clamp(60%,25vw,125%)",borderRadius:12,overflow:"hidden",marginBottom:16,background:"#E4E2DD"}}>
+      {/* 3:2 landscape image */}
+      <div style={{position:"relative",paddingBottom:"67%",borderRadius:10,overflow:"hidden",marginBottom:8,background:"#E4E2DD"}}>
         <img src={biz.img} alt={biz.name}
           style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",transition:"transform .7s ease"}}
           onMouseEnter={e=>e.target.style.transform="scale(1.05)"}
@@ -592,26 +801,23 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave }) {
       </div>
       {/* Card info */}
       <div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
-          <h3 style={{fontFamily:F2,fontSize:16,fontWeight:700,color:"#1B1C19",letterSpacing:"-0.3px",margin:0,flex:1,paddingRight:8}}>{biz.name}</h3>
-          <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-            <span style={{color:"#6F5B44",fontSize:12}}>★</span>
-            <span style={{fontFamily:F2,fontSize:13,fontWeight:700}}>{biz.rating}</span>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:2}}>
+          <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#1B1C19",letterSpacing:"-0.2px",margin:0,flex:1,paddingRight:6,lineHeight:1.2}}>{biz.name}</h3>
+          <div style={{display:"flex",alignItems:"center",gap:2,flexShrink:0}}>
+            <span style={{color:"#6F5B44",fontSize:11}}>★</span>
+            <span style={{fontFamily:F2,fontSize:12,fontWeight:700}}>{biz.rating}</span>
           </div>
         </div>
-        <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 8px",display:"flex",alignItems:"center",gap:4}}>
-          <span style={{fontSize:11}}>📍</span> {biz.loc}
+        <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:"0 0 5px",display:"flex",alignItems:"center",gap:3}}>
+          <span style={{fontSize:10}}>📍</span> {biz.loc}
         </p>
-        {/* Category tag pills */}
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}>
-          <span style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#766149",background:"rgba(250,222,192,0.5)",padding:"3px 10px",borderRadius:999}}>{biz.cat}</span>
-          {biz.tags?.slice(0,2).map(t=>(
-            <span key={t} style={{fontFamily:F2,fontSize:11,fontWeight:500,color:"#74796E",background:"rgba(228,226,221,0.6)",padding:"3px 10px",borderRadius:999}}>{t}</span>
-          ))}
+        {/* Category tag */}
+        <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:4}}>
+          <span style={{fontFamily:F2,fontSize:10,fontWeight:600,color:"#766149",background:"rgba(250,222,192,0.5)",padding:"2px 8px",borderRadius:999}}>{biz.cat}</span>
         </div>
         {next
-          ? <p style={{fontFamily:F2,fontSize:11,color:"#213C18",fontWeight:600,margin:0}}>{next.spots-next.booked} spots left · {next.time}</p>
-          : <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>Fully booked · check back soon</p>
+          ? <p style={{fontFamily:F2,fontSize:10,color:"#213C18",fontWeight:600,margin:0}}>{next.spots-next.booked} spots left · {next.time}</p>
+          : <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>Fully booked</p>
         }
       </div>
     </div>
@@ -630,9 +836,14 @@ function Chatbot({ listings, credits, bookings, onSelectBiz }) {
     const u=inp.trim(); setInp(""); setSugBiz(null);
     setMsgs(p=>[...p,{r:"user",t:u}]); setLoading(true);
     const ls=listings.map(b=>`ID:${b.id} "${b.name}" ${b.cat} ${b.loc} ◈${b.cr}`).join("\n");
-    const convo=msgs.map(m=>`${m.r==="user"?"User":"AI"}: ${m.t}`).join("\n");
-    const res=await aiJSON(`Warm Mallorca wellness concierge. Under 55 words. Return ONLY JSON: {"message":"response","suggestedId":null}`,`Listings:\n${ls}\nCredits:◈${credits}\nConvo:\n${convo}\nUser:${u}`);
-    if(res){setMsgs(p=>[...p,{r:"ai",t:res.message}]);if(res.suggestedId)setSugBiz(listings.find(b=>b.id===res.suggestedId)||null);}
+    const sys=`You are Wello's wellness concierge for Mallorca. Help members find yoga classes, gyms, spas, pools and outdoor experiences on the island. Be friendly, concise and helpful.\n\nAvailable venues:\n${ls}\n\nMember credits: ◈${credits}\n\nReply with ONLY JSON: {"message":"your response","suggestedId":null_or_venue_id}`;
+    // Build proper multi-turn history (skip the hardcoded greeting at index 0)
+    const history=msgs.slice(1).map(m=>({role:m.r==="user"?"user":"assistant",content:m.t}));
+    const raw=await aiChat(sys,[...history,{role:"user",content:u}]);
+    let parsed=null;
+    try{parsed=JSON.parse(raw.replace(/```json|```/g,"").trim());}catch{}
+    if(parsed?.message){setMsgs(p=>[...p,{r:"ai",t:parsed.message}]);if(parsed.suggestedId)setSugBiz(listings.find(b=>b.id===parsed.suggestedId)||null);}
+    else if(raw) setMsgs(p=>[...p,{r:"ai",t:raw}]);
     else setMsgs(p=>[...p,{r:"ai",t:"Sorry, could you try again?"}]);
     setLoading(false);
   }
@@ -739,7 +950,7 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
           <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#A3B18A",letterSpacing:"4px",textTransform:"uppercase",margin:"0 0 8px"}}>The Wellness Pass</p>
           <h1 style={{fontFamily:F2,fontWeight:800,fontSize:"clamp(40px,11vw,160px)",color:"#213C18",lineHeight:1,letterSpacing:"clamp(-2px,-0.04em,-6px)",margin:"0 0 clamp(6px,2vw,20px)",userSelect:"none"}}>wello</h1>
           <p style={{fontFamily:F2,fontSize:"clamp(12px,2vw,18px)",color:"#74796E",fontWeight:500,lineHeight:1.5,maxWidth:480,margin:"0 auto clamp(10px,2.5vw,32px)",letterSpacing:"-0.2px",padding:"0 8px"}}>
-            Book yoga classes, gym access, hotel pools, spa treatments and outdoor adventures — all with one pass. No membership needed.
+            Book yoga classes, courts, gym access, hotel pools, spa treatments and outdoor adventures — all with one pass. No membership needed.
           </p>
           {/* AI Search bar */}
           <div style={{maxWidth:560,margin:"0 auto 8px",background:"#fff",borderRadius:999,padding:"4px 4px 4px 16px",display:"flex",alignItems:"center",boxShadow:"0 1px 12px rgba(27,28,25,0.06)",border:"1px solid rgba(195,200,188,0.3)"}}>
@@ -775,7 +986,7 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
       {/* ── STATEMENT STRIP ── */}
       <div id="statement-strip" style={{background:"#213C18",padding:"14px 24px"}}>
         <div style={{maxWidth:1200,margin:"0 auto",display:"flex",justifyContent:"center",alignItems:"center",gap:0,flexWrap:"wrap"}}>
-          {["Get your pass","Book any venue","No membership needed"].map((s,i)=>(
+          {["Get your pass","Courts, classes & spas","No membership needed"].map((s,i)=>(
             <div key={s} style={{display:"flex",alignItems:"center",gap:0}}>
               <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,fontWeight:600,color:"#CAECBA",letterSpacing:"-0.2px",padding:"4px 10px",whiteSpace:"nowrap"}}>{s}</span>
               {i<2&&<span style={{color:"rgba(163,177,138,0.4)",fontSize:14}}>·</span>}
@@ -929,7 +1140,7 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,240px),1fr))",gap:16}}>
             {[
               {n:"01",icon:"◈",title:"Buy your pass",desc:"Choose how many credits you want. Load them onto your Wello pass — no subscription, no commitment."},
-              {n:"02",icon:"⊞",title:"Browse & book",desc:"Explore studios, gyms, hotel pools, spas and outdoor adventures. Book any slot in seconds."},
+              {n:"02",icon:"⊞",title:"Browse & book",desc:"Explore studios, courts, gyms, hotel pools, spas and outdoor adventures. Book any slot in seconds."},
               {n:"03",icon:"✓",title:"Walk in ready",desc:"Show your booking confirmation at the venue and enjoy. Credits are deducted automatically."},
             ].map(({n,icon,title,desc})=>(
               <div key={n} style={{background:"#fff",borderRadius:16,padding:"clamp(20px,3vw,32px)",position:"relative",overflow:"hidden"}}>
@@ -956,128 +1167,114 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
   const [activeLoc,setActiveLoc]=useState("All Mallorca");
   const [viewMode,setViewMode]=useState("grid");
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
-  
-  // Venue coordinates for map
-  const COORDS = {
-    "Calma Studio":         [39.7697, 2.7149],
-    "Casa Blava Wellness":       [39.5697, 2.6200],
-    "Serra Pilates":      [39.7079, 2.6151],
-    "Marea Surf & Yoga":     [39.8567, 3.1201],
-    "Mirador Pool Club":   [39.5201, 2.6891],
-    "Olivera Yoga":   [39.7482, 2.6489],
-    "Nord Fitness":    [39.8782, 3.0162],
-    "Caleta Meditation":[39.3574, 3.1287],
-    "Palau Pool Club": [39.5697, 2.6501],
-  };
-  const filtered=listings.filter(b=>{
-    const mC=activeCat==="All"||b.cat===activeCat;
-    const mL=activeLoc==="All Mallorca"||b.loc===activeLoc;
-    const mS=!search||b.name.toLowerCase().includes(search.toLowerCase())||b.loc.toLowerCase().includes(search.toLowerCase())||b.cat.toLowerCase().includes(search.toLowerCase());
-    return mC&&mL&&mS;
-  });
+
+  const THEMES = [
+    { id:"flow",     label:"Flow",            tags:["Yoga","Pilates","Meditation","Breathwork"],       court:false, cats:["Yoga","Pilates","Meditation","Breathwork","Sound Healing","Dance"] },
+    { id:"hiit",     label:"HIIT & Strength", tags:["HIIT","Crossfit","Fitness"],                     court:false, cats:["HIIT","Crossfit","Fitness Class"] },
+    { id:"adventure",label:"Adventure",       tags:["Surfing","Kayaking","Hiking","Cycling"],          court:false, cats:["Surfing","Paddle Boarding","Kayaking","Hiking","Running","Cycling","Horse Riding"] },
+    { id:"courts",   label:"Courts",          tags:["Padel","Tennis","Pickleball"],                   court:true,  cats:[] },
+    { id:"spa",      label:"Spa & Recovery",  tags:["Massage","Cold Therapy","Nutrition"],            court:false, cats:["Massage & Spa","Cold Water Therapy","Nutrition & Wellness"] },
+    { id:"hotel",    label:"Hotel & Pool",    tags:["Hotel Gym","Pool Access"],                       court:false, cats:["Hotel Gym","Pool Access"] },
+  ];
+
+  function matchesFilter(b) {
+    const mL = activeLoc==="All Mallorca"||b.loc===activeLoc;
+    const mS = !search||b.name.toLowerCase().includes(search.toLowerCase())||b.loc.toLowerCase().includes(search.toLowerCase())||b.cat.toLowerCase().includes(search.toLowerCase())||(b.sport||"").toLowerCase().includes(search.toLowerCase());
+    const mC = activeCat==="All"||b.cat===activeCat||b.sport===activeCat;
+    return mL&&mS&&mC;
+  }
+
+  const allFiltered = listings.filter(matchesFilter);
 
   return (
-    <div style={{paddingTop:24,paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
-      {/* Header */}
-      <div style={{maxWidth:1200,margin:"0 auto",padding:"0 clamp(16px,4vw,32px) 0"}}>
-        <div style={{display:"flex",flexWrap:"wrap",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20,gap:10}}>
-          <div>
-            <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#6F5B44",letterSpacing:"4px",textTransform:"uppercase",display:"block",marginBottom:8}}>Curated Sanctuary</span>
-            <h1 style={{fontFamily:F2,fontSize:"clamp(28px,4vw,44px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:0,lineHeight:1}}>Find your flow.</h1>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <span style={{width:8,height:8,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
-              <span style={{fontFamily:F2,fontSize:13,color:"#74796E",fontWeight:500}}>{filtered.length} experiences · Live sync</span>
-            </div>
-            <div style={{display:"flex",background:"#EAE8E3",borderRadius:999,padding:3,gap:2}}>
-              {[["grid","⊞ Grid"],["map","📍 Map"]].map(([mode,label])=>(
-                <button key={mode} onClick={()=>setViewMode(mode)}
-                  style={{padding:"5px 12px",borderRadius:999,border:"none",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",transition:"all .15s",
-                    background:viewMode===mode?"#213C18":"transparent",
-                    color:viewMode===mode?"#fff":"#74796E"}}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Sticky filter bar */}
-      <div style={{position:"sticky",top:91,zIndex:40,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",borderBottom:"1px solid rgba(195,200,188,0.2)",padding:"10px clamp(12px,3vw,32px)"}}>
-        <div style={{maxWidth:1200,margin:"0 auto"}}>
-          {/* Category pills */}
-          <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:8,scrollbarWidth:"none",alignItems:"center"}}>
-            {CATS.slice(0,14).map(c=>(
-              <button key={c} onClick={()=>setActiveCat(c)}
-                style={{padding:"8px 18px",borderRadius:999,border:"none",fontFamily:F2,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",transition:"all .15s",flexShrink:0,
-                  background:activeCat===c?"#213C18":"#EAE8E3",
-                  color:activeCat===c?"#fff":"#43483F"}}>
-                {c}
-              </button>
-            ))}
-            <div style={{marginLeft:"auto",flexShrink:0,display:"flex",alignItems:"center",gap:8,background:"#F0EEE9",borderRadius:999,padding:"8px 16px"}}>
-              <span style={{color:"#74796E",fontSize:14}}>⌕</span>
-              <input value={search} onChange={e=>setSearch(e.target.value)}
-                style={{border:"none",outline:"none",fontFamily:F2,fontSize:13,background:"transparent",color:"#1B1C19",width:"clamp(60px,20vw,140px)"}}
-                placeholder="Search..."/>
-              {search&&<button onClick={()=>setSearch("")} style={{background:"transparent",border:"none",cursor:"pointer",color:"#74796E",fontSize:12}}>✕</button>}
-            </div>
-          </div>
-          {/* Location pills */}
-          <div style={{display:"flex",gap:6,overflowX:"auto",paddingTop:8,scrollbarWidth:"none"}}>
-            {LOCS.map(l=>(
-              <button key={l} onClick={()=>setActiveLoc(l)}
-                style={{padding:"5px 14px",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer",whiteSpace:"nowrap",transition:"all .15s",flexShrink:0,
-                  background:activeLoc===l?"#213C18":"transparent",
-                  color:activeLoc===l?"#fff":"#74796E",
-                  border:activeLoc===l?"1px solid #213C18":"1px solid rgba(195,200,188,0.5)"}}>
-                {l}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Grid */}
-      <div style={{maxWidth:1200,margin:"24px auto 0",padding:"0 clamp(16px,4vw,32px)"}}>
-        {viewMode==="grid"&&filtered.length===0
-          ? <div style={{textAlign:"center",padding:"96px 20px"}}>
-              <div style={{fontSize:36,marginBottom:12,color:"#C3C8BC"}}>∅</div>
-              <h3 style={{fontFamily:F2,fontSize:20,color:"#213C18",fontWeight:700,marginBottom:8}}>No results</h3>
-              <p style={{fontFamily:F2,color:"#74796E",fontSize:14}}>Try adjusting your filters</p>
-            </div>
-          : viewMode==="grid"
-            ? <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,200px),1fr))",gap:"clamp(12px,2vw,24px)"}}>
-                {filtered.map(b=><Card key={b.id} biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave}/>)}
-              </div>
-            : null
-        }
-        {filtered.length>8&&viewMode==="grid"&&(
-          <div style={{textAlign:"center",marginTop:60}}>
-            <button style={{padding:"14px 36px",borderRadius:999,border:"2px solid #213C18",background:"transparent",color:"#213C18",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer",transition:"all .2s"}}
-              onMouseEnter={e=>{e.target.style.background="#213C18";e.target.style.color="#fff"}}
-              onMouseLeave={e=>{e.target.style.background="transparent";e.target.style.color="#213C18"}}>
-              Load more experiences
+    <div style={{paddingTop:0,paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
+      {/* Sticky filter bar — single row */}
+      <div style={{position:"sticky",top:91,zIndex:40,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",borderBottom:"1px solid rgba(195,200,188,0.2)",padding:"8px clamp(12px,3vw,24px)"}}>
+        <div style={{maxWidth:1200,margin:"0 auto",display:"flex",gap:6,overflowX:"auto",scrollbarWidth:"none",alignItems:"center"}}>
+          {CATS.map(c=>(
+            <button key={c} onClick={()=>setActiveCat(c)}
+              style={{padding:"5px 12px",borderRadius:999,border:"none",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",transition:"all .13s",flexShrink:0,
+                background:activeCat===c?"#213C18":"#EAE8E3",
+                color:activeCat===c?"#fff":"#43483F"}}>
+              {c}
             </button>
+          ))}
+          <div style={{width:1,height:18,background:"rgba(195,200,188,0.5)",flexShrink:0,margin:"0 2px"}}/>
+          <select value={activeLoc} onChange={e=>setActiveLoc(e.target.value)}
+            style={{flexShrink:0,border:"1px solid rgba(195,200,188,0.5)",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:500,color:"#74796E",background:"transparent",padding:"4px 10px",cursor:"pointer",outline:"none"}}>
+            {LOCS.map(l=><option key={l}>{l}</option>)}
+          </select>
+          <div style={{marginLeft:"auto",flexShrink:0,display:"flex",alignItems:"center",gap:6,background:"#F0EEE9",borderRadius:999,padding:"5px 12px"}}>
+            <span style={{color:"#74796E",fontSize:12}}>⌕</span>
+            <input value={search} onChange={e=>setSearch(e.target.value)}
+              style={{border:"none",outline:"none",fontFamily:F2,fontSize:11,background:"transparent",color:"#1B1C19",width:"clamp(50px,14vw,110px)"}}
+              placeholder="Search…"/>
+            {search&&<button onClick={()=>setSearch("")} style={{background:"transparent",border:"none",cursor:"pointer",color:"#74796E",fontSize:11}}>✕</button>}
           </div>
-        )}
+          <div style={{display:"flex",background:"#EAE8E3",borderRadius:999,padding:2,gap:1,flexShrink:0}}>
+            {[["grid","⊞"],["map","Map"]].map(([mode,label])=>(
+              <button key={mode} onClick={()=>setViewMode(mode)}
+                style={{padding:"4px 10px",borderRadius:999,border:"none",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",transition:"all .15s",
+                  background:viewMode===mode?"#213C18":"transparent",
+                  color:viewMode===mode?"#fff":"#74796E"}}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
-        {/* MAP VIEW */}
-        {viewMode==="map"&&(
-          <div style={{borderRadius:16,overflow:"hidden",height:520,position:"relative",marginTop:8}}>
+      {/* Themed carousels */}
+      {viewMode==="grid"&&(
+        <div style={{maxWidth:1200,margin:"16px auto 0",padding:"0 clamp(12px,3vw,24px)"}}>
+          {allFiltered.length===0
+            ? <div style={{textAlign:"center",padding:"96px 20px"}}>
+                <div style={{fontSize:36,marginBottom:12,color:"#C3C8BC"}}>∅</div>
+                <h3 style={{fontFamily:F2,fontSize:20,color:"#213C18",fontWeight:700,marginBottom:8}}>No results</h3>
+                <p style={{fontFamily:F2,color:"#74796E",fontSize:14}}>Try a different search or location</p>
+              </div>
+            : THEMES.map(theme=>{
+                const venues = allFiltered.filter(b=>theme.court ? b.court : (!b.court && theme.cats.includes(b.cat)));
+                if (venues.length===0) return null;
+                return (
+                  <div key={theme.id} style={{marginBottom:20}}>
+                    <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6,gap:8}}>
+                      <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+                        <h2 style={{fontFamily:F2,fontSize:"clamp(14px,2vw,17px)",fontWeight:800,color:"#213C18",letterSpacing:"-0.3px",margin:0,lineHeight:1}}>{theme.label}</h2>
+                        <span style={{fontFamily:F2,fontSize:10,color:"#74796E",fontWeight:500}}>
+                          {theme.tags.join(" · ")}
+                        </span>
+                      </div>
+                      <span style={{fontFamily:F2,fontSize:10,color:"#A3B18A",fontWeight:600,flexShrink:0}}>{venues.length}</span>
+                    </div>
+                    <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:6,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
+                      {venues.map(b=>(
+                        <div key={b.id} style={{flexShrink:0,width:"clamp(180px,42vw,220px)"}}>
+                          <Card biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave}/>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })
+          }
+        </div>
+      )}
+
+      {/* Map view */}
+      {viewMode==="map"&&(
+        <div style={{maxWidth:1200,margin:"24px auto 0",padding:"0 clamp(16px,4vw,32px)"}}>
+          <div style={{borderRadius:16,overflow:"hidden",height:520,position:"relative"}}>
             <iframe
               title="Wello venues map"
               width="100%" height="100%" frameBorder="0" scrolling="no"
               style={{borderRadius:16}}
               src={`https://www.openstreetmap.org/export/embed.html?bbox=2.3%2C39.2%2C3.4%2C40.1&layer=mapnik&marker=39.6945%2C2.9217`}
             />
-            {/* Venue pins overlay */}
             <div style={{position:"absolute",top:12,left:12,background:"rgba(255,255,255,0.95)",backdropFilter:"blur(8px)",borderRadius:12,padding:"12px 16px",maxHeight:480,overflowY:"auto",width:220,boxShadow:"0 4px 20px rgba(0,0,0,0.1)"}}>
-              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>{filtered.length} venues</p>
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>{allFiltered.length} venues</p>
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {filtered.map(b=>(
+                {allFiltered.map(b=>(
                   <div key={b.id} onClick={()=>onSelect(b)}
                     style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:8,background:"#F5F3EE",cursor:"pointer",transition:"background .15s"}}
                     onMouseEnter={e=>e.currentTarget.style.background="#EAE8E3"}
@@ -1094,8 +1291,8 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
               </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2356,9 +2553,9 @@ function BusinessPortalDashboard({ onExit }) {
           <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:560}}>
             {/* Contact details */}
             <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
-              <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 14px"}}>Contact & payment</h3>
+              <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 14px"}}>Contact details</h3>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {[{l:"Contact email",v:"hello@solyalmayoga.com"},{l:"Phone",v:"+34 971 234 567"},{l:"IBAN",v:"ES12 3456 7890 1234 5678"}].map(f=>(
+                {[{l:"Contact email",v:"hello@solyalmayoga.com"},{l:"Phone",v:"+34 971 234 567"}].map(f=>(
                   <div key={f.l}>
                     <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:5}}>{f.l}</label>
                     <input defaultValue={f.v} style={{...INP}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
@@ -2366,6 +2563,20 @@ function BusinessPortalDashboard({ onExit }) {
                 ))}
                 <button style={{alignSelf:"flex-start",padding:"10px 20px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",marginTop:4}}>Save changes</button>
               </div>
+            </div>
+
+            {/* Payment details — disabled until operational */}
+            <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
+              <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#74796E",margin:"0 0 14px"}}>Payment details</h3>
+              <div style={{display:"flex",flexDirection:"column",gap:10,pointerEvents:"none"}}>
+                {[{l:"Account name",v:""},{l:"IBAN",v:""},{l:"BIC / SWIFT",v:""}].map(f=>(
+                  <div key={f.l}>
+                    <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#B0B5A8",display:"block",marginBottom:5}}>{f.l}</label>
+                    <input disabled defaultValue={f.v} style={{...INP,background:"#F5F3EE",color:"#B0B5A8",borderColor:"rgba(195,200,188,0.3)",cursor:"not-allowed"}}/>
+                  </div>
+                ))}
+              </div>
+              <p style={{fontFamily:F2,fontSize:11,color:"#A3A89E",margin:"14px 0 0",lineHeight:1.6}}>Payment details will be set up once we're fully operational — we'll be in touch when this is ready.</p>
             </div>
 
             {/* Integrations */}
@@ -2750,7 +2961,7 @@ export default function App() {
       try {
         const cached = localStorage.getItem("wello_listings");
         if (cached) {
-          setListings(JSON.parse(cached));
+          setListings([...JSON.parse(cached), ...COURT_LISTINGS]);
           setListingsLoading(false);
         }
       } catch(e) {}
@@ -2764,13 +2975,15 @@ export default function App() {
 
       if (error) {
         console.error("Error fetching listings:", error);
-        if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
+        if (!localStorage.getItem("wello_listings")) setListings([...LISTINGS, ...COURT_LISTINGS]);
+        else setListings(p => p.some(b=>b.court) ? p : [...p, ...COURT_LISTINGS]);
       } else if (listingRows && listingRows.length > 0) {
         const transformed = transformRows(listingRows);
-        setListings(transformed);
+        setListings([...transformed, ...COURT_LISTINGS]);
         try { localStorage.setItem("wello_listings", JSON.stringify(transformed)); } catch(e) {}
       } else {
-        if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
+        if (!localStorage.getItem("wello_listings")) setListings([...LISTINGS, ...COURT_LISTINGS]);
+        else setListings(p => p.some(b=>b.court) ? p : [...p, ...COURT_LISTINGS]);
       }
       setListingsLoading(false);
     }
@@ -3043,7 +3256,8 @@ export default function App() {
       )}
 
       {selBiz   &&<BizPanel biz={selBiz}        onClose={()=>setSelBiz(null)}  onBook={onBook}/>}
-      {bkData   &&<BookingModal biz={bkData.biz} slot={bkData.slot} onClose={()=>setBkData(null)} onConfirm={onConfirm} credits={credits} onBuyCredits={()=>{setBkData(null);setView("credits");}}/>}
+      {bkData && bkData.biz.court &&<CourtBookingModal biz={bkData.biz} slot={bkData.slot} onClose={()=>setBkData(null)} onConfirm={onConfirm} credits={credits} onBuyCredits={()=>{setBkData(null);setView("credits");}}/>}
+      {bkData &&!bkData.biz.court &&<BookingModal      biz={bkData.biz} slot={bkData.slot} onClose={()=>setBkData(null)} onConfirm={onConfirm} credits={credits} onBuyCredits={()=>{setBkData(null);setView("credits");}}/>}
       <SyncEngine listings={listings} onUpdate={onSyncUpdate}/>
       <Chatbot listings={listings} credits={credits} bookings={bookings} onSelectBiz={onSelect}/>
 
