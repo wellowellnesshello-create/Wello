@@ -1719,6 +1719,11 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
         alert('Something went wrong. Please try again or email hello@wello-wellness.com');
         return;
       }
+      // Create the Supabase Auth account so the partner can sign in via magic link
+      await supabase.auth.signInWithOtp({
+        email: listing.email,
+        options: { shouldCreateUser: true, emailRedirectTo: "https://www.wello-wellness.com" }
+      });
       setRegistered(true);
     }
 
@@ -2645,6 +2650,8 @@ function BusinessPortal({ onSetView }) {
   const [loading, setLoading]   = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [bizData, setBizData]   = useState(null);
+  const [authMode, setAuthMode] = useState("magic");
+  const [magicSent, setMagicSent] = useState(false);
 
   useEffect(()=>{
     supabase.auth.getSession().then(({data:{session}})=>{
@@ -2676,6 +2683,18 @@ function BusinessPortal({ onSetView }) {
   async function doSignOut() {
     await supabase.auth.signOut();
     setScreen("landing"); setBizData(null); setEmail(""); setPw("");
+    setAuthMode("magic"); setMagicSent(false);
+  }
+
+  async function doMagicLink() {
+    setLoginErr(""); setLoading(true);
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: false, emailRedirectTo: "https://www.wello-wellness.com" }
+    });
+    setLoading(false);
+    if (error) setLoginErr("Couldn't send a link — check the email address.");
+    else setMagicSent(true);
   }
 
   async function doPasswordReset() {
@@ -2734,23 +2753,55 @@ function BusinessPortal({ onSetView }) {
   if (screen==="login") return (
     <div style={{maxWidth:420,margin:"80px auto",padding:"0 28px"}}>
       <button onClick={()=>setScreen("landing")} style={{background:"transparent",border:"none",color:T.stone,fontFamily:F.body,fontSize:11,cursor:"pointer",marginBottom:24,padding:0,fontWeight:300}}>← Back</button>
-      <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:24,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>Business sign in</h1>
-      <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,margin:"0 0 28px"}}>Sign in to your Wello business dashboard.</p>
+      <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:24,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 20px"}}>Business sign in</h1>
+      {/* Auth mode toggle */}
+      <div style={{display:"flex",background:T.bg2,borderRadius:3,padding:3,marginBottom:24}}>
+        {[["magic","Magic link"],["password","Email & password"]].map(([mode,label])=>(
+          <button key={mode} onClick={()=>{setAuthMode(mode);setLoginErr("");setMagicSent(false);}}
+            style={{flex:1,padding:"8px 0",background:authMode===mode?T.paper:"transparent",color:authMode===mode?T.ink:T.stone,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:authMode===mode?600:300,cursor:"pointer",transition:"all .15s",boxShadow:authMode===mode?"0 1px 3px rgba(0,0,0,0.08)":"none"}}>
+            {label}
+          </button>
+        ))}
+      </div>
       <FieldLabel>Email address</FieldLabel>
-      <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setLoginErr("");}} placeholder="hello@yourstudio.com"
+      <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setLoginErr("");setMagicSent(false);}} placeholder="hello@yourstudio.com"
         style={{...INP3,borderColor:loginErr?T.clay:T.border}} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=loginErr?T.clay:T.border}/>
-      <FieldLabel>Password</FieldLabel>
-      <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setLoginErr("");}} placeholder="••••••••"
-        style={{...INP3,borderColor:loginErr?T.clay:T.border}} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=loginErr?T.clay:T.border}
-        onKeyDown={e=>e.key==="Enter"&&doLogin()}/>
-      {loginErr&&<div style={{fontFamily:F.body,fontSize:11,color:T.clay,marginTop:-8,marginBottom:12}}>{loginErr}</div>}
-      <button onClick={doLogin} disabled={loading} style={{width:"100%",padding:"11px",background:loading?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:loading?"not-allowed":"pointer",marginBottom:14,transition:"background .15s"}}
-        onMouseEnter={e=>{if(!loading)e.target.style.background=T.sage2;}} onMouseLeave={e=>{if(!loading)e.target.style.background=T.sage;}}>
-        {loading?"Signing in…":"Sign in →"}
-      </button>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div><span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>New to Wello? </span><button onClick={()=>onSetView("business")} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer",padding:0}}>Register interest</button></div>
-        <button onClick={()=>setScreen("reset")} style={{background:"transparent",border:"none",color:T.stone,fontFamily:F.body,fontSize:11,cursor:"pointer",padding:0,fontWeight:300}}>Forgot password?</button>
+      {authMode==="magic" ? (
+        magicSent ? (
+          <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:3,padding:"16px",textAlign:"center",marginBottom:16}}>
+            <div style={{fontSize:20,marginBottom:6}}>✓</div>
+            <div style={{fontFamily:F.body,fontSize:13,color:T.sage,fontWeight:600,marginBottom:4}}>Check your email</div>
+            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.6}}>We've sent a sign-in link to <strong>{email}</strong>. Click it to access your dashboard.</div>
+          </div>
+        ) : (
+          <>
+            <button onClick={doMagicLink} disabled={loading||!email.trim()}
+              style={{width:"100%",padding:"11px",background:email.trim()&&!loading?T.sage:T.border,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:email.trim()&&!loading?"pointer":"not-allowed",marginBottom:10,transition:"background .15s"}}
+              onMouseEnter={e=>{if(email.trim()&&!loading)e.target.style.background=T.sage2;}} onMouseLeave={e=>{if(email.trim()&&!loading)e.target.style.background=T.sage;}}>
+              {loading?"Sending…":"Send sign-in link →"}
+            </button>
+            <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"0 0 4px",lineHeight:1.6}}>We'll email you a link to sign in instantly. No password needed.</p>
+          </>
+        )
+      ) : (
+        <>
+          <FieldLabel>Password</FieldLabel>
+          <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setLoginErr("");}} placeholder="••••••••"
+            style={{...INP3,borderColor:loginErr?T.clay:T.border}} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=loginErr?T.clay:T.border}
+            onKeyDown={e=>e.key==="Enter"&&doLogin()}/>
+          {loginErr&&<div style={{fontFamily:F.body,fontSize:11,color:T.clay,marginTop:-8,marginBottom:12}}>{loginErr}</div>}
+          <button onClick={doLogin} disabled={loading}
+            style={{width:"100%",padding:"11px",background:loading?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:loading?"not-allowed":"pointer",marginBottom:10,transition:"background .15s"}}
+            onMouseEnter={e=>{if(!loading)e.target.style.background=T.sage2;}} onMouseLeave={e=>{if(!loading)e.target.style.background=T.sage;}}>
+            {loading?"Signing in…":"Sign in →"}
+          </button>
+          <button onClick={()=>setScreen("reset")} style={{background:"transparent",border:"none",color:T.stone,fontFamily:F.body,fontSize:11,cursor:"pointer",padding:0,fontWeight:300,display:"block",marginBottom:4}}>Forgot password?</button>
+        </>
+      )}
+      {authMode==="magic"&&loginErr&&<div style={{fontFamily:F.body,fontSize:11,color:T.clay,marginBottom:12}}>{loginErr}</div>}
+      <div style={{borderTop:`1px solid ${T.border}`,paddingTop:14,marginTop:16}}>
+        <span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>New to Wello? </span>
+        <button onClick={()=>onSetView("business")} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer",padding:0}}>Register interest</button>
       </div>
     </div>
   );
@@ -2893,17 +2944,20 @@ export default function App() {
   // Detect Supabase password recovery or invite redirect
   useEffect(()=>{
     const hash = window.location.hash;
-    if(hash.includes("type=recovery") || hash.includes("type=invite") || hash.includes("type=signup")) {
+    if(hash.includes("type=recovery") || hash.includes("type=invite")) {
       setRecovering(true);
       setView("biz-portal");
+    } else if(hash.includes("type=magiclink") || hash.includes("type=signup")) {
+      setView("biz-portal");
     }
-    // Also handle Supabase auth via onAuthStateChange for invite flow
+    // Handle Supabase auth state changes for magic link, invite, and recovery flows
     const {data:{subscription}} = supabase.auth.onAuthStateChange((event, session)=>{
-      if(event==="PASSWORD_RECOVERY" || event==="SIGNED_IN") {
-        if(window.location.hash.includes("type=invite") || window.location.hash.includes("type=recovery")) {
-          setRecovering(true);
-          setView("biz-portal");
-        }
+      const h = window.location.hash;
+      if(event==="PASSWORD_RECOVERY") {
+        setRecovering(true); setView("biz-portal");
+      } else if(event==="SIGNED_IN") {
+        if(h.includes("type=invite")) { setRecovering(true); setView("biz-portal"); }
+        else if(h.includes("type=magiclink") || h.includes("type=signup")) { setView("biz-portal"); }
       }
     });
     return ()=>subscription.unsubscribe();
