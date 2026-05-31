@@ -1719,11 +1719,6 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
         alert('Something went wrong. Please try again or email hello@wello-wellness.com');
         return;
       }
-      // Create the Supabase Auth account so the partner can sign in via magic link
-      await supabase.auth.signInWithOtp({
-        email: listing.email,
-        options: { shouldCreateUser: true, emailRedirectTo: "https://www.wello-wellness.com" }
-      });
       setRegistered(true);
     }
 
@@ -2772,6 +2767,7 @@ function BusinessPortal({ onSetView }) {
             <div style={{fontSize:20,marginBottom:6}}>✓</div>
             <div style={{fontFamily:F.body,fontSize:13,color:T.sage,fontWeight:600,marginBottom:4}}>Check your email</div>
             <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.6}}>We've sent a sign-in link to <strong>{email}</strong>. Click it to access your dashboard.</div>
+            <div style={{marginTop:12,fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>Didn't receive an email? <button onClick={doMagicLink} style={{background:"none",border:"none",padding:0,fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600,cursor:"pointer",textDecoration:"underline"}}>Send me a new link.</button></div>
           </div>
         ) : (
           <>
