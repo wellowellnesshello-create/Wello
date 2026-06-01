@@ -894,55 +894,74 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
         );
       })()}
 
-      {/* ── LOCAL FIRST · TRANSPARENT TRUST STRIP ── */}
-      <section style={{padding:"clamp(32px,5vw,64px) clamp(16px,4vw,32px)",background:"#F5F3EE",borderBottom:"1px solid rgba(195,200,188,0.3)"}}>
-        <div style={{maxWidth:1200,margin:"0 auto"}}>
-          <div style={{textAlign:"center",marginBottom:"clamp(24px,3vw,40px)"}}>
-            <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:10,fontWeight:700,letterSpacing:"4px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:10}}>Why Wello</span>
-            <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:"clamp(22px,3.5vw,38px)",fontWeight:800,color:"#213C18",letterSpacing:"-1.5px",margin:"0 0 10px",lineHeight:1.1}}>Mallorca's wellness community.</h2>
-            <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,color:"#74796E",margin:"0 auto",maxWidth:520,lineHeight:1.7}}>We're a local platform built for Mallorca's wellness & fitness community.</p>
-          </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PAGE: ABOUT
+// ═══════════════════════════════════════════════════════════════
+function AboutPage({ onSetView }) {
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  return (
+    <div style={{paddingTop:24,paddingBottom:"calc(80px + env(safe-area-inset-bottom))"}}>
+      <div style={{maxWidth:1200,margin:"0 auto",padding:"0 clamp(16px,4vw,32px)"}}>
+
+        {/* Hero */}
+        <div style={{textAlign:"center",padding:"clamp(48px,8vw,96px) 0 clamp(32px,5vw,64px)"}}>
+          <span style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"4px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:12}}>About Wello</span>
+          <h1 style={{fontFamily:F2,fontSize:"clamp(32px,5vw,60px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:"0 0 16px",lineHeight:1.05}}>Mallorca's wellness community.</h1>
+          <p style={{fontFamily:F2,fontSize:"clamp(14px,1.8vw,17px)",color:"#74796E",margin:"0 auto",maxWidth:560,lineHeight:1.75}}>We're a local platform built for Mallorca's wellness and fitness community - connecting people with the best studios, gyms, pools and outdoor experiences on the island.</p>
+        </div>
+
+        {/* Why Wello cards */}
+        <section style={{marginBottom:"clamp(48px,7vw,80px)"}}>
+          <h2 style={{fontFamily:F2,fontSize:"clamp(20px,3vw,28px)",fontWeight:700,color:"#213C18",letterSpacing:"-0.8px",margin:"0 0 clamp(20px,3vw,32px)"}}>Why Wello</h2>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,220px),1fr))",gap:16}}>
             {[
-
               {icon:"📍",title:"Mallorca first",body:"Every venue on Wello is handpicked and locally verified. Quality over quantity."},
               {icon:"🤝",title:"Built with venues in mind",body:"We strive to be fair in our practice with venues and welcome two-way feedback on how Wello can best serve the island's wellness community."},
               {icon:"📊",title:"Transparent earnings",body:"Venues see exactly what they earn per booking. No surprises, no hidden calculations."},
+              {icon:"🌿",title:"No commitment",body:"Buy credits when you need them. No monthly fees, no subscriptions, no lock-in."},
             ].map(({icon,title,body})=>(
-              <div key={title} style={{background:"#fff",borderRadius:16,padding:"clamp(18px,2.5vw,28px)"}}>
+              <div key={title} style={{background:"#fff",borderRadius:16,padding:"clamp(18px,2.5vw,28px)",border:"1px solid rgba(195,200,188,0.3)"}}>
                 <div style={{width:40,height:40,background:"rgba(33,60,24,0.07)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,marginBottom:14}}>{icon}</div>
-                <h3 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.3px"}}>{title}</h3>
-                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#74796E",margin:0,lineHeight:1.7}}>{body}</p>
+                <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.3px"}}>{title}</h3>
+                <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:0,lineHeight:1.7}}>{body}</p>
               </div>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* ── HOW IT WORKS ── */}
-      <section style={{padding:"clamp(40px,6vw,80px) clamp(16px,4vw,32px) clamp(80px,10vw,80px)",background:"#F5F3EE"}}>
-        <div style={{maxWidth:1200,margin:"0 auto"}}>
-          <div style={{textAlign:"center",marginBottom:"clamp(28px,4vw,48px)"}}>
-            <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:"clamp(24px,4vw,44px)",fontWeight:700,color:"#213C18",letterSpacing:"-1.5px",margin:"0 0 10px",lineHeight:1.1}}>How Wello works</h2>
-            <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:15,color:"#74796E",margin:0}}>Three steps to your next wellness experience.</p>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,240px),1fr))",gap:16}}>
+        {/* How it works */}
+        <section style={{background:"#F5F3EE",borderRadius:20,padding:"clamp(28px,4vw,48px)",marginBottom:"clamp(48px,7vw,80px)"}}>
+          <h2 style={{fontFamily:F2,fontSize:"clamp(20px,3vw,28px)",fontWeight:700,color:"#213C18",letterSpacing:"-0.8px",margin:"0 0 6px"}}>How Wello works</h2>
+          <p style={{fontFamily:F2,fontSize:14,color:"#74796E",margin:"0 0 clamp(20px,3vw,32px)"}}>Three steps to your next wellness experience.</p>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,220px),1fr))",gap:16}}>
             {[
-              {n:"01",icon:"◈",title:"Buy your pass",desc:"Choose how many credits you want. Load them onto your Wello pass — no subscription, no commitment."},
-              {n:"02",icon:"⊞",title:"Browse & book",desc:"Explore studios, gyms, hotel pools, spas and outdoor adventures. Book any slot in seconds."},
+              {n:"01",icon:"◈",title:"Buy your pass",desc:"Choose how many credits you want. Load them onto your Wello pass - no subscription, no commitment."},
+              {n:"02",icon:"⊞",title:"Browse and book",desc:"Explore studios, gyms, hotel pools, spas and outdoor adventures. Book any slot in seconds."},
               {n:"03",icon:"✓",title:"Walk in ready",desc:"Show your booking confirmation at the venue and enjoy. Credits are deducted automatically."},
             ].map(({n,icon,title,desc})=>(
-              <div key={n} style={{background:"#fff",borderRadius:16,padding:"clamp(20px,3vw,32px)",position:"relative",overflow:"hidden"}}>
-                <div style={{position:"absolute",top:16,right:20,fontFamily:"'Manrope',system-ui,sans-serif",fontSize:40,fontWeight:800,color:"rgba(33,60,24,0.05)",lineHeight:1}}>{n}</div>
+              <div key={n} style={{background:"#fff",borderRadius:16,padding:"clamp(20px,3vw,32px)",position:"relative",overflow:"hidden",border:"1px solid rgba(195,200,188,0.3)"}}>
+                <div style={{position:"absolute",top:16,right:20,fontFamily:F2,fontSize:40,fontWeight:800,color:"rgba(33,60,24,0.05)",lineHeight:1}}>{n}</div>
                 <div style={{width:44,height:44,background:"rgba(33,60,24,0.08)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,marginBottom:16,color:"#213C18"}}>{icon}</div>
-                <h3 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:17,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.3px"}}>{title}</h3>
-                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#74796E",margin:0,lineHeight:1.7}}>{desc}</p>
+                <h3 style={{fontFamily:F2,fontSize:17,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.3px"}}>{title}</h3>
+                <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:0,lineHeight:1.7}}>{desc}</p>
               </div>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
 
+        {/* CTA */}
+        <div style={{textAlign:"center",paddingBottom:"clamp(32px,5vw,64px)"}}>
+          <button onClick={()=>onSetView("explore")}
+            style={{padding:"14px clamp(24px,4vw,44px)",borderRadius:999,background:"#213C18",color:"#fff",border:"none",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>
+            Explore all venues
+          </button>
+        </div>
+
+      </div>
     </div>
   );
 }
@@ -1049,7 +1068,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
               <p style={{fontFamily:F2,color:"#74796E",fontSize:14}}>Try adjusting your filters</p>
             </div>
           : viewMode==="grid"
-            ? <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,200px),1fr))",gap:"clamp(12px,2vw,24px)"}}>
+            ? <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,200px),1fr))",columnGap:"clamp(12px,2vw,24px)",rowGap:12}}>
                 {filtered.map(b=><Card key={b.id} biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave}/>)}
               </div>
             : null
@@ -1351,7 +1370,7 @@ function printInvoice({ invoiceNo, date, businessName, businessAddress, vatNo, i
       <h1>wello</h1>
       <div style="font-size:8px;letter-spacing:4px;text-transform:uppercase;color:#B8925C;margin-top:4px;">the wellness pass</div>
       <div style="margin-top:16px;font-size:11px;color:#7C7260;line-height:1.8;">
-        Wello Marketplace S.L.<br>Palma de Mallorca, Balearic Islands<br>hola@wello.es
+        Wello Marketplace S.L.<br>Palma de Mallorca, Balearic Islands<br>hello@wello-wellness.com
       </div>
     </div>
     <div style="text-align:right;">
@@ -1385,7 +1404,7 @@ function printInvoice({ invoiceNo, date, businessName, businessAddress, vatNo, i
   <div style="font-size:10px;color:#A89E8C;line-height:1.7;margin-bottom:24px;">
     Payouts are processed every Friday. This invoice serves as confirmation of credits redeemed at your venue during the stated period,
     less the agreed Wello platform commission. Credit value is calculated at €1.00 per credit. If you have any queries regarding this
-    invoice please contact hola@wello.es quoting invoice number ${invoiceNo}.
+    invoice please contact hello@wello-wellness.com quoting invoice number ${invoiceNo}.
   </div>
 
   <button onclick="window.print()" style="padding:10px 22px;background:#4E6B43;color:#fff;border:none;border-radius:2px;font-family:'Jost',system-ui,sans-serif;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.4px;">
@@ -1665,7 +1684,7 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
           </div>
         ))}
       </div>
-      <p style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300}}>Questions? Email us at <span style={{color:T.sage}}>hola@wello.es</span></p>
+      <p style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300}}>Questions? Email us at <span style={{color:T.sage}}>hello@wello-wellness.com</span></p>
     </div>
   );
 
@@ -2513,11 +2532,11 @@ function OWrap({ title, sub, children, footer, step, total, doSignOut, onPreview
   return (
     <>
       <OnboardingProgressBar step={step} total={total} doSignOut={doSignOut} onPreview={onPreview}/>
-      <div style={{maxWidth:600,margin:"0 auto",padding:"40px 28px 80px"}}>
-        <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>{title}</h1>
-        {sub&&<p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,margin:"0 0 28px",lineHeight:1.6}}>{sub}</p>}
+      <div style={{maxWidth:720,margin:"0 auto",padding:"clamp(32px,5vw,56px) clamp(20px,4vw,40px) 100px"}}>
+        <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:"clamp(24px,3vw,32px)",fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 8px"}}>{title}</h1>
+        {sub&&<p style={{fontFamily:F.body,fontSize:"clamp(13px,1.5vw,15px)",color:T.stone,fontWeight:300,margin:"0 0 32px",lineHeight:1.7}}>{sub}</p>}
         {children}
-        {footer&&<div style={{display:"flex",gap:10,marginTop:32}}>{footer}</div>}
+        {footer&&<div style={{display:"flex",gap:12,marginTop:40,flexWrap:"wrap"}}>{footer}</div>}
       </div>
     </>
   );
@@ -3195,7 +3214,11 @@ function BusinessPortal({ onSetView }) {
   );
 
   // ── Approved dashboard ────────────────────────────────────────
-  if (screen==="dashboard") return (
+  if (screen==="dashboard") {
+  const monthlyBookings = bizData.monthly_bookings || 0;
+  const monthlyCredits = bizData.monthly_credits || 0;
+  const payoutAmt = monthlyCredits > 0 ? "€"+(monthlyCredits*0.8).toFixed(0) : "€0";
+  return (
     <div style={{maxWidth:880,margin:"0 auto",padding:"32px 28px 58px"}}>
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
         <div>
@@ -3214,7 +3237,7 @@ function BusinessPortal({ onSetView }) {
       </div>
       {/* Quick stats */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(148px,1fr))",gap:10,marginBottom:24}}>
-        {[["Bookings this month",bizData.monthlyBookings],["Credits redeemed","◈ "+bizData.monthlyCredits],["Payout due","€"+(bizData.monthlyCredits*5*0.8).toFixed(0)],["Avg rating","4.8 ★"]].map(([l,v])=>(
+        {[["Bookings this month",monthlyBookings||"0"],["Credits redeemed","◈ "+(monthlyCredits||"0")],["Payout due",payoutAmt],["Avg rating",bizData.rating?""+bizData.rating+" ★":"—"]].map(([l,v])=>(
           <div key={l} style={{background:T.paper,borderRadius:3,border:`1px solid ${T.border}`,padding:"12px 14px"}}>
             <Label>{l}</Label><div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>{v}</div>
           </div>
@@ -3224,45 +3247,18 @@ function BusinessPortal({ onSetView }) {
       <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden",marginBottom:14}}>
         <div style={{padding:"11px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>Payout statements</div>
-          <span style={{fontFamily:F.body,fontSize:9,color:T.stone2,fontWeight:300}}>Click to download as PDF</span>
         </div>
-        <div style={{padding:"0 16px"}}>
-          {[
-            {date:"14 Mar 2026",credits:170,bookings:4,gross:306,commission:null,invNo:"WLO-2026-014"},
-            {date:"07 Mar 2026",credits:140,bookings:3,gross:252,commission:null,invNo:"WLO-2026-013"},
-            {date:"28 Feb 2026",credits:120,bookings:3,gross:216,commission:null,invNo:"WLO-2026-012"},
-          ].map((row,i,arr)=>{
-            const net=row.commission?+(row.gross*(1-row.commission/100)).toFixed(2):+(row.gross*0.75).toFixed(2);
-            return (
-              <div key={row.date} style={{display:"flex",alignItems:"center",gap:14,padding:"11px 0",borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none"}}>
-                <div style={{flex:1}}>
-                  <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{row.date}</div>
-                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>◈ {row.credits} credits · {row.bookings} bookings</div>
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:15,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>€{net}</div>
-                  <span style={{background:T.sageXL,color:T.sage,fontSize:8,padding:"2px 7px",borderRadius:2,fontFamily:F.body,fontWeight:700}}>Paid</span>
-                </div>
-                <button onClick={()=>printInvoice({
-                  invoiceNo:row.invNo, date:row.date,
-                  businessName:bizData.name, businessAddress:`${bizData.loc}, Mallorca`,
-                  vatNo:"—", iban:"On file",
-                  credits:row.credits, bookings:row.bookings,
-                  grossValue:row.gross, commissionRate:row.commission,
-                  commissionAmt:(row.gross*row.commission/100).toFixed(2), netPayout:net,
-                })} style={{padding:"7px 14px",background:T.ink,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,cursor:"pointer",flexShrink:0}}>
-                  ↓ Download
-                </button>
-              </div>
-            );
-          })}
+        <div style={{padding:"20px 16px",textAlign:"center"}}>
+          <div style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300}}>No payouts yet.</div>
+          <div style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300,marginTop:4}}>Your first payout statement will appear here once bookings are processed.</div>
         </div>
       </div>
       <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:3,padding:"11px 14px"}}>
-        <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,lineHeight:1.6}}>Payouts processed every Friday · Your commission rate is agreed with the Wello team · Contact hola@wello.es for any payout queries</div>
+        <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,lineHeight:1.6}}>Payouts processed every Friday · Your commission rate is agreed with the Wello team · Contact hello@wello-wellness.com for any payout queries</div>
       </div>
     </div>
   );
+  }
 
   return null;
 }
@@ -3273,6 +3269,15 @@ function BusinessPortal({ onSetView }) {
 export default function App() {
   const [view,setView]         = useState("home");
   const [bizPreview,setBizPreview] = useState(false);
+  const headerRef = useRef(null);
+  const [headerH, setHeaderH] = useState(91);
+  useEffect(()=>{
+    const el = headerRef.current;
+    if(!el) return;
+    const obs = new ResizeObserver(([entry])=>setHeaderH(entry.contentRect.height));
+    obs.observe(el);
+    return ()=>obs.disconnect();
+  },[]);
   const [cookieConsent,setCookieConsent] = useState(()=>localStorage.getItem("wello_cookie_consent")||null);
   const [showContact,setShowContact] = useState(false);
   const [showPrivacy,setShowPrivacy] = useState(false);
@@ -3485,7 +3490,7 @@ export default function App() {
       )}
 
       {/* ── DEMO BANNER + NAV wrapper ── */}
-        <div style={{position:"fixed",top:0,left:0,right:0,zIndex:1000,display:"flex",flexDirection:"column"}}>
+        <div ref={headerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:1000,display:"flex",flexDirection:"column"}}>
           <div style={{background:"#213C18",padding:"8px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:8,overflow:"hidden"}}>
             <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"}}>Early demo — not yet live.</span>
             <span style={{width:1,height:12,background:"rgba(255,255,255,0.2)",display:"inline-block",flexShrink:0}}/>
@@ -3519,13 +3524,14 @@ export default function App() {
         </div>{/* end banner+nav wrapper */}
 
         {/* PAGES — padded for fixed banner+nav */}
-        <div style={{paddingTop:91}}>
+        <div style={{paddingTop:headerH}}>
           {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds}/>}
           {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds}/>}
           {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
           {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
           {view==="business"   &&<BusinessPage isBiz={true} onSetView={setView} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
           {view==="credits"    &&<CreditsPage credits={credits} onPurchase={onPurchase} listings={listings}/>}
+          {view==="about"      &&<AboutPage onSetView={setView}/>}
         </div>
 
         {/* FOOTER — Stitch linen style */}
@@ -3536,6 +3542,7 @@ export default function App() {
               <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",maxWidth:280,lineHeight:1.6,margin:0}}>© 2026 Wello. Our Sustainability Commitment.</p>
             </div>
             <div style={{display:"flex",gap:32,flexWrap:"wrap"}}>
+              <a onClick={()=>setView("about")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>About</a>
               <a onClick={()=>setShowPrivacy(true)} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Privacy</a>
               <a onClick={()=>setShowTerms(true)} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Terms</a>
               <a onClick={()=>setShowContact(true)} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Contact</a>
