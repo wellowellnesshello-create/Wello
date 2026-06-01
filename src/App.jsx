@@ -2980,14 +2980,15 @@ function BusinessPortal({ onSetView }) {
 
   async function loadBizData(userEmail) {
     setScreen("loading");
-    const {data, error} = await supabase.from("businesses").select("*").eq("email", userEmail).maybeSingle();
+    const {data: rows, error} = await supabase.from("businesses").select("*").eq("email", userEmail).order("created_at", {ascending: false}).limit(1);
     if(error) {
       console.error("loadBizData error:", error.message, "| code:", error.code, "| email:", userEmail);
       setScreen("pending");
       return;
     }
+    const data = rows?.[0] ?? null;
     if(!data) {
-      console.warn("loadBizData: no row found for", userEmail, "— check RLS policies on businesses table");
+      console.warn("loadBizData: no row found for", userEmail);
       setScreen("pending");
       return;
     }
