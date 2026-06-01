@@ -1291,7 +1291,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                     <div style={{position:"absolute",top:2,left:isBiz?22:2,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
                   </div>
                 </div>
-                {isBiz&&<button onClick={()=>onSetView("business")} style={{background:"#FADEC0",color:"#766149",border:"none",borderRadius:999,padding:"8px 18px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>Manage Business →</button>}
+                {isBiz&&<button onClick={()=>onSetView("biz-portal")} style={{background:"#FADEC0",color:"#766149",border:"none",borderRadius:999,padding:"8px 18px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>Manage Business →</button>}
               </div>
             )},{title:"Notifications",content:(
               <div style={{padding:"20px",display:"flex",flexDirection:"column",gap:14}}>
@@ -3279,7 +3279,6 @@ function BusinessPortal({ onSetView }) {
 // ═══════════════════════════════════════════════════════════════
 export default function App() {
   const [view,setView]         = useState("home");
-  const [bizPreview,setBizPreview] = useState(false);
   const headerRef = useRef(null);
   const [headerH, setHeaderH] = useState(91);
   useEffect(()=>{
@@ -3375,42 +3374,6 @@ export default function App() {
       }));
     }
 
-    function transformApprovedBusiness(row) {
-      const DAY_IDX = {Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6,Sun:0};
-      const slots = (row.slots || []).flatMap(sl => {
-        return (sl.days || []).map(day => {
-          const target = DAY_IDX[day] ?? 1;
-          const curr = new Date().getDay();
-          const ahead = (target - curr + 7) % 7 || 7;
-          const d = new Date();
-          d.setDate(d.getDate() + ahead);
-          return {
-            id: String(sl.id || sl.name) + '_' + day,
-            name: sl.name || "",
-            date: d.toISOString().slice(0,10),
-            time: sl.time || "09:00",
-            dur: sl.dur || "60 min",
-            spots: sl.spots || 10,
-            booked: 0,
-            credits: sl.cr || row.cr || 3,
-          };
-        });
-      });
-      return {
-        id: row.id,
-        name: row.name,
-        cat: row.category || "Other",
-        loc: row.location || row.address || "",
-        desc: row.description || "",
-        img: row.img || "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80",
-        rating: 0,
-        reviews: 0,
-        cr: row.cr || 3,
-        tags: [],
-        slots,
-      };
-    }
-
     async function fetchListings() {
       // Show cached data instantly if available
       try {
@@ -3421,33 +3384,21 @@ export default function App() {
         }
       } catch(e) {}
 
-      // Fetch listings table and approved businesses in parallel
-      const [listingsResult, bizResult] = await Promise.all([
-        supabase.from("listings").select("*, slots(*)").eq("status","active").order("id"),
-        supabase.from("businesses").select("*").eq("status","approved").order("created_at"),
-      ]);
-
-      const { data: listingRows, error } = listingsResult;
-      const { data: bizRows } = bizResult;
-
-      const fromListings = (listingRows && listingRows.length > 0) ? transformRows(listingRows) : [];
-      const fromBiz = (bizRows && bizRows.length > 0) ? bizRows.map(transformApprovedBusiness) : [];
-
-      // Merge, deduplicating by name so a venue added to both tables only shows once
-      const seen = new Set();
-      const merged = [...fromListings, ...fromBiz].filter(b => {
-        const key = b.name.toLowerCase().trim();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+      // Approved businesses are synced into the listings table by the
+      // notify-partner-status Edge Function when status changes to 'approved'.
+      const { data: listingRows, error } = await supabase
+        .from("listings")
+        .select("*, slots(*)")
+        .eq("status","active")
+        .order("id");
 
       if (error) {
         console.error("Error fetching listings:", error);
-        if (!localStorage.getItem("wello_listings")) setListings(merged.length ? merged : LISTINGS);
-      } else if (merged.length > 0) {
-        setListings(merged);
-        try { localStorage.setItem("wello_listings", JSON.stringify(merged)); } catch(e) {}
+        if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
+      } else if (listingRows && listingRows.length > 0) {
+        const transformed = transformRows(listingRows);
+        setListings(transformed);
+        try { localStorage.setItem("wello_listings", JSON.stringify(transformed)); } catch(e) {}
       } else {
         if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
       }
@@ -3526,9 +3477,7 @@ export default function App() {
         </div>
       )}
 
-      {bizPreview&&<BusinessPortalDashboard onExit={()=>setBizPreview(false)}/>}
-
-      <div style={{minHeight:"100vh",background:"#FBF9F4",display:bizPreview?"none":"block",overflowX:"hidden"}}>
+      <div style={{minHeight:"100vh",background:"#FBF9F4",overflowX:"hidden"}}>
 
         {/* ── COOKIE CONSENT BANNER ── */}
       {!cookieConsent&&(
@@ -3728,23 +3677,6 @@ export default function App() {
       <SyncEngine listings={listings} onUpdate={onSyncUpdate}/>
       <Chatbot listings={listings} credits={credits} bookings={bookings} onSelectBiz={onSelect}/>
 
-      {/* Prototype preview — goes straight to dashboard demo */}
-      {!bizPreview&&(
-        <div style={{position:"fixed",bottom:148,right:12,zIndex:1050}}>
-          <button onClick={()=>setBizPreview(true)}
-            style={{background:"#1B1C19",color:"#D6B47C",border:"1px solid #B8925C",borderRadius:999,padding:"8px 16px",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,fontWeight:600,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,0,0,0.3)",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
-            👁 Business dashboard
-          </button>
-        </div>
-      )}
-      {bizPreview&&(
-        <div style={{position:"fixed",bottom:148,right:12,zIndex:1050}}>
-          <button onClick={()=>setBizPreview(false)}
-            style={{background:"#1B1C19",color:"#A89E8C",border:"1px solid #43483F",borderRadius:999,padding:"8px 16px",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,0,0,0.3)"}}>
-            ✕ Exit preview
-          </button>
-        </div>
-      )}
 
       {/* Mobile bottom nav */}
       <div className="mob-nav" style={{position:"fixed",bottom:0,left:0,right:0,zIndex:999,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"1px solid rgba(195,200,188,0.25)",padding:"8px 16px calc(8px + env(safe-area-inset-bottom))"}}>
