@@ -2483,7 +2483,7 @@ function cropToSquare(file) {
 
 function OnboardingProgressBar({ step, total, doSignOut, onPreview }) {
   return (
-    <div style={{position:"sticky",top:0,zIndex:10,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"14px 28px"}}>
+    <div style={{position:"sticky",top:0,zIndex:3100,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"14px 28px"}}>
       <div style={{maxWidth:640,margin:"0 auto",display:"flex",alignItems:"center",gap:12}}>
         <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,whiteSpace:"nowrap"}}>Step {step} of {total}</span>
         <div style={{flex:1,height:3,background:T.border,borderRadius:999}}>
@@ -2524,10 +2524,13 @@ function OWrap({ title, sub, children, footer, step, total, doSignOut, onPreview
 }
 
 function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
-  const TOTAL = 6;
+  const TOTAL = 7;
   const [step, setStep] = useState(bizData.onboarding_step > 0 ? Math.min(bizData.onboarding_step, TOTAL) : 1);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [venueName, setVenueName] = useState(bizData.name || "");
+  const [venueCategory, setVenueCategory] = useState(bizData.category || "");
+  const [venueLocation, setVenueLocation] = useState(bizData.location || "");
   const [desc, setDesc] = useState(bizData.description || "");
   const [address, setAddress] = useState(bizData.address || "");
   const [website, setWebsite] = useState(bizData.website || "");
@@ -2579,7 +2582,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
 
   async function handleSubmit() {
     setSaving(true);
-    const payload = { status: 'submitted', onboarding_step: 6 };
+    const payload = { status: 'submitted', onboarding_step: 7 };
     console.log('handleSubmit: attempting update', { id: bizData.id, email: bizData.email });
 
     const { data: d1, error: e1 } = await supabase
@@ -2638,17 +2641,86 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
     })
   );
   const previewBiz = {
-    id:bizData.id, name:bizData.name, cat:bizData.category,
-    loc:address||bizData.location, img:img||'', desc:desc||'Your description will appear here.',
+    id:bizData.id, name:venueName||bizData.name, cat:venueCategory||bizData.category,
+    loc:address||venueLocation||bizData.location, img:img||'', desc:desc||'Your description will appear here.',
     cr:parseInt(cr)||catAvg, rating:0, reviews:0, tags:[], slots:previewSlots,
   };
 
-  if (previewOpen) return <BizPanel biz={previewBiz} onClose={()=>setPreviewOpen(false)} onBook={()=>setPreviewOpen(false)}/>;
+  if (previewOpen) return (
+    <div style={{position:"fixed",inset:0,zIndex:3200,background:"rgba(27,28,25,0.65)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setPreviewOpen(false)}>
+      <div style={{background:T.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"88vh",overflowY:"auto",boxShadow:"0 24px 64px rgba(0,0,0,0.28)"}} onClick={e=>e.stopPropagation()}>
+        {/* Hero */}
+        <div style={{position:"relative",height:200,borderRadius:"16px 16px 0 0",overflow:"hidden",background:T.bg2}}>
+          {img
+            ? <img src={img} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+            : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:8}}>
+                <span style={{fontSize:28}}>📷</span>
+                <span style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300}}>No photo added yet</span>
+              </div>}
+          <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(27,28,25,0.85) 0%,transparent 55%)"}}/>
+          <button onClick={()=>setPreviewOpen(false)} style={{position:"absolute",top:12,right:12,background:"rgba(255,255,255,0.15)",backdropFilter:"blur(8px)",border:"none",color:"#fff",width:30,height:30,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+          <div style={{position:"absolute",bottom:14,left:16,right:16}}>
+            <span style={{fontFamily:F.body,fontSize:10,fontWeight:700,color:"#fff",background:T.sage,padding:"3px 10px",borderRadius:999}}>{venueCategory||bizData.category}</span>
+            <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:"#fff",margin:"6px 0 0",letterSpacing:"-0.3px"}}>{venueName||bizData.name}</h2>
+          </div>
+        </div>
+        {/* Body */}
+        <div style={{padding:"18px 20px"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+            <span style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300}}>📍 {address||venueLocation||bizData.location}</span>
+            <span style={{fontFamily:F.body,fontSize:13,color:T.ochre,fontWeight:700}}>◈ {parseInt(cr)||catAvg} <span style={{fontSize:10,color:T.stone2,fontWeight:300}}>per booking</span></span>
+          </div>
+          {desc&&<p style={{fontFamily:F.body,fontSize:12,color:T.stone,lineHeight:1.7,margin:"0 0 16px",fontWeight:300}}>{desc}</p>}
+          {previewSlots.length>0&&(
+            <>
+              <div style={{fontFamily:F.body,fontSize:9,fontWeight:700,color:T.sage,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:10}}>Available slots</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {[...new Map(previewSlots.map(s=>[s.date,s])).values()].slice(0,3).map(sl=>(
+                  <div key={sl.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",background:T.bg,border:`1px solid ${T.border}`,borderRadius:8}}>
+                    <div style={{textAlign:"center",minWidth:40}}>
+                      <div style={{fontFamily:F.body,fontSize:14,fontWeight:700,color:T.sage}}>{sl.time}</div>
+                      <div style={{fontFamily:F.body,fontSize:9,color:T.stone,fontWeight:300}}>{sl.dur}</div>
+                    </div>
+                    <div style={{width:1,height:28,background:T.border}}/>
+                    <div style={{flex:1}}>
+                      <div style={{fontFamily:F.body,fontSize:12,fontWeight:600,color:T.ink}}>{sl.name}</div>
+                      <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{new Date(sl.date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</div>
+                    </div>
+                    <span style={{fontFamily:F.body,fontSize:11,color:T.ochre,fontWeight:700}}>◈ {sl.cr||parseInt(cr)||catAvg}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+          <div style={{marginTop:16,padding:"10px 14px",background:T.bg2,borderRadius:6}}>
+            <p style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,margin:0,textAlign:"center"}}>This is a preview. Your listing may look slightly different once live.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   if (step===2) return (
-    <OWrap title="Tell us about your venue" sub="This is what guests will see when they find you on Wello." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+    <OWrap title="Your venue details" sub="Confirm and complete your listing details — this is what guests will see on Wello." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
       footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(1)} label="← Back" variant="secondary"/>,
-               <OBtn key="n" saving={saving} onClick={()=>goNext({description:desc,address,website,instagram})} label="Save & continue →" disabled={!desc.trim()}/>]}>
+               <OBtn key="n" saving={saving} onClick={()=>goNext({name:venueName,category:venueCategory,location:venueLocation,description:desc,address,website,instagram})} label="Save & continue →" disabled={!desc.trim()}/>]}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={FL}>Venue name</label>
+          <input value={venueName} onChange={e=>setVenueName(e.target.value)} placeholder="Your venue name"
+            style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+        </div>
+        <div>
+          <label style={FL}>Category</label>
+          <input value={venueCategory} onChange={e=>setVenueCategory(e.target.value)} placeholder="e.g. Yoga"
+            style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+        </div>
+        <div>
+          <label style={FL}>Location</label>
+          <input value={venueLocation} onChange={e=>setVenueLocation(e.target.value)} placeholder="e.g. Palma"
+            style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+        </div>
+      </div>
       <label style={FL}>Description</label>
       <textarea value={desc} onChange={e=>setDesc(e.target.value)} rows={4} placeholder="Describe your venue, what makes it special, and what guests can expect…"
         style={{...INP,resize:"vertical",lineHeight:1.6,marginBottom:16}} onFocus={onFi} onBlur={onBl}/>
@@ -2857,9 +2929,28 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   }
 
   if (step===6) return (
+    <OWrap title="Payout details" sub="Enter your bank details so we can pay you for bookings made through Wello." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+      footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
+               <OBtn key="n" saving={saving} onClick={()=>goNext({})} label="Save & continue →"/>]}>
+      <div style={{pointerEvents:"none",opacity:1}}>
+        {[{l:"Account name",p:"e.g. Calma Studio SL"},{l:"IBAN",p:"e.g. ES12 3456 7890 1234 5678 9012"},{l:"BIC / SWIFT",p:"e.g. CAIXESBBXXX"}].map(({l,p})=>(
+          <div key={l} style={{marginBottom:14}}>
+            <label style={FL}>{l}</label>
+            <input disabled placeholder={p}
+              style={{...INP,background:T.bg2,color:T.stone2,cursor:"not-allowed",borderColor:T.border}}/>
+          </div>
+        ))}
+      </div>
+      <div style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:6,padding:"12px 14px",marginTop:4}}>
+        <p style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:300,lineHeight:1.65,margin:0}}>Payout details will be activated once we're fully operational — we'll be in touch when this is ready.</p>
+      </div>
+    </OWrap>
+  );
+
+  if (step===7) return (
     <>
       <OWrap title="Review your listing" sub="This is how you'll appear on Wello. Tap 'Preview' above to see the full member view." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
-        footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
+        footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(6)} label="← Back" variant="secondary"/>,
                  <button key="s" onClick={handleSubmit} disabled={saving}
                    style={{padding:"11px 28px",background:saving?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:saving?"not-allowed":"pointer"}}
                    onMouseEnter={e=>{if(!saving)e.target.style.background=T.sage2;}}
@@ -2868,9 +2959,9 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
                  </button>]}>
         {/* Summary rows */}
         {[
-          {l:"Venue",v:bizData.name},
-          {l:"Category",v:bizData.category},
-          {l:"Location",v:address||bizData.location||"—"},
+          {l:"Venue",v:venueName||bizData.name},
+          {l:"Category",v:venueCategory||bizData.category},
+          {l:"Location",v:address||venueLocation||bizData.location||"—"},
           {l:"Description",v:desc?desc.slice(0,80)+(desc.length>80?"…":""):"—"},
           {l:"Website",v:website||"—"},
           {l:"Instagram",v:instagram||"—"},
