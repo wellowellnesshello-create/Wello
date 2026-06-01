@@ -56,7 +56,7 @@ function SEO({ title, description, path="" }) {
       if(!el){ el=document.createElement("meta"); prop?el.setAttribute("property",name):el.setAttribute("name",name); document.head.appendChild(el); }
       el.setAttribute("content", content);
     };
-    const desc = description || "Wello is your wellness pass. Book yoga classes, courts, gym access, hotel pools, spa treatments and outdoor adventures wherever you are.";
+    const desc = description || "Wello is your wellness pass. Book studio classes, gym access, hotel pools, spa treatments and outdoor adventures wherever you are.";
     const url = "https://wello-seven.vercel.app" + path;
     setMeta("description", desc);
     setMeta("keywords", "wellness pass, studio classes, yoga, pilates, gym day pass, spa, outdoor adventures, hotel pool, island wellness, ClassPass alternative");
@@ -83,22 +83,11 @@ function SEO({ title, description, path="" }) {
   return null;
 }
 
-const AI_ENDPOINT = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`;
 async function ai(sys, usr, tok = 900) {
   try {
-    const r = await fetch(AI_ENDPOINT, {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ system: sys, messages: [{ role: "user", content: usr }], max_tokens: tok }),
-    });
-    const d = await r.json();
-    return d.content?.map(b => b.text || "").join("") || "";
-  } catch { return ""; }
-}
-async function aiChat(sys, messages, tok = 600) {
-  try {
-    const r = await fetch(AI_ENDPOINT, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ system: sys, messages, max_tokens: tok }),
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: tok, system: sys, messages: [{ role: "user", content: usr }] }),
     });
     const d = await r.json();
     return d.content?.map(b => b.text || "").join("") || "";
@@ -173,7 +162,7 @@ const INTEGRATIONS = [
   { id:"ical",       name:"iCal Feed",   desc:"Any calendar, 15-min sync",    auth:"Feed URL",    col:T.ochre },
   { id:"custom",     name:"Custom API",  desc:"Your own booking system",      auth:"Bearer Token",col:T.stone },
 ];
-const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","HIIT","Crossfit","Tennis","Padel","Pickleball","Horse Riding","Meditation","Sound Healing","Massage & Spa","Cold Water Therapy","Breathwork","Nutrition & Wellness","Dance","Martial Arts","Other"];
+const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","HIIT","Crossfit","Tennis","Padel","Horse Riding","Meditation","Sound Healing","Massage & Spa","Cold Water Therapy","Breathwork","Nutrition & Wellness","Dance","Martial Arts","Other"];
 const LOCS = ["All Mallorca","Palma","Sóller","Deià","Pollença","Alcúdia","Santanyí","Valldemossa"];
 const SYNC = {1:"Mindbody",2:"Acuity",3:"Acuity",4:"FareHarbor",5:"Custom API",6:"Mindbody",7:"Gympass",8:"iCal",9:"Custom API"};
 
@@ -195,7 +184,7 @@ const LISTINGS = [
     slots:[{id:"s8",date:"2026-03-22",time:"09:00",dur:"55 min",spots:6,booked:6,name:"Reformer"},{id:"s9",date:"2026-03-22",time:"11:00",dur:"55 min",spots:6,booked:2,name:"Mat Pilates"},{id:"s10",date:"2026-03-23",time:"09:00",dur:"55 min",spots:6,booked:0,name:"Intro Reformer"}] },
   { id:4, name:"Marea Surf & Yoga", cat:"Surfing", loc:"Alcúdia", rating:4.7, reviews:89, cr:40,
     desc:"North coast beach packages — paddle out at dawn, practice yoga as the sun rises over the bay.",
-    img:"https://images.unsplash.com/photo-1659107727370-c5296d8df5de?w=600&q=80",
+    img:"https://images.unsplash.com/photo-1515016886654-94c06b8a8c7d?w=600&q=80",
     tags:["Beach","Surf","Full Experience"],
     slots:[{id:"s12",date:"2026-03-22",time:"08:00",dur:"Half Day",spots:8,booked:5,name:"Surf + Yoga"},{id:"s13",date:"2026-03-23",time:"08:00",dur:"Half Day",spots:8,booked:1,name:"Surf + Yoga"}] },
   { id:5, name:"Mirador Pool Club", cat:"Pool Access", loc:"Palma", rating:4.9, reviews:52, cr:40,
@@ -223,29 +212,6 @@ const LISTINGS = [
     img:"https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=600&q=80",
     tags:["Rooftop Pool","Lap Lanes","Day Pass"],
     slots:[{id:"s28",date:"2026-03-22",time:"08:00",dur:"Full Day",spots:20,booked:8,name:"Pool Day Pass"},{id:"s29",date:"2026-03-23",time:"08:00",dur:"Full Day",spots:20,booked:3,name:"Pool Day Pass"}] },
-];
-
-const COURT_LISTINGS = [
-  { id:101, name:"Sa Marina Padel", cat:"Padel", sport:"Padel", court:true, loc:"Palma", rating:4.8, reviews:62, cr:30, cr90:42,
-    desc:"Two floodlit courts with marina views. Rackets and balls provided, evening sessions available.",
-    img:"https://images.unsplash.com/photo-1761644541691-2a746c638881?w=600&q=80",
-    tags:["Marina Views","Floodlit","Equipment Included"],
-    slots:[{id:"c1",date:"2026-03-22",time:"08:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court A"},{id:"c2",date:"2026-03-22",time:"09:30",dur:"60 or 90 min",spots:1,booked:0,name:"Court B"},{id:"c3",date:"2026-03-22",time:"18:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court A"},{id:"c4",date:"2026-03-23",time:"08:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court A"},{id:"c5",date:"2026-03-23",time:"11:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court B"}] },
-  { id:102, name:"Tramuntana Tennis", cat:"Tennis", sport:"Tennis", court:true, loc:"Palma", rating:4.7, reviews:45, cr:35, cr90:48,
-    desc:"Four clay courts with mountain backdrop. Coaching available on request, rackets for hire at reception.",
-    img:"https://images.unsplash.com/photo-1747647455910-6356d52f45da?w=600&q=80",
-    tags:["Clay Courts","Coaching Available","Racket Hire"],
-    slots:[{id:"c6",date:"2026-03-22",time:"09:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court 1"},{id:"c7",date:"2026-03-22",time:"10:30",dur:"60 or 90 min",spots:1,booked:0,name:"Court 2"},{id:"c8",date:"2026-03-22",time:"14:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court 1"},{id:"c9",date:"2026-03-23",time:"09:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court 2"}] },
-  { id:103, name:"Finca Nova Tennis", cat:"Tennis", sport:"Tennis", court:true, loc:"Palma", rating:5.0, reviews:34, cr:45, cr90:62,
-    desc:"Clay and hard courts set within a private finca estate. No membership required — book by the session.",
-    img:"https://images.unsplash.com/photo-1751275061863-db6d9d0857ce?w=600&q=80",
-    tags:["Clay & Hard","Private Estate","No Membership"],
-    slots:[{id:"c10",date:"2026-03-22",time:"08:30",dur:"60 or 90 min",spots:1,booked:0,name:"Clay Court 1"},{id:"c11",date:"2026-03-22",time:"11:00",dur:"60 or 90 min",spots:1,booked:0,name:"Hard Court 1"},{id:"c12",date:"2026-03-23",time:"09:00",dur:"60 or 90 min",spots:1,booked:0,name:"Clay Court 1"}] },
-  { id:104, name:"Nord Pickleball", cat:"Pickleball", sport:"Pickleball", court:true, loc:"Alcúdia", rating:4.6, reviews:28, cr:20, cr90:28,
-    desc:"Four purpose-built pickleball courts on the north coast. Paddles and balls included, all levels welcome.",
-    img:"https://images.unsplash.com/photo-1747027694225-cbf12dd20826?w=600&q=80",
-    tags:["4 Courts","Paddles Included","All Levels"],
-    slots:[{id:"c13",date:"2026-03-22",time:"10:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court 1"},{id:"c14",date:"2026-03-22",time:"11:30",dur:"60 or 90 min",spots:1,booked:0,name:"Court 2"},{id:"c15",date:"2026-03-22",time:"16:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court 1"},{id:"c16",date:"2026-03-23",time:"10:00",dur:"60 or 90 min",spots:1,booked:0,name:"Court 1"}] },
 ];
 
 const FRIENDS = [
@@ -462,182 +428,9 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) 
   );
 }
 
-// ─── Court Booking Modal ──────────────────────────────────────────────────────
-function CourtBookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) {
-  const F2 = "'Manrope','Jost',system-ui,sans-serif";
-  const [step, setSt] = useState(1);
-  const [myName, setMyName] = useState("");
-  const [myEmail, setMyEmail] = useState("");
-  const [dur60, setDur60] = useState(true);
-  const [players, setPlayers] = useState([]);
-  const [newEmail, setNewEmail] = useState("");
-
-  const PLAYERS_LIST = [
-    { id:1, init:"AK", name:"Anna K.",   email:"anna@example.com" },
-    { id:2, init:"MT", name:"Marcus T.", email:"marcus@example.com" },
-    { id:3, init:"LM", name:"Léa M.",    email:"lea@example.com" },
-  ];
-
-  const cost = dur60 ? biz.cr : (biz.cr90 || Math.round(biz.cr * 1.4));
-  const canAfford = credits >= cost;
-  const canProceed = myName && myEmail && canAfford;
-  const durLabel = dur60 ? "60 min" : "90 min";
-
-  function togglePlayer(f) {
-    if (players.find(p => p.id === f.id)) setPlayers(p => p.filter(pl => pl.id !== f.id));
-    else setPlayers(p => [...p, {type:"friend", ...f}]);
-  }
-  function addNewPlayer() {
-    if (!newEmail.trim()) return;
-    setPlayers(p => [...p, {type:"new", id:Date.now(), name:newEmail, email:newEmail}]);
-    setNewEmail("");
-  }
-
-  return (
-    <div style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(27,28,25,0.75)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={onClose}>
-      <div style={{background:"#fff",borderRadius:"20px 20px 0 0",maxWidth:480,width:"100%",maxHeight:"92vh",overflowY:"auto",boxShadow:"0 -8px 40px rgba(0,0,0,0.22)",animation:"slideUp .3s ease"}} onClick={e=>e.stopPropagation()}>
-        {step===1&&(
-          <>
-            <div style={{background:"#213C18",padding:"20px 24px",position:"relative"}}>
-              <button onClick={onClose} style={{position:"absolute",top:14,right:14,background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",width:28,height:28,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-              <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",letterSpacing:"2px",textTransform:"uppercase",margin:"0 0 6px",fontWeight:600}}>Reserve your court</p>
-              <h2 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.5px"}}>{slot.name} · {biz.name}</h2>
-              <p style={{fontFamily:F2,fontSize:13,color:"rgba(255,255,255,0.65)",margin:"0 0 14px"}}>{biz.sport} · {fd(slot.date)} · {slot.time}</p>
-              <div style={{display:"flex",gap:16}}>
-                {[["From",`◈ ${biz.cr} / 60 min`],["Sport",biz.sport]].map(([k,v])=>(
-                  <div key={k}>
-                    <p style={{fontFamily:F2,fontSize:9,color:"rgba(255,255,255,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>{k}</p>
-                    <p style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{v}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div style={{padding:"clamp(14px,3vw,20px) clamp(16px,3vw,24px)"}}>
-              {/* Balance */}
-              <div style={{background:canAfford?"#F5F3EE":"#FFF5F5",borderRadius:10,padding:"10px 14px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div>
-                  <p style={{fontFamily:F2,fontSize:9,color:"#74796E",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>Your balance</p>
-                  <p style={{fontFamily:F2,fontSize:18,fontWeight:800,color:"#213C18",margin:0,letterSpacing:"-0.5px"}}>◈ {credits}</p>
-                </div>
-                {!canAfford
-                  ? <button onClick={onBuyCredits} style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"8px 16px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>Add Credits</button>
-                  : <p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:0}}>◈ {credits-cost} remaining</p>}
-              </div>
-
-              {/* Duration */}
-              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Duration</p>
-              <div style={{display:"flex",gap:10,marginBottom:20}}>
-                {[[true,"60 min",biz.cr],[false,"90 min",biz.cr90||Math.round(biz.cr*1.4)]].map(([is60,label,cr])=>(
-                  <button key={label} onClick={()=>setDur60(is60)}
-                    style={{flex:1,padding:"12px",borderRadius:12,border:`2px solid ${dur60===is60?"#213C18":"rgba(195,200,188,0.5)"}`,background:dur60===is60?"rgba(33,60,24,0.06)":"transparent",cursor:"pointer",textAlign:"center",transition:"all .15s"}}>
-                    <p style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>{label}</p>
-                    <p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:0}}>◈ {cr} credits</p>
-                  </button>
-                ))}
-              </div>
-
-              {/* Details */}
-              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Your details</p>
-              <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:20}}>
-                {[{l:"Name",v:myName,set:setMyName,p:"Your full name"},{l:"Email",v:myEmail,set:setMyEmail,p:"you@example.com",t:"email"}].map(f=>(
-                  <div key={f.l}>
-                    <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:4}}>{f.l}</label>
-                    <input type={f.t||"text"} placeholder={f.p} value={f.v} onChange={e=>f.set(e.target.value)}
-                      style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s"}}
-                      onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
-                  </div>
-                ))}
-              </div>
-
-              {/* Players */}
-              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 4px"}}>Add players <span style={{fontFamily:F2,fontSize:10,color:"#74796E",fontWeight:400,letterSpacing:0,textTransform:"none"}}>— they play free</span></p>
-              <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:"0 0 10px",lineHeight:1.5}}>You cover the court hire. Friends join the session at no extra cost.</p>
-              <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
-                {PLAYERS_LIST.map(f=>{
-                  const added=players.find(p=>p.id===f.id);
-                  return (
-                    <div key={f.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:added?"rgba(33,60,24,0.06)":"#F5F3EE",borderRadius:10,border:added?"1px solid rgba(33,60,24,0.15)":"1px solid transparent",transition:"all .15s"}}>
-                      <div style={{width:32,height:32,borderRadius:"50%",background:"#213C18",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:11,fontWeight:700,color:"#fff",flexShrink:0}}>{f.init}</div>
-                      <div style={{flex:1}}>
-                        <p style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#1B1C19",margin:0}}>{f.name}</p>
-                        <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>{f.email}</p>
-                      </div>
-                      <button onClick={()=>togglePlayer(f)} style={{width:28,height:28,borderRadius:"50%",border:"none",background:added?"#213C18":"rgba(33,60,24,0.1)",color:added?"#fff":"#213C18",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,transition:"all .15s"}}>
-                        {added?"−":"+"}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-              <div style={{display:"flex",gap:8,marginBottom:20}}>
-                <input type="email" placeholder="Friend's email" value={newEmail} onChange={e=>setNewEmail(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addNewPlayer()}
-                  style={{flex:1,border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:13,color:"#1B1C19",outline:"none",background:"#FBF9F4",transition:"border-color .15s"}}
-                  onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
-                <button onClick={addNewPlayer} disabled={!newEmail.trim()}
-                  style={{padding:"10px 16px",background:newEmail.trim()?"#213C18":"#E4E2DD",color:newEmail.trim()?"#fff":"#74796E",border:"none",borderRadius:8,fontFamily:F2,fontSize:13,fontWeight:700,cursor:newEmail.trim()?"pointer":"not-allowed",whiteSpace:"nowrap",transition:"all .15s"}}>
-                  + Add
-                </button>
-              </div>
-
-              {/* Summary */}
-              <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 14px",marginBottom:16}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                  <span style={{fontFamily:F2,fontSize:13,color:"#74796E"}}>Court hire · {durLabel}</span>
-                  <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>◈ {cost}</span>
-                </div>
-                {players.length>0&&(
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                    <span style={{fontFamily:F2,fontSize:13,color:"#74796E"}}>{players.length} player{players.length!==1?"s":""} added</span>
-                    <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600}}>◈ 0 (free)</span>
-                  </div>
-                )}
-                <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid rgba(195,200,188,0.3)",paddingTop:6}}>
-                  <span style={{fontFamily:F2,fontSize:13,color:"#74796E"}}>Balance after</span>
-                  <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:canAfford?"#213C18":"#e05c5c"}}>{canAfford?`◈ ${credits-cost}`:"Insufficient credits"}</span>
-                </div>
-              </div>
-
-              <button onClick={()=>{if(canProceed){onConfirm({biz,slot,form:{name:myName,email:myEmail,guests:1,players},cost});setSt(2);}}}
-                disabled={!canProceed}
-                style={{width:"100%",padding:"16px 0",borderRadius:999,background:canProceed?"#213C18":"#E4E2DD",color:canProceed?"#fff":"#74796E",border:"none",fontFamily:F2,fontSize:15,fontWeight:700,cursor:canProceed?"pointer":"not-allowed",transition:"all .15s",boxShadow:canProceed?"0 4px 14px rgba(33,60,24,0.2)":"none"}}>
-                {!canAfford?"Insufficient Credits":`Confirm court · ◈ ${cost} credits`}
-              </button>
-            </div>
-          </>
-        )}
-
-        {step===2&&(
-          <div style={{padding:"48px 32px",textAlign:"center"}}>
-            <div style={{width:64,height:64,background:"#CAECBA",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>✓</div>
-            <h2 style={{fontFamily:F2,fontSize:22,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.5px"}}>Court booked!</h2>
-            <p style={{fontFamily:F2,fontSize:14,color:"#74796E",margin:"0 0 4px"}}>{slot.name} · {biz.name}</p>
-            <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 4px"}}>{fd(slot.date)} · {slot.time} · {durLabel}</p>
-            {players.filter(p=>p.type==="new").length>0&&(
-              <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 16px",margin:"16px 0",textAlign:"left"}}>
-                <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#213C18",margin:"0 0 6px"}}>📧 Invites sent to:</p>
-                {players.filter(p=>p.type==="new").map(p=>(
-                  <p key={p.id} style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:"0 0 2px"}}>{p.email}</p>
-                ))}
-              </div>
-            )}
-            {players.length>0&&<p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:"0 0 16px"}}>Session shared with {players.length} player{players.length!==1?"s":""}.</p>}
-            <div style={{background:"#F5F3EE",borderRadius:10,padding:"10px 16px",marginBottom:24,display:"inline-block"}}>
-              <span style={{fontFamily:F2,fontSize:13,color:"#74796E"}}>◈ {cost} used · balance ◈ {credits-cost}</span>
-            </div>
-            <br/>
-            <button onClick={onClose} style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"12px 32px",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ─── Business Panel ───────────────────────────────────────────────────────────
 function BizPanel({ biz, onClose, onBook }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
-  const isCourt = !!biz.court;
   const dates = [...new Set(biz.slots.map(s=>s.date))].sort();
   const [selDate, setSel] = useState(dates[0]||null);
   const sys = SYNC[biz.id];
@@ -714,11 +507,11 @@ function BizPanel({ biz, onClose, onBook }) {
           {selDate&&(
             <>
               <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>
-                {isCourt?"Sessions":"Classes"} on {fd(selDate)}
+                Classes on {fd(selDate)}
               </p>
               <div style={{display:"flex",flexDirection:"column",gap:8,paddingBottom:8}}>
                 {slotsForDate.length===0
-                  ? <p style={{fontFamily:F2,fontSize:13,color:"#74796E",padding:"20px 0",textAlign:"center"}}>No {isCourt?"sessions":"classes"} on this day</p>
+                  ? <p style={{fontFamily:F2,fontSize:13,color:"#74796E",padding:"20px 0",textAlign:"center"}}>No classes on this day</p>
                   : slotsForDate.map(sl=>{
                       const avail = sl.spots - sl.booked;
                       const full = avail===0;
@@ -730,32 +523,30 @@ function BizPanel({ biz, onClose, onBook }) {
                           {/* Time */}
                           <div style={{textAlign:"center",minWidth:48,flexShrink:0}}>
                             <p style={{fontFamily:F2,fontSize:16,fontWeight:800,color:"#213C18",margin:0,letterSpacing:"-0.5px"}}>{sl.time}</p>
-                            <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>{isCourt?"60 or 90 min":sl.dur}</p>
+                            <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>{sl.dur}</p>
                           </div>
                           <div style={{width:1,height:32,background:"rgba(195,200,188,0.5)",flexShrink:0}}/>
                           {/* Info */}
                           <div style={{flex:1}}>
                             <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#1B1C19",margin:"0 0 4px"}}>{sl.name}</p>
-                            {isCourt
-                              ? <p style={{fontFamily:F2,fontSize:11,color:full?"#e05c5c":"#213C18",fontWeight:600,margin:0}}>{full?"Booked":"Available · you + friends"}</p>
-                              : <div style={{display:"flex",alignItems:"center",gap:8}}>
-                                  <div style={{width:80,height:4,background:"#E4E2DD",borderRadius:999}}>
-                                    <div style={{width:`${pct}%`,height:"100%",background:pct>80?"#B8925C":"#213C18",borderRadius:999,transition:"width .3s"}}/>
-                                  </div>
-                                  <span style={{fontFamily:F2,fontSize:11,color:full?"#e05c5c":pct>80?"#B8925C":"#213C18",fontWeight:600}}>
-                                    {full?"Full":`${avail} of ${sl.spots} left`}
-                                  </span>
-                                </div>
-                            }
+                            {/* Capacity bar */}
+                            <div style={{display:"flex",alignItems:"center",gap:8}}>
+                              <div style={{width:80,height:4,background:"#E4E2DD",borderRadius:999}}>
+                                <div style={{width:`${pct}%`,height:"100%",background:pct>80?"#B8925C":"#213C18",borderRadius:999,transition:"width .3s"}}/>
+                              </div>
+                              <span style={{fontFamily:F2,fontSize:11,color:full?"#e05c5c":pct>80?"#B8925C":"#213C18",fontWeight:600}}>
+                                {full?"Full":`${avail} of ${sl.spots} left`}
+                              </span>
+                            </div>
                           </div>
                           {/* Book button */}
                           <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-                            <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18"}}>◈ {biz.cr}{isCourt?"+":" "}</span>
+                            <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18"}}>◈ {biz.cr}</span>
                             <button onClick={()=>!full&&onBook(biz,sl)} disabled={full}
                               style={{padding:"10px 20px",background:full?"#E4E2DD":"#213C18",color:full?"#74796E":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:full?"not-allowed":"pointer",transition:"all .15s",whiteSpace:"nowrap"}}
                               onMouseEnter={e=>{if(!full)e.currentTarget.style.opacity="0.85"}}
                               onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                              {full?(isCourt?"Booked":"Full"):(isCourt?"Book court →":"Book →")}
+                              {full?"Full":"Book →"}
                             </button>
                           </div>
                         </div>
@@ -777,8 +568,8 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   return (
     <div onClick={()=>onSelect(biz)} style={{cursor:"pointer"}}>
-      {/* 3:2 landscape image */}
-      <div style={{position:"relative",paddingBottom:"67%",borderRadius:10,overflow:"hidden",marginBottom:8,background:"#E4E2DD"}}>
+      {/* 4:5 image */}
+      <div style={{position:"relative",paddingBottom:"clamp(60%,25vw,125%)",borderRadius:12,overflow:"hidden",marginBottom:16,background:"#E4E2DD"}}>
         <img src={biz.img} alt={biz.name}
           style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",transition:"transform .7s ease"}}
           onMouseEnter={e=>e.target.style.transform="scale(1.05)"}
@@ -801,23 +592,26 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave }) {
       </div>
       {/* Card info */}
       <div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:2}}>
-          <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#1B1C19",letterSpacing:"-0.2px",margin:0,flex:1,paddingRight:6,lineHeight:1.2}}>{biz.name}</h3>
-          <div style={{display:"flex",alignItems:"center",gap:2,flexShrink:0}}>
-            <span style={{color:"#6F5B44",fontSize:11}}>★</span>
-            <span style={{fontFamily:F2,fontSize:12,fontWeight:700}}>{biz.rating}</span>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+          <h3 style={{fontFamily:F2,fontSize:16,fontWeight:700,color:"#1B1C19",letterSpacing:"-0.3px",margin:0,flex:1,paddingRight:8}}>{biz.name}</h3>
+          <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
+            <span style={{color:"#6F5B44",fontSize:12}}>★</span>
+            <span style={{fontFamily:F2,fontSize:13,fontWeight:700}}>{biz.rating}</span>
           </div>
         </div>
-        <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:"0 0 5px",display:"flex",alignItems:"center",gap:3}}>
-          <span style={{fontSize:10}}>📍</span> {biz.loc}
+        <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 8px",display:"flex",alignItems:"center",gap:4}}>
+          <span style={{fontSize:11}}>📍</span> {biz.loc}
         </p>
-        {/* Category tag */}
-        <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:4}}>
-          <span style={{fontFamily:F2,fontSize:10,fontWeight:600,color:"#766149",background:"rgba(250,222,192,0.5)",padding:"2px 8px",borderRadius:999}}>{biz.cat}</span>
+        {/* Category tag pills */}
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}>
+          <span style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#766149",background:"rgba(250,222,192,0.5)",padding:"3px 10px",borderRadius:999}}>{biz.cat}</span>
+          {biz.tags?.slice(0,2).map(t=>(
+            <span key={t} style={{fontFamily:F2,fontSize:11,fontWeight:500,color:"#74796E",background:"rgba(228,226,221,0.6)",padding:"3px 10px",borderRadius:999}}>{t}</span>
+          ))}
         </div>
         {next
-          ? <p style={{fontFamily:F2,fontSize:10,color:"#213C18",fontWeight:600,margin:0}}>{next.spots-next.booked} spots left · {next.time}</p>
-          : <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>Fully booked</p>
+          ? <p style={{fontFamily:F2,fontSize:11,color:"#213C18",fontWeight:600,margin:0}}>{next.spots-next.booked} spots left · {next.time}</p>
+          : <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>Fully booked · check back soon</p>
         }
       </div>
     </div>
@@ -836,14 +630,9 @@ function Chatbot({ listings, credits, bookings, onSelectBiz }) {
     const u=inp.trim(); setInp(""); setSugBiz(null);
     setMsgs(p=>[...p,{r:"user",t:u}]); setLoading(true);
     const ls=listings.map(b=>`ID:${b.id} "${b.name}" ${b.cat} ${b.loc} ◈${b.cr}`).join("\n");
-    const sys=`You are Wello's wellness concierge for Mallorca. Help members find yoga classes, gyms, spas, pools and outdoor experiences on the island. Be friendly, concise and helpful.\n\nAvailable venues:\n${ls}\n\nMember credits: ◈${credits}\n\nReply with ONLY JSON: {"message":"your response","suggestedId":null_or_venue_id}`;
-    // Build proper multi-turn history (skip the hardcoded greeting at index 0)
-    const history=msgs.slice(1).map(m=>({role:m.r==="user"?"user":"assistant",content:m.t}));
-    const raw=await aiChat(sys,[...history,{role:"user",content:u}]);
-    let parsed=null;
-    try{parsed=JSON.parse(raw.replace(/```json|```/g,"").trim());}catch{}
-    if(parsed?.message){setMsgs(p=>[...p,{r:"ai",t:parsed.message}]);if(parsed.suggestedId)setSugBiz(listings.find(b=>b.id===parsed.suggestedId)||null);}
-    else if(raw) setMsgs(p=>[...p,{r:"ai",t:raw}]);
+    const convo=msgs.map(m=>`${m.r==="user"?"User":"AI"}: ${m.t}`).join("\n");
+    const res=await aiJSON(`Warm Mallorca wellness concierge. Under 55 words. Return ONLY JSON: {"message":"response","suggestedId":null}`,`Listings:\n${ls}\nCredits:◈${credits}\nConvo:\n${convo}\nUser:${u}`);
+    if(res){setMsgs(p=>[...p,{r:"ai",t:res.message}]);if(res.suggestedId)setSugBiz(listings.find(b=>b.id===res.suggestedId)||null);}
     else setMsgs(p=>[...p,{r:"ai",t:"Sorry, could you try again?"}]);
     setLoading(false);
   }
@@ -950,7 +739,7 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
           <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#A3B18A",letterSpacing:"4px",textTransform:"uppercase",margin:"0 0 8px"}}>The Wellness Pass</p>
           <h1 style={{fontFamily:F2,fontWeight:800,fontSize:"clamp(40px,11vw,160px)",color:"#213C18",lineHeight:1,letterSpacing:"clamp(-2px,-0.04em,-6px)",margin:"0 0 clamp(6px,2vw,20px)",userSelect:"none"}}>wello</h1>
           <p style={{fontFamily:F2,fontSize:"clamp(12px,2vw,18px)",color:"#74796E",fontWeight:500,lineHeight:1.5,maxWidth:480,margin:"0 auto clamp(10px,2.5vw,32px)",letterSpacing:"-0.2px",padding:"0 8px"}}>
-            Book yoga classes, courts, gym access, hotel pools, spa treatments and outdoor adventures — all with one pass. No membership needed.
+            Book yoga classes, gym access, hotel pools, spa treatments and outdoor adventures — all with one pass. No membership needed.
           </p>
           {/* AI Search bar */}
           <div style={{maxWidth:560,margin:"0 auto 8px",background:"#fff",borderRadius:999,padding:"4px 4px 4px 16px",display:"flex",alignItems:"center",boxShadow:"0 1px 12px rgba(27,28,25,0.06)",border:"1px solid rgba(195,200,188,0.3)"}}>
@@ -986,7 +775,7 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
       {/* ── STATEMENT STRIP ── */}
       <div id="statement-strip" style={{background:"#213C18",padding:"14px 24px"}}>
         <div style={{maxWidth:1200,margin:"0 auto",display:"flex",justifyContent:"center",alignItems:"center",gap:0,flexWrap:"wrap"}}>
-          {["Get your pass","Courts, classes & spas","No membership needed"].map((s,i)=>(
+          {["Get your pass","Book any venue","No membership needed"].map((s,i)=>(
             <div key={s} style={{display:"flex",alignItems:"center",gap:0}}>
               <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,fontWeight:600,color:"#CAECBA",letterSpacing:"-0.2px",padding:"4px 10px",whiteSpace:"nowrap"}}>{s}</span>
               {i<2&&<span style={{color:"rgba(163,177,138,0.4)",fontSize:14}}>·</span>}
@@ -1140,7 +929,7 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,240px),1fr))",gap:16}}>
             {[
               {n:"01",icon:"◈",title:"Buy your pass",desc:"Choose how many credits you want. Load them onto your Wello pass — no subscription, no commitment."},
-              {n:"02",icon:"⊞",title:"Browse & book",desc:"Explore studios, courts, gyms, hotel pools, spas and outdoor adventures. Book any slot in seconds."},
+              {n:"02",icon:"⊞",title:"Browse & book",desc:"Explore studios, gyms, hotel pools, spas and outdoor adventures. Book any slot in seconds."},
               {n:"03",icon:"✓",title:"Walk in ready",desc:"Show your booking confirmation at the venue and enjoy. Credits are deducted automatically."},
             ].map(({n,icon,title,desc})=>(
               <div key={n} style={{background:"#fff",borderRadius:16,padding:"clamp(20px,3vw,32px)",position:"relative",overflow:"hidden"}}>
@@ -1167,114 +956,128 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
   const [activeLoc,setActiveLoc]=useState("All Mallorca");
   const [viewMode,setViewMode]=useState("grid");
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
-
-  const THEMES = [
-    { id:"flow",     label:"Flow",            tags:["Yoga","Pilates","Meditation","Breathwork"],       court:false, cats:["Yoga","Pilates","Meditation","Breathwork","Sound Healing","Dance"] },
-    { id:"hiit",     label:"HIIT & Strength", tags:["HIIT","Crossfit","Fitness"],                     court:false, cats:["HIIT","Crossfit","Fitness Class"] },
-    { id:"adventure",label:"Adventure",       tags:["Surfing","Kayaking","Hiking","Cycling"],          court:false, cats:["Surfing","Paddle Boarding","Kayaking","Hiking","Running","Cycling","Horse Riding"] },
-    { id:"courts",   label:"Courts",          tags:["Padel","Tennis","Pickleball"],                   court:true,  cats:[] },
-    { id:"spa",      label:"Spa & Recovery",  tags:["Massage","Cold Therapy","Nutrition"],            court:false, cats:["Massage & Spa","Cold Water Therapy","Nutrition & Wellness"] },
-    { id:"hotel",    label:"Hotel & Pool",    tags:["Hotel Gym","Pool Access"],                       court:false, cats:["Hotel Gym","Pool Access"] },
-  ];
-
-  function matchesFilter(b) {
-    const mL = activeLoc==="All Mallorca"||b.loc===activeLoc;
-    const mS = !search||b.name.toLowerCase().includes(search.toLowerCase())||b.loc.toLowerCase().includes(search.toLowerCase())||b.cat.toLowerCase().includes(search.toLowerCase())||(b.sport||"").toLowerCase().includes(search.toLowerCase());
-    const mC = activeCat==="All"||b.cat===activeCat||b.sport===activeCat;
-    return mL&&mS&&mC;
-  }
-
-  const allFiltered = listings.filter(matchesFilter);
+  
+  // Venue coordinates for map
+  const COORDS = {
+    "Calma Studio":         [39.7697, 2.7149],
+    "Casa Blava Wellness":       [39.5697, 2.6200],
+    "Serra Pilates":      [39.7079, 2.6151],
+    "Marea Surf & Yoga":     [39.8567, 3.1201],
+    "Mirador Pool Club":   [39.5201, 2.6891],
+    "Olivera Yoga":   [39.7482, 2.6489],
+    "Nord Fitness":    [39.8782, 3.0162],
+    "Caleta Meditation":[39.3574, 3.1287],
+    "Palau Pool Club": [39.5697, 2.6501],
+  };
+  const filtered=listings.filter(b=>{
+    const mC=activeCat==="All"||b.cat===activeCat;
+    const mL=activeLoc==="All Mallorca"||b.loc===activeLoc;
+    const mS=!search||b.name.toLowerCase().includes(search.toLowerCase())||b.loc.toLowerCase().includes(search.toLowerCase())||b.cat.toLowerCase().includes(search.toLowerCase());
+    return mC&&mL&&mS;
+  });
 
   return (
-    <div style={{paddingTop:0,paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
-      {/* Sticky filter bar — single row */}
-      <div style={{position:"sticky",top:91,zIndex:40,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",borderBottom:"1px solid rgba(195,200,188,0.2)",padding:"8px clamp(12px,3vw,24px)"}}>
-        <div style={{maxWidth:1200,margin:"0 auto",display:"flex",gap:6,overflowX:"auto",scrollbarWidth:"none",alignItems:"center"}}>
-          {CATS.map(c=>(
-            <button key={c} onClick={()=>setActiveCat(c)}
-              style={{padding:"5px 12px",borderRadius:999,border:"none",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",transition:"all .13s",flexShrink:0,
-                background:activeCat===c?"#213C18":"#EAE8E3",
-                color:activeCat===c?"#fff":"#43483F"}}>
-              {c}
-            </button>
-          ))}
-          <div style={{width:1,height:18,background:"rgba(195,200,188,0.5)",flexShrink:0,margin:"0 2px"}}/>
-          <select value={activeLoc} onChange={e=>setActiveLoc(e.target.value)}
-            style={{flexShrink:0,border:"1px solid rgba(195,200,188,0.5)",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:500,color:"#74796E",background:"transparent",padding:"4px 10px",cursor:"pointer",outline:"none"}}>
-            {LOCS.map(l=><option key={l}>{l}</option>)}
-          </select>
-          <div style={{marginLeft:"auto",flexShrink:0,display:"flex",alignItems:"center",gap:6,background:"#F0EEE9",borderRadius:999,padding:"5px 12px"}}>
-            <span style={{color:"#74796E",fontSize:12}}>⌕</span>
-            <input value={search} onChange={e=>setSearch(e.target.value)}
-              style={{border:"none",outline:"none",fontFamily:F2,fontSize:11,background:"transparent",color:"#1B1C19",width:"clamp(50px,14vw,110px)"}}
-              placeholder="Search…"/>
-            {search&&<button onClick={()=>setSearch("")} style={{background:"transparent",border:"none",cursor:"pointer",color:"#74796E",fontSize:11}}>✕</button>}
+    <div style={{paddingTop:24,paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
+      {/* Header */}
+      <div style={{maxWidth:1200,margin:"0 auto",padding:"0 clamp(16px,4vw,32px) 0"}}>
+        <div style={{display:"flex",flexWrap:"wrap",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20,gap:10}}>
+          <div>
+            <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#6F5B44",letterSpacing:"4px",textTransform:"uppercase",display:"block",marginBottom:8}}>Curated Sanctuary</span>
+            <h1 style={{fontFamily:F2,fontSize:"clamp(28px,4vw,44px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:0,lineHeight:1}}>Find your flow.</h1>
           </div>
-          <div style={{display:"flex",background:"#EAE8E3",borderRadius:999,padding:2,gap:1,flexShrink:0}}>
-            {[["grid","⊞"],["map","Map"]].map(([mode,label])=>(
-              <button key={mode} onClick={()=>setViewMode(mode)}
-                style={{padding:"4px 10px",borderRadius:999,border:"none",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",transition:"all .15s",
-                  background:viewMode===mode?"#213C18":"transparent",
-                  color:viewMode===mode?"#fff":"#74796E"}}>
-                {label}
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{width:8,height:8,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
+              <span style={{fontFamily:F2,fontSize:13,color:"#74796E",fontWeight:500}}>{filtered.length} experiences · Live sync</span>
+            </div>
+            <div style={{display:"flex",background:"#EAE8E3",borderRadius:999,padding:3,gap:2}}>
+              {[["grid","⊞ Grid"],["map","📍 Map"]].map(([mode,label])=>(
+                <button key={mode} onClick={()=>setViewMode(mode)}
+                  style={{padding:"5px 12px",borderRadius:999,border:"none",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",transition:"all .15s",
+                    background:viewMode===mode?"#213C18":"transparent",
+                    color:viewMode===mode?"#fff":"#74796E"}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sticky filter bar */}
+      <div style={{position:"sticky",top:91,zIndex:40,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",borderBottom:"1px solid rgba(195,200,188,0.2)",padding:"10px clamp(12px,3vw,32px)"}}>
+        <div style={{maxWidth:1200,margin:"0 auto"}}>
+          {/* Category pills */}
+          <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:8,scrollbarWidth:"none",alignItems:"center"}}>
+            {CATS.slice(0,14).map(c=>(
+              <button key={c} onClick={()=>setActiveCat(c)}
+                style={{padding:"8px 18px",borderRadius:999,border:"none",fontFamily:F2,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",transition:"all .15s",flexShrink:0,
+                  background:activeCat===c?"#213C18":"#EAE8E3",
+                  color:activeCat===c?"#fff":"#43483F"}}>
+                {c}
+              </button>
+            ))}
+            <div style={{marginLeft:"auto",flexShrink:0,display:"flex",alignItems:"center",gap:8,background:"#F0EEE9",borderRadius:999,padding:"8px 16px"}}>
+              <span style={{color:"#74796E",fontSize:14}}>⌕</span>
+              <input value={search} onChange={e=>setSearch(e.target.value)}
+                style={{border:"none",outline:"none",fontFamily:F2,fontSize:13,background:"transparent",color:"#1B1C19",width:"clamp(60px,20vw,140px)"}}
+                placeholder="Search..."/>
+              {search&&<button onClick={()=>setSearch("")} style={{background:"transparent",border:"none",cursor:"pointer",color:"#74796E",fontSize:12}}>✕</button>}
+            </div>
+          </div>
+          {/* Location pills */}
+          <div style={{display:"flex",gap:6,overflowX:"auto",paddingTop:8,scrollbarWidth:"none"}}>
+            {LOCS.map(l=>(
+              <button key={l} onClick={()=>setActiveLoc(l)}
+                style={{padding:"5px 14px",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer",whiteSpace:"nowrap",transition:"all .15s",flexShrink:0,
+                  background:activeLoc===l?"#213C18":"transparent",
+                  color:activeLoc===l?"#fff":"#74796E",
+                  border:activeLoc===l?"1px solid #213C18":"1px solid rgba(195,200,188,0.5)"}}>
+                {l}
               </button>
             ))}
           </div>
         </div>
       </div>
 
-      {/* Themed carousels */}
-      {viewMode==="grid"&&(
-        <div style={{maxWidth:1200,margin:"16px auto 0",padding:"0 clamp(12px,3vw,24px)"}}>
-          {allFiltered.length===0
-            ? <div style={{textAlign:"center",padding:"96px 20px"}}>
-                <div style={{fontSize:36,marginBottom:12,color:"#C3C8BC"}}>∅</div>
-                <h3 style={{fontFamily:F2,fontSize:20,color:"#213C18",fontWeight:700,marginBottom:8}}>No results</h3>
-                <p style={{fontFamily:F2,color:"#74796E",fontSize:14}}>Try a different search or location</p>
+      {/* Grid */}
+      <div style={{maxWidth:1200,margin:"24px auto 0",padding:"0 clamp(16px,4vw,32px)"}}>
+        {viewMode==="grid"&&filtered.length===0
+          ? <div style={{textAlign:"center",padding:"96px 20px"}}>
+              <div style={{fontSize:36,marginBottom:12,color:"#C3C8BC"}}>∅</div>
+              <h3 style={{fontFamily:F2,fontSize:20,color:"#213C18",fontWeight:700,marginBottom:8}}>No results</h3>
+              <p style={{fontFamily:F2,color:"#74796E",fontSize:14}}>Try adjusting your filters</p>
+            </div>
+          : viewMode==="grid"
+            ? <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,200px),1fr))",gap:"clamp(12px,2vw,24px)"}}>
+                {filtered.map(b=><Card key={b.id} biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave}/>)}
               </div>
-            : THEMES.map(theme=>{
-                const venues = allFiltered.filter(b=>theme.court ? b.court : (!b.court && theme.cats.includes(b.cat)));
-                if (venues.length===0) return null;
-                return (
-                  <div key={theme.id} style={{marginBottom:20}}>
-                    <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6,gap:8}}>
-                      <div style={{display:"flex",alignItems:"baseline",gap:8}}>
-                        <h2 style={{fontFamily:F2,fontSize:"clamp(14px,2vw,17px)",fontWeight:800,color:"#213C18",letterSpacing:"-0.3px",margin:0,lineHeight:1}}>{theme.label}</h2>
-                        <span style={{fontFamily:F2,fontSize:10,color:"#74796E",fontWeight:500}}>
-                          {theme.tags.join(" · ")}
-                        </span>
-                      </div>
-                      <span style={{fontFamily:F2,fontSize:10,color:"#A3B18A",fontWeight:600,flexShrink:0}}>{venues.length}</span>
-                    </div>
-                    <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:6,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
-                      {venues.map(b=>(
-                        <div key={b.id} style={{flexShrink:0,width:"clamp(180px,42vw,220px)"}}>
-                          <Card biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave}/>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })
-          }
-        </div>
-      )}
+            : null
+        }
+        {filtered.length>8&&viewMode==="grid"&&(
+          <div style={{textAlign:"center",marginTop:60}}>
+            <button style={{padding:"14px 36px",borderRadius:999,border:"2px solid #213C18",background:"transparent",color:"#213C18",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer",transition:"all .2s"}}
+              onMouseEnter={e=>{e.target.style.background="#213C18";e.target.style.color="#fff"}}
+              onMouseLeave={e=>{e.target.style.background="transparent";e.target.style.color="#213C18"}}>
+              Load more experiences
+            </button>
+          </div>
+        )}
 
-      {/* Map view */}
-      {viewMode==="map"&&(
-        <div style={{maxWidth:1200,margin:"24px auto 0",padding:"0 clamp(16px,4vw,32px)"}}>
-          <div style={{borderRadius:16,overflow:"hidden",height:520,position:"relative"}}>
+        {/* MAP VIEW */}
+        {viewMode==="map"&&(
+          <div style={{borderRadius:16,overflow:"hidden",height:520,position:"relative",marginTop:8}}>
             <iframe
               title="Wello venues map"
               width="100%" height="100%" frameBorder="0" scrolling="no"
               style={{borderRadius:16}}
               src={`https://www.openstreetmap.org/export/embed.html?bbox=2.3%2C39.2%2C3.4%2C40.1&layer=mapnik&marker=39.6945%2C2.9217`}
             />
+            {/* Venue pins overlay */}
             <div style={{position:"absolute",top:12,left:12,background:"rgba(255,255,255,0.95)",backdropFilter:"blur(8px)",borderRadius:12,padding:"12px 16px",maxHeight:480,overflowY:"auto",width:220,boxShadow:"0 4px 20px rgba(0,0,0,0.1)"}}>
-              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>{allFiltered.length} venues</p>
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>{filtered.length} venues</p>
               <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {allFiltered.map(b=>(
+                {filtered.map(b=>(
                   <div key={b.id} onClick={()=>onSelect(b)}
                     style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:8,background:"#F5F3EE",cursor:"pointer",transition:"background .15s"}}
                     onMouseEnter={e=>e.currentTarget.style.background="#EAE8E3"}
@@ -1291,8 +1094,8 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -1630,6 +1433,7 @@ function RegCard({ children, title, subtitle }) {
 function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
   // Registration wizard state
   const [registered, setRegistered] = useState(false);
+  const [duplicate, setDuplicate] = useState(false);
   const [regStep, setRegStep] = useState(1); // 1–5
   const REG_STEPS = ["Your venue","Classes & photos","Availability","Calendar & integration","Payment & launch"];
 
@@ -1700,11 +1504,50 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
     setConnecting(null);
   }
 
+  // ── Duplicate account screen ────────────────────────────────
+  if (duplicate) {
+    return (
+      <div style={{maxWidth:560,margin:"0 auto",padding:"52px 28px 80px"}}>
+        <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:4,padding:"32px 28px",textAlign:"center"}}>
+          <div style={{width:44,height:44,borderRadius:"50%",background:T.sageXL,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px"}}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T.sage} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,margin:"0 0 10px"}}>You already have an account</h2>
+          <p style={{fontFamily:F.body,fontSize:13,color:T.stone,lineHeight:1.75,margin:"0 0 24px"}}>
+            There's already a Wello listing registered to <strong style={{color:T.ink}}>{listing.email}</strong>. Sign in to access your partner dashboard.
+          </p>
+          <button
+            onClick={()=>onSetView("biz-portal")}
+            style={{display:"inline-block",padding:"11px 24px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:13,fontWeight:600,cursor:"pointer",letterSpacing:"0.2px"}}
+          >
+            Sign in to your dashboard →
+          </button>
+          <div style={{marginTop:16}}>
+            <button onClick={()=>setDuplicate(false)} style={{background:"none",border:"none",fontFamily:F.body,fontSize:12,color:T.stone,cursor:"pointer",textDecoration:"underline"}}>
+              Use a different email
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Registration Interest Form ──────────────────────────────
   if (!registered) {
     const canSubmit = listing.name.trim() && listing.email.trim() && listing.phone.trim();
 
     async function handleSubmit() {
+      // Check for existing account with this email
+      const { data: existing } = await supabase
+        .from('businesses')
+        .select('id')
+        .ilike('email', listing.email.trim())
+        .limit(1);
+      if (existing && existing.length > 0) {
+        setDuplicate(true);
+        return;
+      }
+
       const { error } = await supabase.from('businesses').insert({
         name: listing.name,
         category: listing.category,
@@ -1764,7 +1607,7 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <div>
                 <FieldLabel>Email address *</FieldLabel>
-                <input type="email" placeholder="hello@yourstudio.com" value={listing.email}
+                <input type="email" placeholder="hello@yourbusiness.com" value={listing.email}
                   onChange={e=>setListing(p=>({...p,email:e.target.value}))}
                   style={INP3} onFocus={onF} onBlur={onB}/>
               </div>
@@ -2553,9 +2396,9 @@ function BusinessPortalDashboard({ onExit }) {
           <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:560}}>
             {/* Contact details */}
             <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
-              <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 14px"}}>Contact details</h3>
+              <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 14px"}}>Contact & payment</h3>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {[{l:"Contact email",v:"hello@solyalmayoga.com"},{l:"Phone",v:"+34 971 234 567"}].map(f=>(
+                {[{l:"Contact email",v:"hello@solyalmayoga.com"},{l:"Phone",v:"+34 971 234 567"},{l:"IBAN",v:"ES12 3456 7890 1234 5678"}].map(f=>(
                   <div key={f.l}>
                     <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:5}}>{f.l}</label>
                     <input defaultValue={f.v} style={{...INP}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
@@ -2563,20 +2406,6 @@ function BusinessPortalDashboard({ onExit }) {
                 ))}
                 <button style={{alignSelf:"flex-start",padding:"10px 20px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",marginTop:4}}>Save changes</button>
               </div>
-            </div>
-
-            {/* Payment details — disabled until operational */}
-            <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
-              <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#74796E",margin:"0 0 14px"}}>Payment details</h3>
-              <div style={{display:"flex",flexDirection:"column",gap:10,pointerEvents:"none"}}>
-                {[{l:"Account name",v:""},{l:"IBAN",v:""},{l:"BIC / SWIFT",v:""}].map(f=>(
-                  <div key={f.l}>
-                    <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#B0B5A8",display:"block",marginBottom:5}}>{f.l}</label>
-                    <input disabled defaultValue={f.v} style={{...INP,background:"#F5F3EE",color:"#B0B5A8",borderColor:"rgba(195,200,188,0.3)",cursor:"not-allowed"}}/>
-                  </div>
-                ))}
-              </div>
-              <p style={{fontFamily:F2,fontSize:11,color:"#A3A89E",margin:"14px 0 0",lineHeight:1.6}}>Payment details will be set up once we're fully operational — we'll be in touch when this is ready.</p>
             </div>
 
             {/* Integrations */}
@@ -2652,6 +2481,48 @@ function cropToSquare(file) {
   });
 }
 
+function OnboardingProgressBar({ step, total, doSignOut, onPreview }) {
+  return (
+    <div style={{position:"sticky",top:0,zIndex:10,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"14px 28px"}}>
+      <div style={{maxWidth:640,margin:"0 auto",display:"flex",alignItems:"center",gap:12}}>
+        <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,whiteSpace:"nowrap"}}>Step {step} of {total}</span>
+        <div style={{flex:1,height:3,background:T.border,borderRadius:999}}>
+          <div style={{height:3,background:T.sage,borderRadius:999,width:`${(step/total)*100}%`,transition:"width .35s"}}/>
+        </div>
+        {step>1&&onPreview&&(
+          <button onClick={onPreview} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:2,color:T.stone,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:300,padding:"3px 10px",whiteSpace:"nowrap"}}>Preview</button>
+        )}
+        <button onClick={doSignOut} style={{background:"none",border:"none",color:T.stone,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:300,padding:0}}>Sign out</button>
+      </div>
+    </div>
+  );
+}
+
+function OBtn({ onClick, label, disabled, variant="primary", saving }) {
+  return (
+    <button onClick={onClick} disabled={disabled||saving}
+      style={{padding:"11px 24px",background:variant==="primary"&&!disabled&&!saving?T.sage:variant==="secondary"?"transparent":T.border,color:variant==="secondary"?T.stone:"#fff",border:variant==="secondary"?`1px solid ${T.border}`:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:variant==="secondary"?300:600,cursor:disabled||saving?"not-allowed":"pointer",transition:"background .15s"}}
+      onMouseEnter={e=>{if(!disabled&&!saving&&variant==="primary")e.target.style.background=T.sage2;}}
+      onMouseLeave={e=>{if(!disabled&&!saving&&variant==="primary")e.target.style.background=T.sage;}}>
+      {saving&&variant==="primary"?"Saving…":label}
+    </button>
+  );
+}
+
+function OWrap({ title, sub, children, footer, step, total, doSignOut, onPreview }) {
+  return (
+    <>
+      <OnboardingProgressBar step={step} total={total} doSignOut={doSignOut} onPreview={onPreview}/>
+      <div style={{maxWidth:600,margin:"0 auto",padding:"40px 28px 80px"}}>
+        <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>{title}</h1>
+        {sub&&<p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,margin:"0 0 28px",lineHeight:1.6}}>{sub}</p>}
+        {children}
+        {footer&&<div style={{display:"flex",gap:10,marginTop:32}}>{footer}</div>}
+      </div>
+    </>
+  );
+}
+
 function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   const TOTAL = 6;
   const [step, setStep] = useState(bizData.onboarding_step > 0 ? Math.min(bizData.onboarding_step, TOTAL) : 1);
@@ -2668,6 +2539,8 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   const [slots, setSlots] = useState(bizData.slots || []);
   const [cr, setCr] = useState(bizData.cr ? String(bizData.cr) : "");
   const [newSlot, setNewSlot] = useState({ name:"", days:[], time:"09:00", dur:"60 min", spots:10 });
+  const [intgRequest, setIntgRequest] = useState(bizData.integration_request || "");
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const firstName = bizData.name.split(' ')[0];
   const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
@@ -2689,9 +2562,11 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
     try {
       const blob = await cropToSquare(file);
       const path = `${bizData.id}/${slot}-${Date.now()}.jpg`;
-      await supabase.storage.from('venue-photos').upload(path, blob, { contentType:'image/jpeg', upsert:true });
+      const { error } = await supabase.storage.from('venue-photos').upload(path, blob, { contentType:'image/jpeg', upsert:true });
+      if (error) { console.error('Photo upload error:', error.message); return null; }
       return supabase.storage.from('venue-photos').getPublicUrl(path).data.publicUrl;
-    } finally { setUploading(false); }
+    } catch(e) { console.error('Upload failed:', e); return null; }
+    finally { setUploading(false); }
   }
 
   async function goNext(updates={}) {
@@ -2713,40 +2588,8 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
     setNewSlot({ name:"", days:[], time:"09:00", dur:"60 min", spots:10 });
   }
 
-  const progressBar = (
-    <div style={{position:"sticky",top:0,zIndex:10,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"14px 28px"}}>
-      <div style={{maxWidth:640,margin:"0 auto",display:"flex",alignItems:"center",gap:12}}>
-        <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,whiteSpace:"nowrap"}}>Step {step} of {TOTAL}</span>
-        <div style={{flex:1,height:3,background:T.border,borderRadius:999}}>
-          <div style={{height:3,background:T.sage,borderRadius:999,width:`${(step/TOTAL)*100}%`,transition:"width .35s"}}/>
-        </div>
-        <button onClick={doSignOut} style={{background:"none",border:"none",color:T.stone,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:300,padding:0}}>Sign out</button>
-      </div>
-    </div>
-  );
-
-  const OBtn = ({onClick,label,disabled,variant="primary"}) => (
-    <button onClick={onClick} disabled={disabled||saving}
-      style={{padding:"11px 24px",background:variant==="primary"&&!disabled&&!saving?T.sage:variant==="secondary"?"transparent":T.border,color:variant==="secondary"?T.stone:"#fff",border:variant==="secondary"?`1px solid ${T.border}`:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:variant==="secondary"?300:600,cursor:disabled||saving?"not-allowed":"pointer",transition:"background .15s"}}
-      onMouseEnter={e=>{if(!disabled&&!saving&&variant==="primary")e.target.style.background=T.sage2;}}
-      onMouseLeave={e=>{if(!disabled&&!saving&&variant==="primary")e.target.style.background=T.sage;}}>
-      {saving&&variant==="primary"?"Saving…":label}
-    </button>
-  );
-
-  const Wrap = ({title,sub,children,footer}) => (
-    <>{progressBar}
-      <div style={{maxWidth:600,margin:"0 auto",padding:"40px 28px 80px"}}>
-        <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>{title}</h1>
-        {sub&&<p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,margin:"0 0 28px",lineHeight:1.6}}>{sub}</p>}
-        {children}
-        {footer&&<div style={{display:"flex",gap:10,marginTop:32}}>{footer}</div>}
-      </div>
-    </>
-  );
-
   if (step===1) return (
-    <>{progressBar}
+    <><OnboardingProgressBar step={step} total={TOTAL} doSignOut={doSignOut}/>
       <div style={{maxWidth:520,margin:"0 auto",padding:"80px 28px",textAlign:"center"}}>
         <div style={{width:64,height:64,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",fontSize:28}}>👋</div>
         <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:26,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 12px"}}>Welcome to Wello, {firstName}.</h1>
@@ -2761,9 +2604,9 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   );
 
   if (step===2) return (
-    <Wrap title="Tell us about your venue" sub="This is what guests will see when they find you on Wello."
-      footer={[<OBtn key="b" onClick={()=>setStep(1)} label="← Back" variant="secondary"/>,
-               <OBtn key="n" onClick={()=>goNext({description:desc,address,website,instagram})} label="Save & continue →" disabled={!desc.trim()}/>]}>
+    <OWrap title="Tell us about your venue" sub="This is what guests will see when they find you on Wello." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+      footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(1)} label="← Back" variant="secondary"/>,
+               <OBtn key="n" saving={saving} onClick={()=>goNext({description:desc,address,website,instagram})} label="Save & continue →" disabled={!desc.trim()}/>]}>
       <label style={FL}>Description</label>
       <textarea value={desc} onChange={e=>setDesc(e.target.value)} rows={4} placeholder="Describe your venue, what makes it special, and what guests can expect…"
         style={{...INP,resize:"vertical",lineHeight:1.6,marginBottom:16}} onFocus={onFi} onBlur={onBl}/>
@@ -2771,28 +2614,33 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
       <input value={address} onChange={e=>setAddress(e.target.value)} placeholder="Street address, Mallorca"
         style={{...INP,marginBottom:16}} onFocus={onFi} onBlur={onBl}/>
       <label style={FL}>Website (optional)</label>
-      <input value={website} onChange={e=>setWebsite(e.target.value)} placeholder="https://yourstudio.com"
+      <input value={website} onChange={e=>setWebsite(e.target.value)} placeholder="https://yourwebsite.com"
         style={{...INP,marginBottom:16}} onFocus={onFi} onBlur={onBl}/>
       <label style={FL}>Instagram (optional)</label>
-      <input value={instagram} onChange={e=>setInstagram(e.target.value)} placeholder="@yourstudio"
+      <input value={instagram} onChange={e=>setInstagram(e.target.value)} placeholder="@yourhandle"
         style={{...INP}} onFocus={onFi} onBlur={onBl}/>
-    </Wrap>
+    </OWrap>
   );
 
   if (step===3) {
     async function handlePrimary(e) {
       const file=e.target.files?.[0]; if(!file) return;
-      const url=await uploadPhoto(file,'primary'); setImg(url);
+      const localUrl=URL.createObjectURL(file);
+      setImg(localUrl);
+      const remoteUrl=await uploadPhoto(file,'primary');
+      if(remoteUrl) setImg(remoteUrl);
     }
     async function handleGallery(e) {
       const files=Array.from(e.target.files||[]).slice(0,4-gallery.length);
-      const urls=await Promise.all(files.map((f,i)=>uploadPhoto(f,`gallery-${gallery.length+i}`)));
-      setGallery(prev=>[...prev,...urls]);
+      const localUrls=files.map(f=>URL.createObjectURL(f));
+      setGallery(prev=>[...prev,...localUrls]);
+      const remoteUrls=await Promise.all(files.map((f,i)=>uploadPhoto(f,`gallery-${gallery.length+i}`)));
+      setGallery(prev=>prev.map(u=>{const i=localUrls.indexOf(u);return i!==-1&&remoteUrls[i]?remoteUrls[i]:u;}));
     }
     return (
-      <Wrap title="Add photos" sub="Square (1:1) photos work best — we crop automatically. A great primary photo makes a real difference."
-        footer={[<OBtn key="b" onClick={()=>setStep(2)} label="← Back" variant="secondary"/>,
-                 <OBtn key="n" onClick={()=>goNext({img,gallery})} label="Save & continue →" disabled={!img||uploading}/>]}>
+      <OWrap title="Add photos" sub="Square (1:1) photos work best — we crop automatically. A great primary photo makes a real difference." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+        footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(2)} label="← Back" variant="secondary"/>,
+                 <OBtn key="n" saving={saving} onClick={()=>goNext({img,gallery})} label="Save & continue →" disabled={!img||uploading}/>]}>
         <label style={FL}>Primary photo</label>
         <div onClick={()=>!uploading&&document.getElementById('wph-primary').click()}
           style={{width:"100%",maxWidth:240,aspectRatio:"1",background:img?"transparent":T.bg2,border:img?"none":`2px dashed ${T.border}`,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",cursor:uploading?"wait":"pointer",marginBottom:24,overflow:"hidden",position:"relative"}}>
@@ -2825,16 +2673,16 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
         </div>
         <input id="wph-gallery" type="file" accept="image/*" multiple style={{display:"none"}} onChange={handleGallery}/>
         {uploading&&<p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"8px 0 0"}}>Uploading…</p>}
-      </Wrap>
+      </OWrap>
     );
   }
 
   if (step===4) return (
-    <Wrap title="How do you manage bookings?" sub="Connect your existing system or add your sessions manually — you can always change this later."
-      footer={[<OBtn key="b" onClick={()=>setStep(3)} label="← Back" variant="secondary"/>,
-               <OBtn key="n" onClick={()=>goNext(availType==="acuity"?{acuity_key:acuityKey}:{slots})} label="Save & continue →"/>]}>
+    <OWrap title="List your availabilities" sub="Connect your existing booking system or add your slots manually — you can always update this later." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+      footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(3)} label="← Back" variant="secondary"/>,
+               <OBtn key="n" saving={saving} onClick={()=>goNext(availType==="acuity"?{acuity_key:acuityKey,integration_request:intgRequest}:{slots,integration_request:intgRequest})} label="Save & continue →"/>]}>
       <div style={{display:"flex",background:T.bg2,borderRadius:3,padding:3,marginBottom:24}}>
-        {[["acuity","Connect Acuity"],["manual","Add manually"]].map(([mode,label])=>(
+        {[["manual","Add manually"],["acuity","Connect Acuity"]].map(([mode,label])=>(
           <button key={mode} onClick={()=>setAvailType(mode)} style={{flex:1,padding:"9px 0",background:availType===mode?T.paper:"transparent",color:availType===mode?T.ink:T.stone,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:availType===mode?600:300,cursor:"pointer",transition:"all .15s",boxShadow:availType===mode?"0 1px 3px rgba(0,0,0,0.08)":"none"}}>
             {label}
           </button>
@@ -2843,16 +2691,28 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
       {availType==="acuity" ? (
         <>
           <label style={FL}>Acuity API key</label>
-          <input value={acuityKey} onChange={e=>setAcuityKey(e.target.value)} placeholder="Your Acuity API key"
+          <input value={acuityKey} onChange={e=>setAcuityKey(e.target.value)} placeholder="Your Acuity Scheduling API key"
             style={{...INP,marginBottom:10}} onFocus={onFi} onBlur={onBl}/>
-          <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.6,margin:0}}>Find your API key in Acuity → Integrations → API. Your schedule will sync automatically.</p>
+          <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.6,margin:"0 0 20px"}}>Save your key now and we'll activate the sync as we roll out integrations — we'll let you know when it's live.</p>
+          <div style={{background:T.bg2,borderRadius:6,padding:"12px 14px"}}>
+            <div style={{fontFamily:F.body,fontSize:10,fontWeight:600,color:T.stone,letterSpacing:"0.5px",textTransform:"uppercase",marginBottom:8}}>More integrations coming soon</div>
+            {[{n:"Mindbody",d:"For larger studios & spas"},{n:"TeamUp",d:"Class & membership management"},{n:"Fresha",d:"Wellness & salon bookings"}].map(({n,d})=>(
+              <div key={n} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+                <div>
+                  <span style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{n}</span>
+                  <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginLeft:6}}>{d}</span>
+                </div>
+                <span style={{fontFamily:F.body,fontSize:9,color:T.stone2,border:`1px solid ${T.border}`,borderRadius:2,padding:"2px 7px"}}>Soon</span>
+              </div>
+            ))}
+          </div>
         </>
       ) : (
         <>
           <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:8,padding:16,marginBottom:16}}>
-            <div style={{fontFamily:F.body,fontSize:11,fontWeight:600,color:T.ink,marginBottom:12}}>Add a session</div>
-            <label style={FL}>Session name</label>
-            <input value={newSlot.name} onChange={e=>setNewSlot(p=>({...p,name:e.target.value}))} placeholder="e.g. Morning Yoga"
+            <div style={{fontFamily:F.body,fontSize:11,fontWeight:600,color:T.ink,marginBottom:12}}>Add an availability</div>
+            <label style={FL}>Name</label>
+            <input value={newSlot.name} onChange={e=>setNewSlot(p=>({...p,name:e.target.value}))} placeholder="e.g. Morning class, Court hire, Open swim…"
               style={{...INP,marginBottom:12}} onFocus={onFi} onBlur={onBl}/>
             <label style={FL}>Days</label>
             <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:12}}>
@@ -2881,7 +2741,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
             </div>
             <button onClick={addSlot} disabled={!newSlot.name.trim()||!newSlot.days.length}
               style={{padding:"8px 18px",background:newSlot.name.trim()&&newSlot.days.length?T.sage:T.border,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:newSlot.name.trim()&&newSlot.days.length?"pointer":"not-allowed"}}>
-              Add session
+              Add availability
             </button>
           </div>
           {slots.length>0&&(
@@ -2899,31 +2759,33 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
           )}
         </>
       )}
-    </Wrap>
+      <div style={{marginTop:24,paddingTop:20,borderTop:`1px solid ${T.border}`}}>
+        <label style={FL}>Using a different system? Let us know</label>
+        <input value={intgRequest} onChange={e=>setIntgRequest(e.target.value)} placeholder="e.g. Trafft, SimplyBook, custom website…"
+          style={{...INP,marginBottom:6}} onFocus={onFi} onBlur={onBl}/>
+        <p style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,margin:0}}>We'll prioritise integrations based on what partners are using.</p>
+      </div>
+    </OWrap>
   );
 
   if (step===5) return (
-    <Wrap title="Set your credit price" sub="Guests pay using Wello credits. 1 credit = €1. You decide what to charge per session."
-      footer={[<OBtn key="b" onClick={()=>setStep(4)} label="← Back" variant="secondary"/>,
-               <OBtn key="n" onClick={()=>goNext({cr:parseInt(cr)||catAvg})} label="Save & continue →" disabled={!cr}/>]}>
-      <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:6,padding:"12px 16px",marginBottom:20}}>
-        <span style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600}}>Platform average for {bizData.category||"your category"}: </span>
-        <span style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:300}}>{catAvg} credits (€{catAvg})</span>
-      </div>
-      <label style={FL}>Credits per session</label>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+    <OWrap title="Set your credit price" sub="Guests pay using Wello credits. 1 credit = €1. You decide what to charge per booking." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+      footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(4)} label="← Back" variant="secondary"/>,
+               <OBtn key="n" saving={saving} onClick={()=>goNext({cr:parseInt(cr)||catAvg})} label="Save & continue →" disabled={!cr}/>]}>
+      <label style={FL}>Credits per booking</label>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
         <span style={{fontFamily:F.body,fontSize:22,color:T.ochre}}>◈</span>
         <input type="number" min="1" value={cr} onChange={e=>setCr(e.target.value)} placeholder={String(catAvg)}
           style={{...INP,maxWidth:100,fontSize:18,fontWeight:700}} onFocus={onFi} onBlur={onBl}/>
-        {cr&&<span style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300}}>= €{cr} per session</span>}
+        {cr&&<span style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300}}>= €{cr}</span>}
       </div>
-      <p style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300,margin:0,lineHeight:1.6}}>You can adjust this at any time from your dashboard once you're live.</p>
-    </Wrap>
+      <p style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300,margin:"0 0 4px",lineHeight:1.6}}>Similar venues typically charge around {catAvg} credits. You can adjust this any time.</p>
+    </OWrap>
   );
 
   if (step===6) return (
-    <Wrap title="Review your listing" sub="Here's how you'll appear on Wello. You can edit anything from your dashboard after you go live."
-      footer={[<OBtn key="b" onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
+    <OWrap title="Review your listing" sub="Here's how you'll appear on Wello. You can edit anything from your dashboard after you go live." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+      footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
                <button key="s" onClick={handleSubmit} disabled={saving}
                  style={{padding:"11px 28px",background:saving?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:saving?"not-allowed":"pointer"}}
                  onMouseEnter={e=>{if(!saving)e.target.style.background=T.sage2;}}
@@ -2950,10 +2812,38 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
         <div style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:600,marginBottom:3}}>What happens next?</div>
         <div style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:300,lineHeight:1.6}}>We'll review your listing and get back to you within 2 working days. We may suggest a few small tweaks before you go live.</div>
       </div>
-    </Wrap>
+    </OWrap>
   );
 
-  return null;
+  return previewOpen ? (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setPreviewOpen(false)}>
+      <div style={{background:T.bg,borderRadius:12,maxWidth:360,width:"100%",overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}} onClick={e=>e.stopPropagation()}>
+        <div style={{padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${T.border}`}}>
+          <span style={{fontFamily:F.body,fontSize:11,fontWeight:600,color:T.stone,letterSpacing:"0.5px",textTransform:"uppercase"}}>Listing preview</span>
+          <button onClick={()=>setPreviewOpen(false)} style={{background:"none",border:"none",cursor:"pointer",color:T.stone,fontSize:20,lineHeight:1,padding:0}}>×</button>
+        </div>
+        <div style={{background:T.paper}}>
+          {img
+            ? <img src={img} alt="" style={{width:"100%",aspectRatio:"4/3",objectFit:"cover",display:"block"}}/>
+            : <div style={{width:"100%",aspectRatio:"4/3",background:T.bg2,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <span style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300}}>No photo added yet</span>
+              </div>}
+          <div style={{padding:"14px 16px"}}>
+            <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,marginBottom:2}}>{bizData.name}</div>
+            <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginBottom:8}}>{bizData.category} · {address||bizData.location}</div>
+            {desc&&<p style={{fontFamily:F.body,fontSize:11,color:T.stone,lineHeight:1.65,margin:"0 0 10px",fontWeight:300}}>{desc.slice(0,120)}{desc.length>120?"…":""}</p>}
+            {cr&&<div style={{display:"inline-flex",alignItems:"center",gap:4,background:T.ochreXL,borderRadius:4,padding:"4px 10px"}}>
+              <span style={{fontFamily:F.body,fontSize:12,color:T.ochre,fontWeight:700}}>◈ {cr}</span>
+              <span style={{fontFamily:F.body,fontSize:10,color:T.clay,fontWeight:300}}>per booking</span>
+            </div>}
+          </div>
+        </div>
+        <div style={{padding:"12px 18px",borderTop:`1px solid ${T.border}`}}>
+          <p style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,margin:0,lineHeight:1.5}}>This is an approximate preview. Your listing may look slightly different once live.</p>
+        </div>
+      </div>
+    </div>
+  ) : null;
 }
 
 function BusinessPortal({ onSetView }) {
@@ -2964,8 +2854,6 @@ function BusinessPortal({ onSetView }) {
   const [loading, setLoading]   = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [bizData, setBizData]   = useState(null);
-  const [authMode, setAuthMode] = useState("magic");
-  const [magicSent, setMagicSent] = useState(false);
 
   useEffect(()=>{
     const {data:{subscription}} = supabase.auth.onAuthStateChange((event, session)=>{
@@ -3010,18 +2898,6 @@ function BusinessPortal({ onSetView }) {
   async function doSignOut() {
     await supabase.auth.signOut();
     setScreen("landing"); setBizData(null); setEmail(""); setPw("");
-    setAuthMode("magic"); setMagicSent(false);
-  }
-
-  async function doMagicLink() {
-    setLoginErr(""); setLoading(true);
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { shouldCreateUser: false, emailRedirectTo: "https://www.wello-wellness.com" }
-    });
-    setLoading(false);
-    if (error) setLoginErr("Couldn't send a link — check the email address.");
-    else setMagicSent(true);
   }
 
   async function doPasswordReset() {
@@ -3033,13 +2909,6 @@ function BusinessPortal({ onSetView }) {
   }
 
   const INP3={width:"100%",padding:"10px 12px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:12,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",marginBottom:12,transition:"border-color .18s"};
-
-  // ── Loading ───────────────────────────────────────────────────
-  if (screen==="loading") return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"60vh"}}>
-      <span style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300}}>Loading…</span>
-    </div>
-  );
 
   // ── Landing ───────────────────────────────────────────────────
   if (screen==="landing") return (
@@ -3087,56 +2956,23 @@ function BusinessPortal({ onSetView }) {
   if (screen==="login") return (
     <div style={{maxWidth:420,margin:"80px auto",padding:"0 28px"}}>
       <button onClick={()=>setScreen("landing")} style={{background:"transparent",border:"none",color:T.stone,fontFamily:F.body,fontSize:11,cursor:"pointer",marginBottom:24,padding:0,fontWeight:300}}>← Back</button>
-      <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:24,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 20px"}}>Business sign in</h1>
-      {/* Auth mode toggle */}
-      <div style={{display:"flex",background:T.bg2,borderRadius:3,padding:3,marginBottom:24}}>
-        {[["magic","Magic link"],["password","Email & password"]].map(([mode,label])=>(
-          <button key={mode} onClick={()=>{setAuthMode(mode);setLoginErr("");setMagicSent(false);}}
-            style={{flex:1,padding:"8px 0",background:authMode===mode?T.paper:"transparent",color:authMode===mode?T.ink:T.stone,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:authMode===mode?600:300,cursor:"pointer",transition:"all .15s",boxShadow:authMode===mode?"0 1px 3px rgba(0,0,0,0.08)":"none"}}>
-            {label}
-          </button>
-        ))}
-      </div>
+      <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:24,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>Business sign in</h1>
+      <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,margin:"0 0 28px"}}>Sign in to your Wello business dashboard.</p>
       <FieldLabel>Email address</FieldLabel>
-      <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setLoginErr("");setMagicSent(false);}} placeholder="hello@yourstudio.com"
+      <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setLoginErr("");}} placeholder="hello@yourbusiness.com"
         style={{...INP3,borderColor:loginErr?T.clay:T.border}} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=loginErr?T.clay:T.border}/>
-      {authMode==="magic" ? (
-        magicSent ? (
-          <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:3,padding:"16px",textAlign:"center",marginBottom:16}}>
-            <div style={{fontSize:20,marginBottom:6}}>✓</div>
-            <div style={{fontFamily:F.body,fontSize:13,color:T.sage,fontWeight:600,marginBottom:4}}>Check your email</div>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.6}}>We've sent a sign-in link to <strong>{email}</strong>. Click it to access your dashboard.</div>
-            <div style={{marginTop:12,fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>Didn't receive an email? <button onClick={doMagicLink} style={{background:"none",border:"none",padding:0,fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600,cursor:"pointer",textDecoration:"underline"}}>Send me a new link.</button></div>
-          </div>
-        ) : (
-          <>
-            <button onClick={doMagicLink} disabled={loading||!email.trim()}
-              style={{width:"100%",padding:"11px",background:email.trim()&&!loading?T.sage:T.border,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:email.trim()&&!loading?"pointer":"not-allowed",marginBottom:10,transition:"background .15s"}}
-              onMouseEnter={e=>{if(email.trim()&&!loading)e.target.style.background=T.sage2;}} onMouseLeave={e=>{if(email.trim()&&!loading)e.target.style.background=T.sage;}}>
-              {loading?"Sending…":"Send sign-in link →"}
-            </button>
-            <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"0 0 4px",lineHeight:1.6}}>We'll email you a link to sign in instantly. No password needed.</p>
-          </>
-        )
-      ) : (
-        <>
-          <FieldLabel>Password</FieldLabel>
-          <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setLoginErr("");}} placeholder="••••••••"
-            style={{...INP3,borderColor:loginErr?T.clay:T.border}} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=loginErr?T.clay:T.border}
-            onKeyDown={e=>e.key==="Enter"&&doLogin()}/>
-          {loginErr&&<div style={{fontFamily:F.body,fontSize:11,color:T.clay,marginTop:-8,marginBottom:12}}>{loginErr}</div>}
-          <button onClick={doLogin} disabled={loading}
-            style={{width:"100%",padding:"11px",background:loading?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:loading?"not-allowed":"pointer",marginBottom:10,transition:"background .15s"}}
-            onMouseEnter={e=>{if(!loading)e.target.style.background=T.sage2;}} onMouseLeave={e=>{if(!loading)e.target.style.background=T.sage;}}>
-            {loading?"Signing in…":"Sign in →"}
-          </button>
-          <button onClick={()=>setScreen("reset")} style={{background:"transparent",border:"none",color:T.stone,fontFamily:F.body,fontSize:11,cursor:"pointer",padding:0,fontWeight:300,display:"block",marginBottom:4}}>Forgot password?</button>
-        </>
-      )}
-      {authMode==="magic"&&loginErr&&<div style={{fontFamily:F.body,fontSize:11,color:T.clay,marginBottom:12}}>{loginErr}</div>}
-      <div style={{borderTop:`1px solid ${T.border}`,paddingTop:14,marginTop:16}}>
-        <span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>New to Wello? </span>
-        <button onClick={()=>onSetView("business")} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer",padding:0}}>Register interest</button>
+      <FieldLabel>Password</FieldLabel>
+      <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setLoginErr("");}} placeholder="••••••••"
+        style={{...INP3,borderColor:loginErr?T.clay:T.border}} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=loginErr?T.clay:T.border}
+        onKeyDown={e=>e.key==="Enter"&&doLogin()}/>
+      {loginErr&&<div style={{fontFamily:F.body,fontSize:11,color:T.clay,marginTop:-8,marginBottom:12}}>{loginErr}</div>}
+      <button onClick={doLogin} disabled={loading} style={{width:"100%",padding:"11px",background:loading?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:loading?"not-allowed":"pointer",marginBottom:14,transition:"background .15s"}}
+        onMouseEnter={e=>{if(!loading)e.target.style.background=T.sage2;}} onMouseLeave={e=>{if(!loading)e.target.style.background=T.sage;}}>
+        {loading?"Signing in…":"Sign in →"}
+      </button>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div><span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>New to Wello? </span><button onClick={()=>onSetView("business")} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:"pointer",padding:0}}>Register interest</button></div>
+        <button onClick={()=>setScreen("reset")} style={{background:"transparent",border:"none",color:T.stone,fontFamily:F.body,fontSize:11,cursor:"pointer",padding:0,fontWeight:300}}>Forgot password?</button>
       </div>
     </div>
   );
@@ -3156,7 +2992,7 @@ function BusinessPortal({ onSetView }) {
       ) : (
         <>
           <FieldLabel>Email address</FieldLabel>
-          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="hello@yourstudio.com"
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="hello@yourbusiness.com"
             style={INP3} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=T.border}/>
           <button onClick={doPasswordReset} disabled={loading||!email.trim()} style={{width:"100%",padding:"11px",background:email.trim()&&!loading?T.sage:T.border,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:email.trim()&&!loading?"pointer":"not-allowed",transition:"background .15s"}}>
             {loading?"Sending…":"Send reset link →"}
@@ -3301,20 +3137,17 @@ export default function App() {
   // Detect Supabase password recovery or invite redirect
   useEffect(()=>{
     const hash = window.location.hash;
-    if(hash.includes("type=recovery") || hash.includes("type=invite")) {
+    if(hash.includes("type=recovery") || hash.includes("type=invite") || hash.includes("type=signup")) {
       setRecovering(true);
       setView("biz-portal");
-    } else if(hash.includes("type=magiclink") || hash.includes("type=signup")) {
-      setView("biz-portal");
     }
-    // Handle Supabase auth state changes for magic link, invite, and recovery flows
+    // Also handle Supabase auth via onAuthStateChange for invite flow
     const {data:{subscription}} = supabase.auth.onAuthStateChange((event, session)=>{
-      const h = window.location.hash;
-      if(event==="PASSWORD_RECOVERY") {
-        setRecovering(true); setView("biz-portal");
-      } else if(event==="SIGNED_IN") {
-        if(h.includes("type=invite")) { setRecovering(true); setView("biz-portal"); }
-        else if(h.includes("type=magiclink") || h.includes("type=signup")) { setView("biz-portal"); }
+      if(event==="PASSWORD_RECOVERY" || event==="SIGNED_IN") {
+        if(window.location.hash.includes("type=invite") || window.location.hash.includes("type=recovery")) {
+          setRecovering(true);
+          setView("biz-portal");
+        }
       }
     });
     return ()=>subscription.unsubscribe();
@@ -3372,7 +3205,7 @@ export default function App() {
       try {
         const cached = localStorage.getItem("wello_listings");
         if (cached) {
-          setListings([...JSON.parse(cached), ...COURT_LISTINGS]);
+          setListings(JSON.parse(cached));
           setListingsLoading(false);
         }
       } catch(e) {}
@@ -3386,15 +3219,13 @@ export default function App() {
 
       if (error) {
         console.error("Error fetching listings:", error);
-        if (!localStorage.getItem("wello_listings")) setListings([...LISTINGS, ...COURT_LISTINGS]);
-        else setListings(p => p.some(b=>b.court) ? p : [...p, ...COURT_LISTINGS]);
+        if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
       } else if (listingRows && listingRows.length > 0) {
         const transformed = transformRows(listingRows);
-        setListings([...transformed, ...COURT_LISTINGS]);
+        setListings(transformed);
         try { localStorage.setItem("wello_listings", JSON.stringify(transformed)); } catch(e) {}
       } else {
-        if (!localStorage.getItem("wello_listings")) setListings([...LISTINGS, ...COURT_LISTINGS]);
-        else setListings(p => p.some(b=>b.court) ? p : [...p, ...COURT_LISTINGS]);
+        if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
       }
       setListingsLoading(false);
     }
@@ -3667,8 +3498,7 @@ export default function App() {
       )}
 
       {selBiz   &&<BizPanel biz={selBiz}        onClose={()=>setSelBiz(null)}  onBook={onBook}/>}
-      {bkData && bkData.biz.court &&<CourtBookingModal biz={bkData.biz} slot={bkData.slot} onClose={()=>setBkData(null)} onConfirm={onConfirm} credits={credits} onBuyCredits={()=>{setBkData(null);setView("credits");}}/>}
-      {bkData &&!bkData.biz.court &&<BookingModal      biz={bkData.biz} slot={bkData.slot} onClose={()=>setBkData(null)} onConfirm={onConfirm} credits={credits} onBuyCredits={()=>{setBkData(null);setView("credits");}}/>}
+      {bkData   &&<BookingModal biz={bkData.biz} slot={bkData.slot} onClose={()=>setBkData(null)} onConfirm={onConfirm} credits={credits} onBuyCredits={()=>{setBkData(null);setView("credits");}}/>}
       <SyncEngine listings={listings} onUpdate={onSyncUpdate}/>
       <Chatbot listings={listings} credits={credits} bookings={bookings} onSelectBiz={onSelect}/>
 
