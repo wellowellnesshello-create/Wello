@@ -3278,7 +3278,11 @@ function BusinessPortal({ onSetView }) {
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════
 export default function App() {
-  const [view,setView]         = useState("home");
+  const [view,setView]         = useState(()=>{
+    const params = new URLSearchParams(window.location.search);
+    if(params.get("portal")==="business") return "biz-portal";
+    return "home";
+  });
   const headerRef = useRef(null);
   const [headerH, setHeaderH] = useState(91);
   useEffect(()=>{
