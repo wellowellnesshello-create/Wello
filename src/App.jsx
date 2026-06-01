@@ -2540,6 +2540,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   const [cr, setCr] = useState(bizData.cr ? String(bizData.cr) : "");
   const [newSlot, setNewSlot] = useState({ name:"", days:[], time:"09:00", dur:"60 min", spots:10 });
   const [intgRequest, setIntgRequest] = useState(bizData.integration_request || "");
+  const [priceMode, setPriceMode] = useState(bizData.price_mode || "flat");
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const firstName = bizData.name.split(' ')[0];
@@ -2553,7 +2554,8 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
 
   async function saveProgress(updates) {
     setSaving(true);
-    await supabase.from('businesses').update(updates).eq('id', bizData.id);
+    const { error } = await supabase.from('businesses').update(updates).eq('id', bizData.id);
+    if (error) console.error('saveProgress error:', error.message, '| id:', bizData.id);
     setSaving(false);
   }
 
@@ -2577,9 +2579,20 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
 
   async function handleSubmit() {
     setSaving(true);
-    await supabase.from('businesses').update({ status:'submitted', onboarding_step:6 }).eq('id', bizData.id);
+    const payload = { status: 'submitted', onboarding_step: 6 };
+    let ok = false;
+    const { error: e1, data: d1 } = await supabase.from('businesses').update(payload).eq('id', bizData.id).select('id');
+    if (!e1 && d1?.length) {
+      ok = true;
+    } else {
+      console.warn('Submit by id failed, trying email:', e1?.message);
+      const { error: e2 } = await supabase.from('businesses').update(payload).eq('email', bizData.email);
+      if (!e2) ok = true;
+      else console.error('Submit email fallback also failed:', e2.message);
+    }
     setSaving(false);
-    onSubmitted();
+    if (ok) onSubmitted();
+    else alert('Something went wrong. Please contact hello@wello-wellness.com');
   }
 
   function addSlot() {
@@ -2602,6 +2615,24 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
       </div>
     </>
   );
+
+  // Build BizPanel-compatible preview object (used for both preview button and step 6 review)
+  const _DAY_IDX = {Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6,Sun:0};
+  const previewSlots = slots.flatMap(sl=>
+    sl.days.map(day=>{
+      const target=_DAY_IDX[day]; const curr=new Date().getDay();
+      const ahead=(target-curr+7)%7||7;
+      const d=new Date(); d.setDate(d.getDate()+ahead);
+      return {id:`${sl.id}_${day}`,name:sl.name,date:d.toISOString().slice(0,10),time:sl.time,dur:sl.dur,spots:sl.spots,booked:0,cr:sl.cr||parseInt(cr)||catAvg};
+    })
+  );
+  const previewBiz = {
+    id:bizData.id, name:bizData.name, cat:bizData.category,
+    loc:address||bizData.location, img:img||'', desc:desc||'Your description will appear here.',
+    cr:parseInt(cr)||catAvg, rating:0, reviews:0, tags:[], slots:previewSlots,
+  };
+
+  if (previewOpen) return <BizPanel biz={previewBiz} onClose={()=>setPreviewOpen(false)} onBook={()=>setPreviewOpen(false)}/>;
 
   if (step===2) return (
     <OWrap title="Tell us about your venue" sub="This is what guests will see when they find you on Wello." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
@@ -2768,82 +2799,91 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
     </OWrap>
   );
 
-  if (step===5) return (
-    <OWrap title="Set your credit price" sub="Guests pay using Wello credits. 1 credit = €1. You decide what to charge per booking." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
-      footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(4)} label="← Back" variant="secondary"/>,
-               <OBtn key="n" saving={saving} onClick={()=>goNext({cr:parseInt(cr)||catAvg})} label="Save & continue →" disabled={!cr}/>]}>
-      <label style={FL}>Credits per booking</label>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-        <span style={{fontFamily:F.body,fontSize:22,color:T.ochre}}>◈</span>
-        <input type="number" min="1" value={cr} onChange={e=>setCr(e.target.value)} placeholder={String(catAvg)}
-          style={{...INP,maxWidth:100,fontSize:18,fontWeight:700}} onFocus={onFi} onBlur={onBl}/>
-        {cr&&<span style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300}}>= €{cr}</span>}
-      </div>
-      <p style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300,margin:"0 0 4px",lineHeight:1.6}}>Similar venues typically charge around {catAvg} credits. You can adjust this any time.</p>
-    </OWrap>
-  );
+  if (step===5) {
+    const canAdvance = priceMode==="flat" ? !!cr : slots.every(sl=>sl.cr);
+    return (
+      <OWrap title="Set your credit price" sub="Guests pay using Wello credits. 1 credit = €1." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+        footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(4)} label="← Back" variant="secondary"/>,
+                 <OBtn key="n" saving={saving} onClick={()=>goNext(priceMode==="flat"?{cr:parseInt(cr)||catAvg,price_mode:"flat"}:{price_mode:"per_slot",slots,cr:null})} label="Save & continue →" disabled={!canAdvance}/>]}>
+        {/* Toggle */}
+        <div style={{display:"flex",background:T.bg2,borderRadius:3,padding:3,marginBottom:24}}>
+          {[["flat","Same price for all"],["per_slot","Different price per slot"]].map(([mode,label])=>(
+            <button key={mode} onClick={()=>setPriceMode(mode)} style={{flex:1,padding:"9px 0",background:priceMode===mode?T.paper:"transparent",color:priceMode===mode?T.ink:T.stone,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:priceMode===mode?600:300,cursor:"pointer",transition:"all .15s",boxShadow:priceMode===mode?"0 1px 3px rgba(0,0,0,0.08)":"none"}}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {priceMode==="flat" ? (
+          <>
+            <label style={FL}>Credits per booking</label>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+              <span style={{fontFamily:F.body,fontSize:22,color:T.ochre}}>◈</span>
+              <input type="number" min="1" value={cr} onChange={e=>setCr(e.target.value)} placeholder={String(catAvg)}
+                style={{...INP,maxWidth:100,fontSize:18,fontWeight:700}} onFocus={onFi} onBlur={onBl}/>
+              {cr&&<span style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300}}>= €{cr}</span>}
+            </div>
+            <p style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300,margin:0,lineHeight:1.6}}>Similar venues typically charge around {catAvg} credits. You can adjust this any time.</p>
+          </>
+        ) : slots.length===0 ? (
+          <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,lineHeight:1.6,padding:"16px 0"}}>Go back to step 4 and add your availabilities first — you'll set a price for each one here.</p>
+        ) : (
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {slots.map(sl=>(
+              <div key={sl.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,padding:"12px 14px",background:T.paper,border:`1px solid ${T.border}`,borderRadius:6}}>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontFamily:F.body,fontSize:12,fontWeight:600,color:T.ink,marginBottom:2}}>{sl.name}</div>
+                  <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{sl.days.join(", ")} · {sl.time} · {sl.dur}</div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                  <span style={{fontFamily:F.body,fontSize:14,color:T.ochre}}>◈</span>
+                  <input type="number" min="1" value={sl.cr||""} onChange={e=>setSlots(s=>s.map(x=>x.id===sl.id?{...x,cr:e.target.value}:x))}
+                    placeholder={String(catAvg)} style={{...INP,width:70,fontSize:14,fontWeight:700,padding:"8px 10px"}} onFocus={onFi} onBlur={onBl}/>
+                </div>
+              </div>
+            ))}
+            <p style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300,margin:"4px 0 0",lineHeight:1.6}}>1 credit = €1. You can adjust these at any time.</p>
+          </div>
+        )}
+      </OWrap>
+    );
+  }
 
   if (step===6) return (
-    <OWrap title="Review your listing" sub="Here's how you'll appear on Wello. You can edit anything from your dashboard after you go live." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
-      footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
-               <button key="s" onClick={handleSubmit} disabled={saving}
-                 style={{padding:"11px 28px",background:saving?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:saving?"not-allowed":"pointer"}}
-                 onMouseEnter={e=>{if(!saving)e.target.style.background=T.sage2;}}
-                 onMouseLeave={e=>{if(!saving)e.target.style.background=T.sage;}}>
-                 {saving?"Submitting…":"Submit for review →"}
-               </button>]}>
-      <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:24}}>
-        {img&&<img src={img} alt="" style={{width:"100%",aspectRatio:"4/3",objectFit:"cover",display:"block"}}/>}
-        <div style={{padding:"16px 18px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
-            <div>
-              <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,marginBottom:2}}>{bizData.name}</div>
-              <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{bizData.category} · {bizData.location}</div>
-            </div>
-            <div style={{textAlign:"right"}}>
-              <div style={{fontFamily:F.body,fontSize:13,color:T.ochre,fontWeight:700}}>◈ {cr||catAvg}</div>
-              <div style={{fontFamily:F.body,fontSize:9,color:T.stone2,fontWeight:300}}>per session</div>
-            </div>
+    <>
+      <OWrap title="Review your listing" sub="This is how you'll appear on Wello. Tap 'Preview' above to see the full member view." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+        footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
+                 <button key="s" onClick={handleSubmit} disabled={saving}
+                   style={{padding:"11px 28px",background:saving?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:saving?"not-allowed":"pointer"}}
+                   onMouseEnter={e=>{if(!saving)e.target.style.background=T.sage2;}}
+                   onMouseLeave={e=>{if(!saving)e.target.style.background=T.sage;}}>
+                   {saving?"Submitting…":"Submit for review →"}
+                 </button>]}>
+        {/* Summary rows */}
+        {[
+          {l:"Venue",v:bizData.name},
+          {l:"Category",v:bizData.category},
+          {l:"Location",v:address||bizData.location||"—"},
+          {l:"Description",v:desc?desc.slice(0,80)+(desc.length>80?"…":""):"—"},
+          {l:"Website",v:website||"—"},
+          {l:"Instagram",v:instagram||"—"},
+          {l:"Photo",v:img?"Added ✓":"Not added"},
+          {l:"Availabilities",v:slots.length?`${slots.length} slot${slots.length!==1?"s":""} added`:"None added"},
+          {l:"Pricing",v:priceMode==="flat"?`◈ ${cr||catAvg} per booking`:`Per slot pricing (${slots.filter(s=>s.cr).length}/${slots.length} set)`},
+        ].map(({l,v})=>(
+          <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",padding:"11px 0",borderBottom:`1px solid ${T.border}`}}>
+            <span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,minWidth:110}}>{l}</span>
+            <span style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:400,textAlign:"right",flex:1}}>{v}</span>
           </div>
-          {desc&&<p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.65,margin:"8px 0 0"}}>{desc.slice(0,140)}{desc.length>140?"…":""}</p>}
+        ))}
+        <div style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:6,padding:"13px 16px",marginTop:24}}>
+          <div style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:600,marginBottom:3}}>What happens next?</div>
+          <div style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:300,lineHeight:1.6}}>We'll review your listing and be in touch within 2 working days. We may suggest a few small tweaks before you go live.</div>
         </div>
-      </div>
-      <div style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:6,padding:"13px 16px"}}>
-        <div style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:600,marginBottom:3}}>What happens next?</div>
-        <div style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:300,lineHeight:1.6}}>We'll review your listing and get back to you within 2 working days. We may suggest a few small tweaks before you go live.</div>
-      </div>
-    </OWrap>
+      </OWrap>
+    </>
   );
 
-  return previewOpen ? (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setPreviewOpen(false)}>
-      <div style={{background:T.bg,borderRadius:12,maxWidth:360,width:"100%",overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}} onClick={e=>e.stopPropagation()}>
-        <div style={{padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${T.border}`}}>
-          <span style={{fontFamily:F.body,fontSize:11,fontWeight:600,color:T.stone,letterSpacing:"0.5px",textTransform:"uppercase"}}>Listing preview</span>
-          <button onClick={()=>setPreviewOpen(false)} style={{background:"none",border:"none",cursor:"pointer",color:T.stone,fontSize:20,lineHeight:1,padding:0}}>×</button>
-        </div>
-        <div style={{background:T.paper}}>
-          {img
-            ? <img src={img} alt="" style={{width:"100%",aspectRatio:"4/3",objectFit:"cover",display:"block"}}/>
-            : <div style={{width:"100%",aspectRatio:"4/3",background:T.bg2,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                <span style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300}}>No photo added yet</span>
-              </div>}
-          <div style={{padding:"14px 16px"}}>
-            <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,marginBottom:2}}>{bizData.name}</div>
-            <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginBottom:8}}>{bizData.category} · {address||bizData.location}</div>
-            {desc&&<p style={{fontFamily:F.body,fontSize:11,color:T.stone,lineHeight:1.65,margin:"0 0 10px",fontWeight:300}}>{desc.slice(0,120)}{desc.length>120?"…":""}</p>}
-            {cr&&<div style={{display:"inline-flex",alignItems:"center",gap:4,background:T.ochreXL,borderRadius:4,padding:"4px 10px"}}>
-              <span style={{fontFamily:F.body,fontSize:12,color:T.ochre,fontWeight:700}}>◈ {cr}</span>
-              <span style={{fontFamily:F.body,fontSize:10,color:T.clay,fontWeight:300}}>per booking</span>
-            </div>}
-          </div>
-        </div>
-        <div style={{padding:"12px 18px",borderTop:`1px solid ${T.border}`}}>
-          <p style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,margin:0,lineHeight:1.5}}>This is an approximate preview. Your listing may look slightly different once live.</p>
-        </div>
-      </div>
-    </div>
-  ) : null;
+  return null;
 }
 
 function BusinessPortal({ onSetView }) {
@@ -2854,12 +2894,17 @@ function BusinessPortal({ onSetView }) {
   const [loading, setLoading]   = useState(false);
   const [resetSent, setResetSent] = useState(false);
   const [bizData, setBizData]   = useState(null);
+  const didLoad = useRef(false);
 
   useEffect(()=>{
     const {data:{subscription}} = supabase.auth.onAuthStateChange((event, session)=>{
       if((event==="INITIAL_SESSION"||event==="SIGNED_IN") && session) {
-        loadBizData(session.user.email);
+        if(!didLoad.current) {
+          didLoad.current = true;
+          loadBizData(session.user.email);
+        }
       } else if(event==="SIGNED_OUT") {
+        didLoad.current = false;
         setScreen("landing"); setBizData(null); setEmail(""); setPw("");
       }
     });
