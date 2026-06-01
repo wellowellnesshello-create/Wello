@@ -3795,6 +3795,14 @@ export default function App() {
           <BusinessPortalDashboard onExit={()=>setBizPreview(false)}/>
         </div>
       )}
+      {!bizPreview&&(
+        <div style={{position:"fixed",bottom:148,right:12,zIndex:1050}}>
+          <button onClick={()=>setBizPreview(true)}
+            style={{background:"#1B1C19",color:"#D6B47C",border:"1px solid #B8925C",borderRadius:999,padding:"8px 16px",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,fontWeight:600,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,0,0,0.3)",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>
+            👁 Business portal
+          </button>
+        </div>
+      )}
       {bizPreview&&(
         <div style={{position:"fixed",bottom:148,right:12,zIndex:2100}}>
           <button onClick={()=>setBizPreview(false)}
