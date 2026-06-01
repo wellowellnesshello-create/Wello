@@ -440,16 +440,13 @@ function BizPanel({ biz, onClose, onBook }) {
   const allDates = dates;
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:900,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:"0"}} onClick={onClose}>
-      <div style={{background:"#fff",borderRadius:"20px 20px 0 0",maxWidth:640,width:"100%",maxHeight:"92vh",overflow:"hidden",overflowY:"auto",boxShadow:"0 -8px 40px rgba(0,0,0,0.2)",animation:"slideUp .3s ease"}} onClick={e=>e.stopPropagation()}>
+    <div style={{position:"fixed",inset:0,zIndex:900,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px"}} onClick={onClose}>
+      <div style={{background:"#fff",borderRadius:16,maxWidth:640,width:"100%",maxHeight:"88vh",overflow:"hidden",overflowY:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.25)",animation:"su .25s ease"}} onClick={e=>e.stopPropagation()}>
 
-        {/* Drag handle */}
-        <div style={{display:"flex",justifyContent:"center",padding:"12px 0 0"}}>
-          <div style={{width:40,height:4,borderRadius:999,background:"rgba(195,200,188,0.5)"}}/>
-        </div>
         {/* Hero image */}
         <div style={{position:"relative",height:200}}>
-          <img src={biz.img} alt={biz.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+          <img src={biz.img} alt={biz.name} style={{width:"100%",height:"100%",objectFit:"cover"}}
+            onError={e=>{e.target.src="https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80";}}/>
           <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(27,28,25,0.88) 0%,rgba(27,28,25,0.05) 55%)"}}/>
           <button onClick={onClose} style={{position:"absolute",top:14,right:14,background:"rgba(255,255,255,0.15)",backdropFilter:"blur(8px)",border:"none",color:"#fff",width:32,height:32,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
           {sys&&<div style={{position:"absolute",top:14,left:14,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(8px)",borderRadius:999,padding:"4px 10px",display:"flex",alignItems:"center",gap:5}}>
@@ -1122,7 +1119,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
 // ═══════════════════════════════════════════════════════════════
 // PAGE: PROFILE
 // ═══════════════════════════════════════════════════════════════
-function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetView, isBiz, onToggleBiz }) {
+function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetView, isBiz, onToggleBiz, onPreviewDashboard }) {
   const [tab,setTab]=useState("reservations");
   const saved=listings.filter(b=>savedIds.includes(b.id));
   const [friends]=useState(FRIENDS);
@@ -1291,7 +1288,8 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                     <div style={{position:"absolute",top:2,left:isBiz?22:2,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
                   </div>
                 </div>
-                {isBiz&&<button onClick={()=>onSetView("biz-portal")} style={{background:"#FADEC0",color:"#766149",border:"none",borderRadius:999,padding:"8px 18px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>Manage Business →</button>}
+                {isBiz&&<button onClick={()=>onSetView("biz-portal")} style={{background:"#FADEC0",color:"#766149",border:"none",borderRadius:999,padding:"8px 18px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",marginRight:8}}>Manage Business →</button>}
+                {isBiz&&<button onClick={onPreviewDashboard} style={{background:"transparent",color:"#74796E",border:"1px solid rgba(195,200,188,0.6)",borderRadius:999,padding:"8px 18px",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer"}}>Preview dashboard →</button>}
               </div>
             )},{title:"Notifications",content:(
               <div style={{padding:"20px",display:"flex",flexDirection:"column",gap:14}}>
@@ -3303,8 +3301,10 @@ export default function App() {
   const [newPwErr,setNewPwErr] = useState("");
   const [newPwDone,setNewPwDone] = useState(false);
 
-  // Detect Supabase password recovery or invite redirect
+  // Detect Supabase password recovery or invite redirect; track auth session
   useEffect(()=>{
+    supabase.auth.getSession().then(({data:{session}})=>setAuthSession(session));
+
     const hash = window.location.hash;
     const params = new URLSearchParams(window.location.search);
     const portalParam = params.get("portal") === "business";
@@ -3317,6 +3317,8 @@ export default function App() {
     }
 
     const {data:{subscription}} = supabase.auth.onAuthStateChange((event, session)=>{
+      if(event==="SIGNED_IN") setAuthSession(session);
+      if(event==="SIGNED_OUT") setAuthSession(null);
       const h = window.location.hash;
       const p = new URLSearchParams(window.location.search).get("portal") === "business";
       if(event==="PASSWORD_RECOVERY" || event==="SIGNED_IN") {
@@ -3348,6 +3350,8 @@ export default function App() {
   const [bookings,setBookings] = useState([]);
   const [saved,setSaved]       = useState([]);
   const [isBiz,setIsBiz]       = useState(false);
+  const [authSession,setAuthSession] = useState(null);
+  const [bizPreview,setBizPreview] = useState(false);
   const [toast,setToast]       = useState(null);
 
   // Fetch listings + slots from Supabase (with localStorage cache for instant load)
@@ -3428,6 +3432,7 @@ export default function App() {
   }
   function onPurchase(purchase){ setCredits(c=>c+purchase.cr); showToast(`◈ ${purchase.cr} credits added!`,"gold"); }
   function toggleSave(id){ setSaved(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]); showToast(saved.includes(id)?"Removed from saved":"Saved!","success"); }
+  function handleNavClick(id){ if(id==="biz-portal"&&!authSession){setView("business");return;} setView(id); }
 
   const NAV=[{id:"home",l:"Home"},{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"profile",l:"Profile"},{id:"biz-portal",l:"Business"}];
 
@@ -3517,7 +3522,7 @@ export default function App() {
             {/* Links — centred */}
             <div className="wello-nav-links" style={{flex:1,justifyContent:"center",gap:6,alignItems:"center"}}>
               {[{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"biz-portal",l:"Business"}].map(n=>(
-                <button key={n.id} onClick={()=>setView(n.id)}
+                <button key={n.id} onClick={()=>handleNavClick(n.id)}
                   style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,fontWeight:view===n.id?700:500,color:view===n.id?"#213C18":"#43483F",background:"transparent",border:"none",borderBottom:view===n.id?"2px solid #213C18":"2px solid transparent",padding:"4px 10px 8px",cursor:"pointer",transition:"color .15s",outline:"none"}}>
                   {n.l}
                 </button>
@@ -3540,7 +3545,7 @@ export default function App() {
         <div style={{paddingTop:headerH}}>
           {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds}/>}
           {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds}/>}
-          {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
+          {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)}/>}
           {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
           {view==="business"   &&<BusinessPage isBiz={true} onSetView={setView} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
           {view==="credits"    &&<CreditsPage credits={credits} onPurchase={onPurchase} listings={listings}/>}
@@ -3681,12 +3686,26 @@ export default function App() {
       <SyncEngine listings={listings} onUpdate={onSyncUpdate}/>
       <Chatbot listings={listings} credits={credits} bookings={bookings} onSelectBiz={onSelect}/>
 
+      {bizPreview&&(
+        <div style={{position:"fixed",inset:0,zIndex:2000,overflowY:"auto",background:"#FBF9F4"}}>
+          <BusinessPortalDashboard onExit={()=>setBizPreview(false)}/>
+        </div>
+      )}
+      {bizPreview&&(
+        <div style={{position:"fixed",bottom:148,right:12,zIndex:2100}}>
+          <button onClick={()=>setBizPreview(false)}
+            style={{background:"#1B1C19",color:"#A89E8C",border:"1px solid #43483F",borderRadius:999,padding:"8px 16px",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,cursor:"pointer",boxShadow:"0 4px 16px rgba(0,0,0,0.3)"}}>
+            ✕ Exit preview
+          </button>
+        </div>
+      )}
+
 
       {/* Mobile bottom nav */}
       <div className="mob-nav" style={{position:"fixed",bottom:0,left:0,right:0,zIndex:999,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"1px solid rgba(195,200,188,0.25)",padding:"8px 16px calc(8px + env(safe-area-inset-bottom))"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           {[{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"biz-portal",l:"Business"},{id:"profile",l:"Profile"}].map(({id,l})=>(
-            <button key={id} onClick={()=>setView(id)}
+            <button key={id} onClick={()=>handleNavClick(id)}
               style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"transparent",border:"none",cursor:"pointer",padding:"4px 12px",fontFamily:"'Manrope',system-ui,sans-serif",borderBottom:view===id?"2px solid #213C18":"2px solid transparent"}}>
               <span style={{fontSize:13,fontWeight:view===id?700:500,color:view===id?"#213C18":"#74796E"}}>{l}</span>
             </button>
