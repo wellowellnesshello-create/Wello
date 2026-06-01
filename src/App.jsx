@@ -2557,8 +2557,14 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
 
   async function saveProgress(updates) {
     setSaving(true);
-    const { error } = await supabase.from('businesses').update(updates).eq('id', bizData.id);
-    if (error) console.error('saveProgress error:', error.message, '| id:', bizData.id);
+    const { data, error } = await supabase
+      .from('businesses')
+      .update(updates)
+      .eq('email', bizData.email)
+      .select('id');
+    if (error) console.error('saveProgress error:', error.message);
+    else if (!data?.length) console.warn('saveProgress: 0 rows updated — check RLS allows partner to update own row');
+    else console.log('saveProgress ok, fields saved:', Object.keys(updates).join(', '));
     setSaving(false);
   }
 
