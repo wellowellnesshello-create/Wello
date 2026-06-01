@@ -3112,9 +3112,9 @@ function BusinessPortal({ onSetView }) {
   if (screen==="landing") {
   const canReg = regForm.name.trim()&&regForm.email.trim()&&regForm.phone.trim();
   return (
-    <div style={{background:T.bg,paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
+    <div style={{background:T.bg}}>
       {/* Hero split */}
-      <div style={{display:"flex",alignItems:"stretch",flexWrap:"wrap"}}>
+      <div style={{display:"flex",alignItems:"stretch",flexWrap:"wrap",minHeight:"calc(100vh - 60px)"}}>
         {/* Left — pitch */}
         <div style={{flex:"1 1 300px",background:T.sage,padding:"clamp(40px,6vw,72px) clamp(28px,5vw,56px)",display:"flex",flexDirection:"column",justifyContent:"center"}}>
           <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:11,fontWeight:400,color:T.ochreL,letterSpacing:"5px",textTransform:"uppercase",marginBottom:20}}>For businesses</div>
@@ -3139,7 +3139,7 @@ function BusinessPortal({ onSetView }) {
           </div>
         </div>
         {/* Right — registration form */}
-        <div style={{flex:"1 1 300px",background:T.paper,padding:"clamp(32px,5vw,56px) clamp(24px,5vw,48px)",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+        <div style={{flex:"1 1 300px",background:T.paper,padding:"clamp(32px,5vw,56px) clamp(24px,5vw,48px) calc(clamp(32px,5vw,56px) + env(safe-area-inset-bottom))",display:"flex",flexDirection:"column",justifyContent:"center"}}>
           <div style={{display:"flex",justifyContent:"flex-end",marginBottom:24}}>
             <button onClick={()=>setScreen("login")} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:"pointer",padding:0}}>Already a partner? Sign in →</button>
           </div>
