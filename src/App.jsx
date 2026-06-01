@@ -2980,17 +2980,23 @@ function BusinessPortal({ onSetView }) {
 
   async function loadBizData(userEmail) {
     setScreen("loading");
-    const {data, error} = await supabase.from("businesses").select("*").eq("email", userEmail).single();
-    if(error && error.code !== "PGRST116") console.error("loadBizData:", error.message);
-    if(data) {
-      setBizData(data);
-      if(data.status==="approved")       setScreen("dashboard");
-      else if(data.status==="setting_up") setScreen("onboarding");
-      else if(data.status==="submitted")  setScreen("submitted");
-      else                                setScreen("pending");
-    } else {
+    const {data, error} = await supabase.from("businesses").select("*").eq("email", userEmail).maybeSingle();
+    if(error) {
+      console.error("loadBizData error:", error.message, "| code:", error.code, "| email:", userEmail);
       setScreen("pending");
+      return;
     }
+    if(!data) {
+      console.warn("loadBizData: no row found for", userEmail, "— check RLS policies on businesses table");
+      setScreen("pending");
+      return;
+    }
+    console.log("loadBizData: status =", data.status);
+    setBizData(data);
+    if(data.status==="approved")        setScreen("dashboard");
+    else if(data.status==="setting_up") setScreen("onboarding");
+    else if(data.status==="submitted")  setScreen("submitted");
+    else                                setScreen("pending");
   }
 
   async function doLogin() {
@@ -3156,6 +3162,13 @@ function BusinessPortal({ onSetView }) {
           </button>
         </>
       )}
+    </div>
+  );
+
+  // ── Loading ───────────────────────────────────────────────────
+  if (screen==="loading") return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"60vh"}}>
+      <span style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300}}>Loading…</span>
     </div>
   );
 
