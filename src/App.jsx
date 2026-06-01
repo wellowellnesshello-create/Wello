@@ -3112,7 +3112,7 @@ function BusinessPortal({ onSetView }) {
   if (screen==="landing") {
   const canReg = regForm.name.trim()&&regForm.email.trim()&&regForm.phone.trim();
   return (
-    <div style={{background:T.bg}}>
+    <div style={{background:T.bg,paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
       {/* Hero split */}
       <div style={{display:"flex",alignItems:"stretch",flexWrap:"wrap"}}>
         {/* Left — pitch */}
