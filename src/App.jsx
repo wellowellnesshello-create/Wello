@@ -3182,15 +3182,24 @@ export default function App() {
   // Detect Supabase password recovery or invite redirect
   useEffect(()=>{
     const hash = window.location.hash;
+    const params = new URLSearchParams(window.location.search);
+    const portalParam = params.get("portal") === "business";
+
     if(hash.includes("type=recovery") || hash.includes("type=invite") || hash.includes("type=signup")) {
       setRecovering(true);
       setView("biz-portal");
+    } else if(portalParam) {
+      setView("biz-portal");
     }
-    // Also handle Supabase auth via onAuthStateChange for invite flow
+
     const {data:{subscription}} = supabase.auth.onAuthStateChange((event, session)=>{
+      const h = window.location.hash;
+      const p = new URLSearchParams(window.location.search).get("portal") === "business";
       if(event==="PASSWORD_RECOVERY" || event==="SIGNED_IN") {
-        if(window.location.hash.includes("type=invite") || window.location.hash.includes("type=recovery")) {
+        if(h.includes("type=invite") || h.includes("type=recovery")) {
           setRecovering(true);
+          setView("biz-portal");
+        } else if(p || h.includes("type=magiclink") || h.includes("type=signup")) {
           setView("biz-portal");
         }
       }
