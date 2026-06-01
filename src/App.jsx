@@ -3210,26 +3210,6 @@ function BusinessPortal({ onSetView }) {
         </div>
       </div>
 
-      {/* FAQ */}
-      <div style={{background:T.bg,padding:"clamp(40px,6vw,64px) clamp(24px,4vw,32px)"}}>
-        <div style={{maxWidth:720,margin:"0 auto"}}>
-          <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:"clamp(20px,3vw,28px)",fontWeight:700,color:T.ink,margin:"0 0 32px",letterSpacing:"-0.5px"}}>Common questions</h2>
-          <div style={{display:"flex",flexDirection:"column",gap:0,border:`1px solid ${T.border}`,borderRadius:4,overflow:"hidden"}}>
-            {[
-              ["How does the credit system work?","Members buy Wello credits and use them to book your sessions. You set the credit price per session, and Wello pays out your earnings every Friday via bank transfer."],
-              ["Is there a monthly fee?","No. Wello is fully credit-based with no subscription or monthly fees. You only earn when members book, and our commission is agreed with you directly before going live."],
-              ["How do I get listed?","Register your interest using the form above. We'll review your details and be in touch within 2 working days to walk you through the full setup."],
-              ["Can I control which sessions are on Wello?","Yes. From your partner dashboard you can manage your schedule, set credit prices, control capacity, and pause or remove slots at any time."],
-              ["What kind of businesses can join?","Yoga and Pilates studios, gyms, pools, surf and paddle schools, spas, tennis and padel clubs, hiking guides, and more. If it's wellness or fitness, we'd love to hear from you."],
-            ].map(([q,a],i,arr)=>(
-              <div key={i} style={{padding:"18px 22px",borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none",background:T.paper}}>
-                <div style={{fontFamily:F.body,fontSize:13,fontWeight:600,color:T.ink,marginBottom:6}}>{q}</div>
-                <div style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,lineHeight:1.7}}>{a}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
     </div>
   );
   }
