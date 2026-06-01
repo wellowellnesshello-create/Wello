@@ -162,8 +162,8 @@ const INTEGRATIONS = [
   { id:"ical",       name:"iCal Feed",   desc:"Any calendar, 15-min sync",    auth:"Feed URL",    col:T.ochre },
   { id:"custom",     name:"Custom API",  desc:"Your own booking system",      auth:"Bearer Token",col:T.stone },
 ];
-const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","HIIT","Crossfit","Tennis","Padel","Horse Riding","Meditation","Sound Healing","Massage & Spa","Cold Water Therapy","Breathwork","Nutrition & Wellness","Dance","Martial Arts","Other"];
-const LOCS = ["All","Palma","Sóller","Deià","Pollença","Alcúdia","Santanyí","Valldemossa"];
+const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","Meditation","Padel","Tennis","Pickleball"];
+const LOCS = ["All Mallorca","Palma","Sóller","Deià","Pollença","Alcúdia","Santanyí","Valldemossa"];
 const SYNC = {1:"Mindbody",2:"Acuity",3:"Acuity",4:"FareHarbor",5:"Custom API",6:"Mindbody",7:"Gympass",8:"iCal",9:"Custom API"};
 
 const LISTINGS = [
@@ -969,7 +969,7 @@ function AboutPage({ onSetView }) {
 function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds }) {
   const [search,setSearch]=useState("");
   const [activeCat,setActiveCat]=useState("All");
-  const [activeLoc,setActiveLoc]=useState("All");
+  const [activeLoc,setActiveLoc]=useState("All Mallorca");
   const [viewMode,setViewMode]=useState("grid");
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   
@@ -987,7 +987,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
   };
   const filtered=listings.filter(b=>{
     const mC=activeCat==="All"||b.cat===activeCat;
-    const mL=activeLoc==="All"||b.loc===activeLoc;
+    const mL=activeLoc==="All Mallorca"||b.loc===activeLoc;
     const mS=!search||b.name.toLowerCase().includes(search.toLowerCase())||b.loc.toLowerCase().includes(search.toLowerCase())||b.cat.toLowerCase().includes(search.toLowerCase());
     return mC&&mL&&mS;
   });
@@ -1025,7 +1025,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
         <div style={{maxWidth:1200,margin:"0 auto"}}>
           {/* Category pills */}
           <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:8,scrollbarWidth:"none",alignItems:"center"}}>
-            {CATS.slice(0,14).map(c=>(
+            {CATS.map(c=>(
               <button key={c} onClick={()=>setActiveCat(c)}
                 style={{padding:"8px 18px",borderRadius:999,border:"none",fontFamily:F2,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",transition:"all .15s",flexShrink:0,
                   background:activeCat===c?"#213C18":"#EAE8E3",
@@ -3017,6 +3017,10 @@ function BusinessPortal({ onSetView }) {
   const [resetSent, setResetSent] = useState(false);
   const [bizData, setBizData]   = useState(null);
   const didLoad = useRef(false);
+  const [regForm, setRegForm]   = useState({name:"",category:"Yoga",location:"",email:"",phone:"",notes:""});
+  const [regLoading, setRegLoading] = useState(false);
+  const [regDone, setRegDone]   = useState(false);
+  const [regDuplicate, setRegDuplicate] = useState(false);
 
   useEffect(()=>{
     // Check for an existing session immediately so authenticated partners
@@ -3086,49 +3090,149 @@ function BusinessPortal({ onSetView }) {
     setLoading(false); setResetSent(true);
   }
 
-  const INP3={width:"100%",padding:"10px 12px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:12,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",marginBottom:12,transition:"border-color .18s"};
+  const INP3={width:"100%",padding:"10px 12px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:12,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",marginBottom:0,transition:"border-color .18s"};
+  const onF3=e=>e.target.style.borderColor=T.sage;
+  const onB3=e=>e.target.style.borderColor=T.border;
+
+  async function handleRegSubmit() {
+    if(!regForm.name.trim()||!regForm.email.trim()||!regForm.phone.trim()) return;
+    setRegLoading(true);
+    const {data:existing} = await supabase.from('businesses').select('id').ilike('email',regForm.email.trim()).limit(1);
+    if(existing&&existing.length>0){ setRegLoading(false); setRegDuplicate(true); return; }
+    const {error} = await supabase.from('businesses').insert({
+      name:regForm.name, category:regForm.category, location:regForm.location,
+      email:regForm.email, phone:regForm.phone, notes:regForm.notes||'', status:'pending',
+    });
+    setRegLoading(false);
+    if(error){ console.error('Registration error:',error); return; }
+    setRegDone(true);
+  }
 
   // ── Landing ───────────────────────────────────────────────────
-  if (screen==="landing") return (
-    <div style={{minHeight:"calc(100vh - 60px)",display:"flex",alignItems:"stretch",flexWrap:"wrap"}}>
-      {/* Left — pitch */}
-      <div style={{flex:"1 1 300px",background:T.sage,padding:"clamp(32px,5vw,64px) clamp(24px,5vw,52px)",display:"flex",flexDirection:"column",justifyContent:"center"}}>
-        <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:11,fontWeight:400,color:T.ochreL,letterSpacing:"5px",textTransform:"uppercase",marginBottom:20}}>For businesses</div>
-        <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:"clamp(28px,3.5vw,44px)",fontWeight:700,color:"#fff",lineHeight:1.1,letterSpacing:"-1px",margin:"0 0 18px"}}>Fill your off-peak slots.<br/>Reach more people.</h1>
-        <p style={{fontFamily:F.body,fontSize:13,color:"rgba(255,255,255,.65)",lineHeight:1.75,margin:"0 0 32px",fontWeight:300,maxWidth:380}}>Wello connects your studio, gym or pool to local fitness enthusiasts, expats and tourists who want flexibility while on the island.</p>
-        <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          {[["Grow your customer base","Reach people actively searching for new wellness experiences who haven't discovered you yet"],["Fill your quieter sessions","Turn off-peak slots into bookings and real revenue"],["Built here, for here","A Mallorca-first platform that understands the island"]].map(([t,d])=>(
-            <div key={t} style={{display:"flex",gap:10}}>
-              <div style={{width:16,height:16,borderRadius:"50%",background:"rgba(255,255,255,.15)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2}}>
-                <span style={{fontSize:8,color:"#fff"}}>✓</span>
+  if (screen==="landing") {
+  const canReg = regForm.name.trim()&&regForm.email.trim()&&regForm.phone.trim();
+  return (
+    <div style={{background:T.bg}}>
+      {/* Hero split */}
+      <div style={{display:"flex",alignItems:"stretch",flexWrap:"wrap"}}>
+        {/* Left — pitch */}
+        <div style={{flex:"1 1 300px",background:T.sage,padding:"clamp(40px,6vw,72px) clamp(28px,5vw,56px)",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+          <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:11,fontWeight:400,color:T.ochreL,letterSpacing:"5px",textTransform:"uppercase",marginBottom:20}}>For businesses</div>
+          <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:"clamp(26px,3.5vw,42px)",fontWeight:700,color:"#fff",lineHeight:1.1,letterSpacing:"-1px",margin:"0 0 18px"}}>Fill your off-peak slots.<br/>Reach more people.</h1>
+          <p style={{fontFamily:F.body,fontSize:13,color:"rgba(255,255,255,.65)",lineHeight:1.75,margin:"0 0 32px",fontWeight:300,maxWidth:380}}>Wello connects your studio, gym or pool to local fitness enthusiasts, expats and tourists who want flexibility on the island.</p>
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {[
+              ["Grow your customer base","Reach people actively searching for new wellness experiences who haven't discovered you yet"],
+              ["Fill your quieter sessions","Turn off-peak slots into bookings and real revenue"],
+              ["Built here, for here","A platform that understands the island and the people who live and visit here"],
+            ].map(([t,d])=>(
+              <div key={t} style={{display:"flex",gap:12}}>
+                <div style={{width:18,height:18,borderRadius:"50%",background:"rgba(255,255,255,.15)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:2}}>
+                  <span style={{fontSize:9,color:"#fff"}}>✓</span>
+                </div>
+                <div>
+                  <div style={{fontFamily:F.body,fontSize:12,color:"#fff",fontWeight:600,marginBottom:2}}>{t}</div>
+                  <div style={{fontFamily:F.body,fontSize:11,color:"rgba(255,255,255,.5)",fontWeight:300}}>{d}</div>
+                </div>
               </div>
-              <div><div style={{fontFamily:F.body,fontSize:12,color:"#fff",fontWeight:600}}>{t}</div><div style={{fontFamily:F.body,fontSize:11,color:"rgba(255,255,255,.5)",fontWeight:300}}>{d}</div></div>
+            ))}
+          </div>
+        </div>
+        {/* Right — registration form */}
+        <div style={{flex:"1 1 300px",background:T.paper,padding:"clamp(32px,5vw,56px) clamp(24px,5vw,48px)",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:24}}>
+            <button onClick={()=>setScreen("login")} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:"pointer",padding:0}}>Already a partner? Sign in →</button>
+          </div>
+          {regDone ? (
+            <div style={{textAlign:"center",padding:"24px 0"}}>
+              <div style={{width:48,height:48,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontSize:20}}>✓</div>
+              <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,margin:"0 0 10px"}}>Thanks, we'll be in touch!</h2>
+              <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 6px"}}>We've received your interest for <strong style={{color:T.ink,fontWeight:600}}>{regForm.name}</strong>.</p>
+              <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,lineHeight:1.75}}>The Wello team will be in touch within 2 working days.</p>
             </div>
-          ))}
+          ) : regDuplicate ? (
+            <div style={{textAlign:"center",padding:"24px 0"}}>
+              <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,margin:"0 0 10px"}}>Already registered</h2>
+              <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 20px"}}>There's already a Wello listing registered to <strong style={{color:T.ink}}>{regForm.email}</strong>. Sign in to access your dashboard.</p>
+              <button onClick={()=>{setRegDuplicate(false);setScreen("login");}} style={{padding:"11px 24px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:"pointer"}}>Sign in to your dashboard →</button>
+            </div>
+          ) : (
+            <>
+              <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>Register your interest</h2>
+              <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,margin:"0 0 22px",lineHeight:1.6}}>Tell us about your venue and we'll be in touch within 2 working days. No commitment required.</p>
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                <div>
+                  <FieldLabel>Business name *</FieldLabel>
+                  <input placeholder="e.g. Calma Studio" value={regForm.name} onChange={e=>setRegForm(p=>({...p,name:e.target.value}))} style={INP3} onFocus={onF3} onBlur={onB3}/>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <div>
+                    <FieldLabel>Category</FieldLabel>
+                    <select value={regForm.category} onChange={e=>setRegForm(p=>({...p,category:e.target.value}))} style={INP3}>
+                      {CATS.filter(c=>c!=="All").map(c=><option key={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <FieldLabel>Location</FieldLabel>
+                    <input placeholder="e.g. Palma" value={regForm.location} onChange={e=>setRegForm(p=>({...p,location:e.target.value}))} style={INP3} onFocus={onF3} onBlur={onB3}/>
+                  </div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <div>
+                    <FieldLabel>Email address *</FieldLabel>
+                    <input type="email" placeholder="hello@yourbusiness.com" value={regForm.email} onChange={e=>setRegForm(p=>({...p,email:e.target.value}))} style={INP3} onFocus={onF3} onBlur={onB3}/>
+                  </div>
+                  <div>
+                    <FieldLabel>Phone number *</FieldLabel>
+                    <input type="tel" placeholder="+34 971 000 000" value={regForm.phone} onChange={e=>setRegForm(p=>({...p,phone:e.target.value}))} style={INP3} onFocus={onF3} onBlur={onB3}/>
+                  </div>
+                </div>
+                <div>
+                  <FieldLabel>Anything else? <span style={{color:T.stone2,fontWeight:300}}>(optional)</span></FieldLabel>
+                  <textarea placeholder="e.g. we run 6 yoga classes a week with 15 spots each, and would love help filling our quieter sessions..." value={regForm.notes} onChange={e=>setRegForm(p=>({...p,notes:e.target.value}))} style={{...INP3,minHeight:72,resize:"vertical"}} onFocus={onF3} onBlur={onB3}/>
+                </div>
+                <button onClick={handleRegSubmit} disabled={!canReg||regLoading}
+                  style={{padding:"12px",background:canReg&&!regLoading?T.sage:T.border,color:canReg&&!regLoading?"#fff":T.stone,border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:canReg&&!regLoading?"pointer":"not-allowed",letterSpacing:".3px",transition:"background .15s",marginTop:2}}
+                  onMouseEnter={e=>{if(canReg&&!regLoading)e.target.style.background=T.sage2;}} onMouseLeave={e=>{if(canReg&&!regLoading)e.target.style.background=T.sage;}}>
+                  {regLoading?"Sending…":"Register interest →"}
+                </button>
+              </div>
+              <div style={{marginTop:14,display:"flex",gap:14,flexWrap:"wrap"}}>
+                {["No monthly fee","No commitment","We'll reply within 2 working days"].map(t=>(
+                  <div key={t} style={{display:"flex",alignItems:"center",gap:4}}>
+                    <span style={{fontSize:9,color:T.sage}}>✓</span>
+                    <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{t}</span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
-      {/* Right — actions */}
-      <div style={{flex:"1 1 280px",background:T.paper,padding:"clamp(32px,5vw,64px) clamp(24px,5vw,52px)",display:"flex",flexDirection:"column",justifyContent:"center"}}>
-        <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>Welcome back</h2>
-        <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,margin:"0 0 28px"}}>Already have a business account? Sign in to your dashboard.</p>
-        <button onClick={()=>setScreen("login")} style={{width:"100%",padding:"12px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:13,fontWeight:600,cursor:"pointer",marginBottom:12,letterSpacing:".3px",transition:"background .15s"}}
-          onMouseEnter={e=>e.target.style.background=T.sage2} onMouseLeave={e=>e.target.style.background=T.sage}>
-          Sign in to your dashboard →
-        </button>
-        <div style={{display:"flex",alignItems:"center",gap:10,margin:"18px 0"}}>
-          <div style={{flex:1,height:1,background:T.border}}/>
-          <span style={{fontFamily:F.body,fontSize:10,color:T.stone2}}>or</span>
-          <div style={{flex:1,height:1,background:T.border}}/>
-        </div>
-        <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,margin:"0 0 12px"}}>New to Wello? Register your business and we'll review your application.</p>
-        <button onClick={()=>onSetView("business")} style={{width:"100%",padding:"12px",background:"transparent",color:T.sage,border:`1.5px solid ${T.sage}`,borderRadius:2,fontFamily:F.body,fontSize:13,fontWeight:600,cursor:"pointer",letterSpacing:".3px",transition:"all .15s"}}
-          onMouseEnter={e=>{e.target.style.background=T.sageXL;}} onMouseLeave={e=>{e.target.style.background="transparent";}}>
-          Register your business
-        </button>
 
+      {/* FAQ */}
+      <div style={{background:T.bg,padding:"clamp(40px,6vw,64px) clamp(24px,4vw,32px)"}}>
+        <div style={{maxWidth:720,margin:"0 auto"}}>
+          <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:"clamp(20px,3vw,28px)",fontWeight:700,color:T.ink,margin:"0 0 32px",letterSpacing:"-0.5px"}}>Common questions</h2>
+          <div style={{display:"flex",flexDirection:"column",gap:0,border:`1px solid ${T.border}`,borderRadius:4,overflow:"hidden"}}>
+            {[
+              ["How does the credit system work?","Members buy Wello credits and use them to book your sessions. You set the credit price per session, and Wello pays out your earnings every Friday via bank transfer."],
+              ["Is there a monthly fee?","No. Wello is fully credit-based with no subscription or monthly fees. You only earn when members book, and our commission is agreed with you directly before going live."],
+              ["How do I get listed?","Register your interest using the form above. We'll review your details and be in touch within 2 working days to walk you through the full setup."],
+              ["Can I control which sessions are on Wello?","Yes. From your partner dashboard you can manage your schedule, set credit prices, control capacity, and pause or remove slots at any time."],
+              ["What kind of businesses can join?","Yoga and Pilates studios, gyms, pools, surf and paddle schools, spas, tennis and padel clubs, hiking guides, and more. If it's wellness or fitness, we'd love to hear from you."],
+            ].map(([q,a],i,arr)=>(
+              <div key={i} style={{padding:"18px 22px",borderBottom:i<arr.length-1?`1px solid ${T.border}`:"none",background:T.paper}}>
+                <div style={{fontFamily:F.body,fontSize:13,fontWeight:600,color:T.ink,marginBottom:6}}>{q}</div>
+                <div style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,lineHeight:1.7}}>{a}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );
+  }
 
   // ── Login ─────────────────────────────────────────────────────
   if (screen==="login") return (
@@ -3432,7 +3536,7 @@ export default function App() {
   }
   function onPurchase(purchase){ setCredits(c=>c+purchase.cr); showToast(`◈ ${purchase.cr} credits added!`,"gold"); }
   function toggleSave(id){ setSaved(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]); showToast(saved.includes(id)?"Removed from saved":"Saved!","success"); }
-  function handleNavClick(id){ if(id==="biz-portal"&&!authSession){setView("business");return;} setView(id); }
+  function handleNavClick(id){ setView(id); }
 
   const NAV=[{id:"home",l:"Home"},{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"profile",l:"Profile"},{id:"biz-portal",l:"Business"}];
 
