@@ -2580,19 +2580,30 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   async function handleSubmit() {
     setSaving(true);
     const payload = { status: 'submitted', onboarding_step: 6 };
-    let ok = false;
-    const { error: e1, data: d1 } = await supabase.from('businesses').update(payload).eq('id', bizData.id).select('id');
-    if (!e1 && d1?.length) {
-      ok = true;
-    } else {
-      console.warn('Submit by id failed, trying email:', e1?.message);
-      const { error: e2 } = await supabase.from('businesses').update(payload).eq('email', bizData.email);
-      if (!e2) ok = true;
-      else console.error('Submit email fallback also failed:', e2.message);
-    }
+    console.log('handleSubmit: attempting update', { id: bizData.id, email: bizData.email });
+
+    const { data: d1, error: e1 } = await supabase
+      .from('businesses')
+      .update(payload)
+      .eq('email', bizData.email)
+      .select('id, status, email');
+
+    console.log('handleSubmit result:', { data: d1, error: e1 });
+
     setSaving(false);
-    if (ok) onSubmitted();
-    else alert('Something went wrong. Please contact hello@wello-wellness.com');
+
+    if (e1) {
+      console.error('handleSubmit error:', e1.message, e1.code);
+      alert('Something went wrong. Please contact hello@wello-wellness.com');
+      return;
+    }
+    if (!d1 || d1.length === 0) {
+      console.warn('handleSubmit: update matched 0 rows — check RLS policies allow partner to update their own row');
+      alert('Something went wrong. Please contact hello@wello-wellness.com');
+      return;
+    }
+    console.log('handleSubmit: success, status now =', d1[0]?.status);
+    onSubmitted();
   }
 
   function addSlot() {
@@ -2713,7 +2724,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
       footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(3)} label="← Back" variant="secondary"/>,
                <OBtn key="n" saving={saving} onClick={()=>goNext(availType==="acuity"?{acuity_key:acuityKey,integration_request:intgRequest}:{slots,integration_request:intgRequest})} label="Save & continue →"/>]}>
       <div style={{display:"flex",background:T.bg2,borderRadius:3,padding:3,marginBottom:24}}>
-        {[["manual","Add manually"],["acuity","Connect Acuity"]].map(([mode,label])=>(
+        {[["manual","Add manually"],["acuity","e.g. Acuity integration"]].map(([mode,label])=>(
           <button key={mode} onClick={()=>setAvailType(mode)} style={{flex:1,padding:"9px 0",background:availType===mode?T.paper:"transparent",color:availType===mode?T.ink:T.stone,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:availType===mode?600:300,cursor:"pointer",transition:"all .15s",boxShadow:availType===mode?"0 1px 3px rgba(0,0,0,0.08)":"none"}}>
             {label}
           </button>
@@ -2727,12 +2738,9 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
           <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.6,margin:"0 0 20px"}}>Save your key now and we'll activate the sync as we roll out integrations — we'll let you know when it's live.</p>
           <div style={{background:T.bg2,borderRadius:6,padding:"12px 14px"}}>
             <div style={{fontFamily:F.body,fontSize:10,fontWeight:600,color:T.stone,letterSpacing:"0.5px",textTransform:"uppercase",marginBottom:8}}>More integrations coming soon</div>
-            {[{n:"Mindbody",d:"For larger studios & spas"},{n:"TeamUp",d:"Class & membership management"},{n:"Fresha",d:"Wellness & salon bookings"}].map(({n,d})=>(
+            {["Mindbody","TeamUp","Fresha"].map(n=>(
               <div key={n} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
-                <div>
-                  <span style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{n}</span>
-                  <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginLeft:6}}>{d}</span>
-                </div>
+                <span style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{n}</span>
                 <span style={{fontFamily:F.body,fontSize:9,color:T.stone2,border:`1px solid ${T.border}`,borderRadius:2,padding:"2px 7px"}}>Soon</span>
               </div>
             ))}
