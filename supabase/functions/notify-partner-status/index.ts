@@ -30,7 +30,7 @@ serve(async (req) => {
     const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
       type: 'magiclink',
       email,
-      options: { redirectTo: 'https://www.wello-wellness.com' }
+      options: { redirectTo: 'https://www.wello-wellness.com/?portal=business' }
     })
     if (linkError) console.error('Magic link generation failed:', linkError.message)
     const magicLink = linkData?.properties?.action_link ?? 'https://www.wello-wellness.com'
