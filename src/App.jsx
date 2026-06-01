@@ -163,7 +163,7 @@ const INTEGRATIONS = [
   { id:"custom",     name:"Custom API",  desc:"Your own booking system",      auth:"Bearer Token",col:T.stone },
 ];
 const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","HIIT","Crossfit","Tennis","Padel","Horse Riding","Meditation","Sound Healing","Massage & Spa","Cold Water Therapy","Breathwork","Nutrition & Wellness","Dance","Martial Arts","Other"];
-const LOCS = ["All Mallorca","Palma","Sóller","Deià","Pollença","Alcúdia","Santanyí","Valldemossa"];
+const LOCS = ["All","Palma","Sóller","Deià","Pollença","Alcúdia","Santanyí","Valldemossa"];
 const SYNC = {1:"Mindbody",2:"Acuity",3:"Acuity",4:"FareHarbor",5:"Custom API",6:"Mindbody",7:"Gympass",8:"iCal",9:"Custom API"};
 
 const LISTINGS = [
@@ -910,7 +910,7 @@ function AboutPage({ onSetView }) {
         {/* Hero */}
         <div style={{textAlign:"center",padding:"clamp(48px,8vw,96px) 0 clamp(32px,5vw,64px)"}}>
           <span style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"4px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:12}}>About Wello</span>
-          <h1 style={{fontFamily:F2,fontSize:"clamp(32px,5vw,60px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:"0 0 16px",lineHeight:1.05}}>Mallorca's wellness community.</h1>
+          <h1 style={{fontFamily:F2,fontSize:"clamp(32px,5vw,60px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:"0 0 16px",lineHeight:1.05}}>Our wellness community.</h1>
           <p style={{fontFamily:F2,fontSize:"clamp(14px,1.8vw,17px)",color:"#74796E",margin:"0 auto",maxWidth:560,lineHeight:1.75}}>We're a local platform built for Mallorca's wellness and fitness community - connecting people with the best studios, gyms, pools and outdoor experiences on the island.</p>
         </div>
 
@@ -919,7 +919,7 @@ function AboutPage({ onSetView }) {
           <h2 style={{fontFamily:F2,fontSize:"clamp(20px,3vw,28px)",fontWeight:700,color:"#213C18",letterSpacing:"-0.8px",margin:"0 0 clamp(20px,3vw,32px)"}}>Why Wello</h2>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,220px),1fr))",gap:16}}>
             {[
-              {icon:"📍",title:"Mallorca first",body:"Every venue on Wello is handpicked and locally verified. Quality over quantity."},
+              {icon:"📍",title:"Locally verified",body:"Every venue on Wello is handpicked and locally verified. Quality over quantity."},
               {icon:"🤝",title:"Built with venues in mind",body:"We strive to be fair in our practice with venues and welcome two-way feedback on how Wello can best serve the island's wellness community."},
               {icon:"📊",title:"Transparent earnings",body:"Venues see exactly what they earn per booking. No surprises, no hidden calculations."},
               {icon:"🌿",title:"No commitment",body:"Buy credits when you need them. No monthly fees, no subscriptions, no lock-in."},
@@ -972,7 +972,7 @@ function AboutPage({ onSetView }) {
 function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds }) {
   const [search,setSearch]=useState("");
   const [activeCat,setActiveCat]=useState("All");
-  const [activeLoc,setActiveLoc]=useState("All Mallorca");
+  const [activeLoc,setActiveLoc]=useState("All");
   const [viewMode,setViewMode]=useState("grid");
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   
@@ -990,7 +990,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
   };
   const filtered=listings.filter(b=>{
     const mC=activeCat==="All"||b.cat===activeCat;
-    const mL=activeLoc==="All Mallorca"||b.loc===activeLoc;
+    const mL=activeLoc==="All"||b.loc===activeLoc;
     const mS=!search||b.name.toLowerCase().includes(search.toLowerCase())||b.loc.toLowerCase().includes(search.toLowerCase())||b.cat.toLowerCase().includes(search.toLowerCase());
     return mC&&mL&&mS;
   });
@@ -1591,7 +1591,7 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
         <div style={{marginBottom:32}}>
           <div style={{display:"inline-flex",alignItems:"center",gap:6,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:2,padding:"4px 10px",marginBottom:16}}>
             <span style={{width:5,height:5,borderRadius:"50%",background:T.sage,display:"inline-block"}}/>
-            <span style={{fontFamily:F.body,fontSize:9,color:T.sage,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase"}}>For Mallorca businesses</span>
+            <span style={{fontFamily:F.body,fontSize:9,color:T.sage,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase"}}>For wellness businesses</span>
           </div>
           <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:26,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 12px"}}>Register your interest</h1>
           <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:0}}>Tell us about your venue and we'll be in touch within 2 working days to discuss how Wello works and agree the right setup for you. No commitment required.</p>
@@ -3011,7 +3011,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
 }
 
 function BusinessPortal({ onSetView }) {
-  const [screen, setScreen]     = useState("landing");
+  const [screen, setScreen]     = useState("loading");
   const [email,  setEmail]      = useState("");
   const [pw,     setPw]         = useState("");
   const [loginErr, setLoginErr] = useState("");
@@ -3021,8 +3021,19 @@ function BusinessPortal({ onSetView }) {
   const didLoad = useRef(false);
 
   useEffect(()=>{
+    // Check for an existing session immediately so authenticated partners
+    // skip the landing screen and go straight to their dashboard/onboarding.
+    supabase.auth.getSession().then(({data:{session}})=>{
+      if(session && !didLoad.current) {
+        didLoad.current = true;
+        loadBizData(session.user.email);
+      } else if(!session) {
+        setScreen("landing");
+      }
+    });
+
     const {data:{subscription}} = supabase.auth.onAuthStateChange((event, session)=>{
-      if((event==="INITIAL_SESSION"||event==="SIGNED_IN") && session) {
+      if(event==="SIGNED_IN" && session) {
         if(!didLoad.current) {
           didLoad.current = true;
           loadBizData(session.user.email);
@@ -3364,6 +3375,42 @@ export default function App() {
       }));
     }
 
+    function transformApprovedBusiness(row) {
+      const DAY_IDX = {Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6,Sun:0};
+      const slots = (row.slots || []).flatMap(sl => {
+        return (sl.days || []).map(day => {
+          const target = DAY_IDX[day] ?? 1;
+          const curr = new Date().getDay();
+          const ahead = (target - curr + 7) % 7 || 7;
+          const d = new Date();
+          d.setDate(d.getDate() + ahead);
+          return {
+            id: String(sl.id || sl.name) + '_' + day,
+            name: sl.name || "",
+            date: d.toISOString().slice(0,10),
+            time: sl.time || "09:00",
+            dur: sl.dur || "60 min",
+            spots: sl.spots || 10,
+            booked: 0,
+            credits: sl.cr || row.cr || 3,
+          };
+        });
+      });
+      return {
+        id: row.id,
+        name: row.name,
+        cat: row.category || "Other",
+        loc: row.location || row.address || "",
+        desc: row.description || "",
+        img: row.img || "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80",
+        rating: 0,
+        reviews: 0,
+        cr: row.cr || 3,
+        tags: [],
+        slots,
+      };
+    }
+
     async function fetchListings() {
       // Show cached data instantly if available
       try {
@@ -3374,20 +3421,33 @@ export default function App() {
         }
       } catch(e) {}
 
-      // Fetch fresh data from Supabase in background
-      const { data: listingRows, error } = await supabase
-        .from("listings")
-        .select("*, slots(*)")
-        .eq("status","active")
-        .order("id");
+      // Fetch listings table and approved businesses in parallel
+      const [listingsResult, bizResult] = await Promise.all([
+        supabase.from("listings").select("*, slots(*)").eq("status","active").order("id"),
+        supabase.from("businesses").select("*").eq("status","approved").order("created_at"),
+      ]);
+
+      const { data: listingRows, error } = listingsResult;
+      const { data: bizRows } = bizResult;
+
+      const fromListings = (listingRows && listingRows.length > 0) ? transformRows(listingRows) : [];
+      const fromBiz = (bizRows && bizRows.length > 0) ? bizRows.map(transformApprovedBusiness) : [];
+
+      // Merge, deduplicating by name so a venue added to both tables only shows once
+      const seen = new Set();
+      const merged = [...fromListings, ...fromBiz].filter(b => {
+        const key = b.name.toLowerCase().trim();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
 
       if (error) {
         console.error("Error fetching listings:", error);
-        if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
-      } else if (listingRows && listingRows.length > 0) {
-        const transformed = transformRows(listingRows);
-        setListings(transformed);
-        try { localStorage.setItem("wello_listings", JSON.stringify(transformed)); } catch(e) {}
+        if (!localStorage.getItem("wello_listings")) setListings(merged.length ? merged : LISTINGS);
+      } else if (merged.length > 0) {
+        setListings(merged);
+        try { localStorage.setItem("wello_listings", JSON.stringify(merged)); } catch(e) {}
       } else {
         if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
       }
@@ -3492,7 +3552,7 @@ export default function App() {
       {/* ── DEMO BANNER + NAV wrapper ── */}
         <div ref={headerRef} style={{position:"fixed",top:0,left:0,right:0,zIndex:1000,display:"flex",flexDirection:"column"}}>
           <div style={{background:"#213C18",padding:"8px 16px",display:"flex",alignItems:"center",justifyContent:"center",gap:8,overflow:"hidden"}}>
-            <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"}}>Early demo — not yet live.</span>
+            <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"rgba(255,255,255,0.7)",whiteSpace:"nowrap"}}>Partner registration open · Customer preview</span>
             <span style={{width:1,height:12,background:"rgba(255,255,255,0.2)",display:"inline-block",flexShrink:0}}/>
             <a href="mailto:hello@wello-wellness.com" style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,fontWeight:700,color:"#CAECBA",textDecoration:"none",whiteSpace:"nowrap"}}>hello@wello-wellness.com</a>
           </div>
