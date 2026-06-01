@@ -1433,6 +1433,7 @@ function RegCard({ children, title, subtitle }) {
 function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
   // Registration wizard state
   const [registered, setRegistered] = useState(false);
+  const [duplicate, setDuplicate] = useState(false);
   const [regStep, setRegStep] = useState(1); // 1–5
   const REG_STEPS = ["Your venue","Classes & photos","Availability","Calendar & integration","Payment & launch"];
 
@@ -1503,11 +1504,50 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
     setConnecting(null);
   }
 
+  // ── Duplicate account screen ────────────────────────────────
+  if (duplicate) {
+    return (
+      <div style={{maxWidth:560,margin:"0 auto",padding:"52px 28px 80px"}}>
+        <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:4,padding:"32px 28px",textAlign:"center"}}>
+          <div style={{width:44,height:44,borderRadius:"50%",background:T.sageXL,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px"}}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T.sage} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,margin:"0 0 10px"}}>You already have an account</h2>
+          <p style={{fontFamily:F.body,fontSize:13,color:T.stone,lineHeight:1.75,margin:"0 0 24px"}}>
+            There's already a Wello listing registered to <strong style={{color:T.ink}}>{listing.email}</strong>. Sign in to access your partner dashboard.
+          </p>
+          <button
+            onClick={()=>onSetView("biz-portal")}
+            style={{display:"inline-block",padding:"11px 24px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:13,fontWeight:600,cursor:"pointer",letterSpacing:"0.2px"}}
+          >
+            Sign in to your dashboard →
+          </button>
+          <div style={{marginTop:16}}>
+            <button onClick={()=>setDuplicate(false)} style={{background:"none",border:"none",fontFamily:F.body,fontSize:12,color:T.stone,cursor:"pointer",textDecoration:"underline"}}>
+              Use a different email
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Registration Interest Form ──────────────────────────────
   if (!registered) {
     const canSubmit = listing.name.trim() && listing.email.trim() && listing.phone.trim();
 
     async function handleSubmit() {
+      // Check for existing account with this email
+      const { data: existing } = await supabase
+        .from('businesses')
+        .select('id')
+        .ilike('email', listing.email.trim())
+        .limit(1);
+      if (existing && existing.length > 0) {
+        setDuplicate(true);
+        return;
+      }
+
       const { error } = await supabase.from('businesses').insert({
         name: listing.name,
         category: listing.category,
@@ -1567,7 +1607,7 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
               <div>
                 <FieldLabel>Email address *</FieldLabel>
-                <input type="email" placeholder="hello@yourstudio.com" value={listing.email}
+                <input type="email" placeholder="hello@yourbusiness.com" value={listing.email}
                   onChange={e=>setListing(p=>({...p,email:e.target.value}))}
                   style={INP3} onFocus={onF} onBlur={onB}/>
               </div>
@@ -2441,6 +2481,48 @@ function cropToSquare(file) {
   });
 }
 
+function OnboardingProgressBar({ step, total, doSignOut, onPreview }) {
+  return (
+    <div style={{position:"sticky",top:0,zIndex:10,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"14px 28px"}}>
+      <div style={{maxWidth:640,margin:"0 auto",display:"flex",alignItems:"center",gap:12}}>
+        <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,whiteSpace:"nowrap"}}>Step {step} of {total}</span>
+        <div style={{flex:1,height:3,background:T.border,borderRadius:999}}>
+          <div style={{height:3,background:T.sage,borderRadius:999,width:`${(step/total)*100}%`,transition:"width .35s"}}/>
+        </div>
+        {step>1&&onPreview&&(
+          <button onClick={onPreview} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:2,color:T.stone,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:300,padding:"3px 10px",whiteSpace:"nowrap"}}>Preview</button>
+        )}
+        <button onClick={doSignOut} style={{background:"none",border:"none",color:T.stone,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:300,padding:0}}>Sign out</button>
+      </div>
+    </div>
+  );
+}
+
+function OBtn({ onClick, label, disabled, variant="primary", saving }) {
+  return (
+    <button onClick={onClick} disabled={disabled||saving}
+      style={{padding:"11px 24px",background:variant==="primary"&&!disabled&&!saving?T.sage:variant==="secondary"?"transparent":T.border,color:variant==="secondary"?T.stone:"#fff",border:variant==="secondary"?`1px solid ${T.border}`:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:variant==="secondary"?300:600,cursor:disabled||saving?"not-allowed":"pointer",transition:"background .15s"}}
+      onMouseEnter={e=>{if(!disabled&&!saving&&variant==="primary")e.target.style.background=T.sage2;}}
+      onMouseLeave={e=>{if(!disabled&&!saving&&variant==="primary")e.target.style.background=T.sage;}}>
+      {saving&&variant==="primary"?"Saving…":label}
+    </button>
+  );
+}
+
+function OWrap({ title, sub, children, footer, step, total, doSignOut, onPreview }) {
+  return (
+    <>
+      <OnboardingProgressBar step={step} total={total} doSignOut={doSignOut} onPreview={onPreview}/>
+      <div style={{maxWidth:600,margin:"0 auto",padding:"40px 28px 80px"}}>
+        <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>{title}</h1>
+        {sub&&<p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,margin:"0 0 28px",lineHeight:1.6}}>{sub}</p>}
+        {children}
+        {footer&&<div style={{display:"flex",gap:10,marginTop:32}}>{footer}</div>}
+      </div>
+    </>
+  );
+}
+
 function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   const TOTAL = 6;
   const [step, setStep] = useState(bizData.onboarding_step > 0 ? Math.min(bizData.onboarding_step, TOTAL) : 1);
@@ -2457,6 +2539,8 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   const [slots, setSlots] = useState(bizData.slots || []);
   const [cr, setCr] = useState(bizData.cr ? String(bizData.cr) : "");
   const [newSlot, setNewSlot] = useState({ name:"", days:[], time:"09:00", dur:"60 min", spots:10 });
+  const [intgRequest, setIntgRequest] = useState(bizData.integration_request || "");
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const firstName = bizData.name.split(' ')[0];
   const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
@@ -2478,9 +2562,11 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
     try {
       const blob = await cropToSquare(file);
       const path = `${bizData.id}/${slot}-${Date.now()}.jpg`;
-      await supabase.storage.from('venue-photos').upload(path, blob, { contentType:'image/jpeg', upsert:true });
+      const { error } = await supabase.storage.from('venue-photos').upload(path, blob, { contentType:'image/jpeg', upsert:true });
+      if (error) { console.error('Photo upload error:', error.message); return null; }
       return supabase.storage.from('venue-photos').getPublicUrl(path).data.publicUrl;
-    } finally { setUploading(false); }
+    } catch(e) { console.error('Upload failed:', e); return null; }
+    finally { setUploading(false); }
   }
 
   async function goNext(updates={}) {
@@ -2502,40 +2588,8 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
     setNewSlot({ name:"", days:[], time:"09:00", dur:"60 min", spots:10 });
   }
 
-  const progressBar = (
-    <div style={{position:"sticky",top:0,zIndex:10,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"14px 28px"}}>
-      <div style={{maxWidth:640,margin:"0 auto",display:"flex",alignItems:"center",gap:12}}>
-        <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,whiteSpace:"nowrap"}}>Step {step} of {TOTAL}</span>
-        <div style={{flex:1,height:3,background:T.border,borderRadius:999}}>
-          <div style={{height:3,background:T.sage,borderRadius:999,width:`${(step/TOTAL)*100}%`,transition:"width .35s"}}/>
-        </div>
-        <button onClick={doSignOut} style={{background:"none",border:"none",color:T.stone,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:300,padding:0}}>Sign out</button>
-      </div>
-    </div>
-  );
-
-  const OBtn = ({onClick,label,disabled,variant="primary"}) => (
-    <button onClick={onClick} disabled={disabled||saving}
-      style={{padding:"11px 24px",background:variant==="primary"&&!disabled&&!saving?T.sage:variant==="secondary"?"transparent":T.border,color:variant==="secondary"?T.stone:"#fff",border:variant==="secondary"?`1px solid ${T.border}`:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:variant==="secondary"?300:600,cursor:disabled||saving?"not-allowed":"pointer",transition:"background .15s"}}
-      onMouseEnter={e=>{if(!disabled&&!saving&&variant==="primary")e.target.style.background=T.sage2;}}
-      onMouseLeave={e=>{if(!disabled&&!saving&&variant==="primary")e.target.style.background=T.sage;}}>
-      {saving&&variant==="primary"?"Saving…":label}
-    </button>
-  );
-
-  const Wrap = ({title,sub,children,footer}) => (
-    <>{progressBar}
-      <div style={{maxWidth:600,margin:"0 auto",padding:"40px 28px 80px"}}>
-        <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>{title}</h1>
-        {sub&&<p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,margin:"0 0 28px",lineHeight:1.6}}>{sub}</p>}
-        {children}
-        {footer&&<div style={{display:"flex",gap:10,marginTop:32}}>{footer}</div>}
-      </div>
-    </>
-  );
-
   if (step===1) return (
-    <>{progressBar}
+    <><OnboardingProgressBar step={step} total={TOTAL} doSignOut={doSignOut}/>
       <div style={{maxWidth:520,margin:"0 auto",padding:"80px 28px",textAlign:"center"}}>
         <div style={{width:64,height:64,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",fontSize:28}}>👋</div>
         <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:26,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 12px"}}>Welcome to Wello, {firstName}.</h1>
@@ -2550,9 +2604,9 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   );
 
   if (step===2) return (
-    <Wrap title="Tell us about your venue" sub="This is what guests will see when they find you on Wello."
-      footer={[<OBtn key="b" onClick={()=>setStep(1)} label="← Back" variant="secondary"/>,
-               <OBtn key="n" onClick={()=>goNext({description:desc,address,website,instagram})} label="Save & continue →" disabled={!desc.trim()}/>]}>
+    <OWrap title="Tell us about your venue" sub="This is what guests will see when they find you on Wello." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+      footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(1)} label="← Back" variant="secondary"/>,
+               <OBtn key="n" saving={saving} onClick={()=>goNext({description:desc,address,website,instagram})} label="Save & continue →" disabled={!desc.trim()}/>]}>
       <label style={FL}>Description</label>
       <textarea value={desc} onChange={e=>setDesc(e.target.value)} rows={4} placeholder="Describe your venue, what makes it special, and what guests can expect…"
         style={{...INP,resize:"vertical",lineHeight:1.6,marginBottom:16}} onFocus={onFi} onBlur={onBl}/>
@@ -2560,28 +2614,33 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
       <input value={address} onChange={e=>setAddress(e.target.value)} placeholder="Street address, Mallorca"
         style={{...INP,marginBottom:16}} onFocus={onFi} onBlur={onBl}/>
       <label style={FL}>Website (optional)</label>
-      <input value={website} onChange={e=>setWebsite(e.target.value)} placeholder="https://yourstudio.com"
+      <input value={website} onChange={e=>setWebsite(e.target.value)} placeholder="https://yourwebsite.com"
         style={{...INP,marginBottom:16}} onFocus={onFi} onBlur={onBl}/>
       <label style={FL}>Instagram (optional)</label>
-      <input value={instagram} onChange={e=>setInstagram(e.target.value)} placeholder="@yourstudio"
+      <input value={instagram} onChange={e=>setInstagram(e.target.value)} placeholder="@yourhandle"
         style={{...INP}} onFocus={onFi} onBlur={onBl}/>
-    </Wrap>
+    </OWrap>
   );
 
   if (step===3) {
     async function handlePrimary(e) {
       const file=e.target.files?.[0]; if(!file) return;
-      const url=await uploadPhoto(file,'primary'); setImg(url);
+      const localUrl=URL.createObjectURL(file);
+      setImg(localUrl);
+      const remoteUrl=await uploadPhoto(file,'primary');
+      if(remoteUrl) setImg(remoteUrl);
     }
     async function handleGallery(e) {
       const files=Array.from(e.target.files||[]).slice(0,4-gallery.length);
-      const urls=await Promise.all(files.map((f,i)=>uploadPhoto(f,`gallery-${gallery.length+i}`)));
-      setGallery(prev=>[...prev,...urls]);
+      const localUrls=files.map(f=>URL.createObjectURL(f));
+      setGallery(prev=>[...prev,...localUrls]);
+      const remoteUrls=await Promise.all(files.map((f,i)=>uploadPhoto(f,`gallery-${gallery.length+i}`)));
+      setGallery(prev=>prev.map(u=>{const i=localUrls.indexOf(u);return i!==-1&&remoteUrls[i]?remoteUrls[i]:u;}));
     }
     return (
-      <Wrap title="Add photos" sub="Square (1:1) photos work best — we crop automatically. A great primary photo makes a real difference."
-        footer={[<OBtn key="b" onClick={()=>setStep(2)} label="← Back" variant="secondary"/>,
-                 <OBtn key="n" onClick={()=>goNext({img,gallery})} label="Save & continue →" disabled={!img||uploading}/>]}>
+      <OWrap title="Add photos" sub="Square (1:1) photos work best — we crop automatically. A great primary photo makes a real difference." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+        footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(2)} label="← Back" variant="secondary"/>,
+                 <OBtn key="n" saving={saving} onClick={()=>goNext({img,gallery})} label="Save & continue →" disabled={!img||uploading}/>]}>
         <label style={FL}>Primary photo</label>
         <div onClick={()=>!uploading&&document.getElementById('wph-primary').click()}
           style={{width:"100%",maxWidth:240,aspectRatio:"1",background:img?"transparent":T.bg2,border:img?"none":`2px dashed ${T.border}`,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",cursor:uploading?"wait":"pointer",marginBottom:24,overflow:"hidden",position:"relative"}}>
@@ -2614,16 +2673,16 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
         </div>
         <input id="wph-gallery" type="file" accept="image/*" multiple style={{display:"none"}} onChange={handleGallery}/>
         {uploading&&<p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"8px 0 0"}}>Uploading…</p>}
-      </Wrap>
+      </OWrap>
     );
   }
 
   if (step===4) return (
-    <Wrap title="How do you manage bookings?" sub="Connect your existing system or add your sessions manually — you can always change this later."
-      footer={[<OBtn key="b" onClick={()=>setStep(3)} label="← Back" variant="secondary"/>,
-               <OBtn key="n" onClick={()=>goNext(availType==="acuity"?{acuity_key:acuityKey}:{slots})} label="Save & continue →"/>]}>
+    <OWrap title="List your availabilities" sub="Connect your existing booking system or add your slots manually — you can always update this later." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+      footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(3)} label="← Back" variant="secondary"/>,
+               <OBtn key="n" saving={saving} onClick={()=>goNext(availType==="acuity"?{acuity_key:acuityKey,integration_request:intgRequest}:{slots,integration_request:intgRequest})} label="Save & continue →"/>]}>
       <div style={{display:"flex",background:T.bg2,borderRadius:3,padding:3,marginBottom:24}}>
-        {[["acuity","Connect Acuity"],["manual","Add manually"]].map(([mode,label])=>(
+        {[["manual","Add manually"],["acuity","Connect Acuity"]].map(([mode,label])=>(
           <button key={mode} onClick={()=>setAvailType(mode)} style={{flex:1,padding:"9px 0",background:availType===mode?T.paper:"transparent",color:availType===mode?T.ink:T.stone,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:availType===mode?600:300,cursor:"pointer",transition:"all .15s",boxShadow:availType===mode?"0 1px 3px rgba(0,0,0,0.08)":"none"}}>
             {label}
           </button>
@@ -2632,16 +2691,28 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
       {availType==="acuity" ? (
         <>
           <label style={FL}>Acuity API key</label>
-          <input value={acuityKey} onChange={e=>setAcuityKey(e.target.value)} placeholder="Your Acuity API key"
+          <input value={acuityKey} onChange={e=>setAcuityKey(e.target.value)} placeholder="Your Acuity Scheduling API key"
             style={{...INP,marginBottom:10}} onFocus={onFi} onBlur={onBl}/>
-          <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.6,margin:0}}>Find your API key in Acuity → Integrations → API. Your schedule will sync automatically.</p>
+          <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.6,margin:"0 0 20px"}}>Save your key now and we'll activate the sync as we roll out integrations — we'll let you know when it's live.</p>
+          <div style={{background:T.bg2,borderRadius:6,padding:"12px 14px"}}>
+            <div style={{fontFamily:F.body,fontSize:10,fontWeight:600,color:T.stone,letterSpacing:"0.5px",textTransform:"uppercase",marginBottom:8}}>More integrations coming soon</div>
+            {[{n:"Mindbody",d:"For larger studios & spas"},{n:"TeamUp",d:"Class & membership management"},{n:"Fresha",d:"Wellness & salon bookings"}].map(({n,d})=>(
+              <div key={n} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+                <div>
+                  <span style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{n}</span>
+                  <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginLeft:6}}>{d}</span>
+                </div>
+                <span style={{fontFamily:F.body,fontSize:9,color:T.stone2,border:`1px solid ${T.border}`,borderRadius:2,padding:"2px 7px"}}>Soon</span>
+              </div>
+            ))}
+          </div>
         </>
       ) : (
         <>
           <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:8,padding:16,marginBottom:16}}>
-            <div style={{fontFamily:F.body,fontSize:11,fontWeight:600,color:T.ink,marginBottom:12}}>Add a session</div>
-            <label style={FL}>Session name</label>
-            <input value={newSlot.name} onChange={e=>setNewSlot(p=>({...p,name:e.target.value}))} placeholder="e.g. Morning Yoga"
+            <div style={{fontFamily:F.body,fontSize:11,fontWeight:600,color:T.ink,marginBottom:12}}>Add an availability</div>
+            <label style={FL}>Name</label>
+            <input value={newSlot.name} onChange={e=>setNewSlot(p=>({...p,name:e.target.value}))} placeholder="e.g. Morning class, Court hire, Open swim…"
               style={{...INP,marginBottom:12}} onFocus={onFi} onBlur={onBl}/>
             <label style={FL}>Days</label>
             <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:12}}>
@@ -2670,7 +2741,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
             </div>
             <button onClick={addSlot} disabled={!newSlot.name.trim()||!newSlot.days.length}
               style={{padding:"8px 18px",background:newSlot.name.trim()&&newSlot.days.length?T.sage:T.border,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:newSlot.name.trim()&&newSlot.days.length?"pointer":"not-allowed"}}>
-              Add session
+              Add availability
             </button>
           </div>
           {slots.length>0&&(
@@ -2688,31 +2759,33 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
           )}
         </>
       )}
-    </Wrap>
+      <div style={{marginTop:24,paddingTop:20,borderTop:`1px solid ${T.border}`}}>
+        <label style={FL}>Using a different system? Let us know</label>
+        <input value={intgRequest} onChange={e=>setIntgRequest(e.target.value)} placeholder="e.g. Trafft, SimplyBook, custom website…"
+          style={{...INP,marginBottom:6}} onFocus={onFi} onBlur={onBl}/>
+        <p style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,margin:0}}>We'll prioritise integrations based on what partners are using.</p>
+      </div>
+    </OWrap>
   );
 
   if (step===5) return (
-    <Wrap title="Set your credit price" sub="Guests pay using Wello credits. 1 credit = €1. You decide what to charge per session."
-      footer={[<OBtn key="b" onClick={()=>setStep(4)} label="← Back" variant="secondary"/>,
-               <OBtn key="n" onClick={()=>goNext({cr:parseInt(cr)||catAvg})} label="Save & continue →" disabled={!cr}/>]}>
-      <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:6,padding:"12px 16px",marginBottom:20}}>
-        <span style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600}}>Platform average for {bizData.category||"your category"}: </span>
-        <span style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:300}}>{catAvg} credits (€{catAvg})</span>
-      </div>
-      <label style={FL}>Credits per session</label>
-      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+    <OWrap title="Set your credit price" sub="Guests pay using Wello credits. 1 credit = €1. You decide what to charge per booking." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+      footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(4)} label="← Back" variant="secondary"/>,
+               <OBtn key="n" saving={saving} onClick={()=>goNext({cr:parseInt(cr)||catAvg})} label="Save & continue →" disabled={!cr}/>]}>
+      <label style={FL}>Credits per booking</label>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
         <span style={{fontFamily:F.body,fontSize:22,color:T.ochre}}>◈</span>
         <input type="number" min="1" value={cr} onChange={e=>setCr(e.target.value)} placeholder={String(catAvg)}
           style={{...INP,maxWidth:100,fontSize:18,fontWeight:700}} onFocus={onFi} onBlur={onBl}/>
-        {cr&&<span style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300}}>= €{cr} per session</span>}
+        {cr&&<span style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300}}>= €{cr}</span>}
       </div>
-      <p style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300,margin:0,lineHeight:1.6}}>You can adjust this at any time from your dashboard once you're live.</p>
-    </Wrap>
+      <p style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300,margin:"0 0 4px",lineHeight:1.6}}>Similar venues typically charge around {catAvg} credits. You can adjust this any time.</p>
+    </OWrap>
   );
 
   if (step===6) return (
-    <Wrap title="Review your listing" sub="Here's how you'll appear on Wello. You can edit anything from your dashboard after you go live."
-      footer={[<OBtn key="b" onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
+    <OWrap title="Review your listing" sub="Here's how you'll appear on Wello. You can edit anything from your dashboard after you go live." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+      footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
                <button key="s" onClick={handleSubmit} disabled={saving}
                  style={{padding:"11px 28px",background:saving?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:saving?"not-allowed":"pointer"}}
                  onMouseEnter={e=>{if(!saving)e.target.style.background=T.sage2;}}
@@ -2739,10 +2812,38 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
         <div style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:600,marginBottom:3}}>What happens next?</div>
         <div style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:300,lineHeight:1.6}}>We'll review your listing and get back to you within 2 working days. We may suggest a few small tweaks before you go live.</div>
       </div>
-    </Wrap>
+    </OWrap>
   );
 
-  return null;
+  return previewOpen ? (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setPreviewOpen(false)}>
+      <div style={{background:T.bg,borderRadius:12,maxWidth:360,width:"100%",overflow:"hidden",boxShadow:"0 20px 60px rgba(0,0,0,0.25)"}} onClick={e=>e.stopPropagation()}>
+        <div style={{padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${T.border}`}}>
+          <span style={{fontFamily:F.body,fontSize:11,fontWeight:600,color:T.stone,letterSpacing:"0.5px",textTransform:"uppercase"}}>Listing preview</span>
+          <button onClick={()=>setPreviewOpen(false)} style={{background:"none",border:"none",cursor:"pointer",color:T.stone,fontSize:20,lineHeight:1,padding:0}}>×</button>
+        </div>
+        <div style={{background:T.paper}}>
+          {img
+            ? <img src={img} alt="" style={{width:"100%",aspectRatio:"4/3",objectFit:"cover",display:"block"}}/>
+            : <div style={{width:"100%",aspectRatio:"4/3",background:T.bg2,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <span style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300}}>No photo added yet</span>
+              </div>}
+          <div style={{padding:"14px 16px"}}>
+            <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,marginBottom:2}}>{bizData.name}</div>
+            <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,marginBottom:8}}>{bizData.category} · {address||bizData.location}</div>
+            {desc&&<p style={{fontFamily:F.body,fontSize:11,color:T.stone,lineHeight:1.65,margin:"0 0 10px",fontWeight:300}}>{desc.slice(0,120)}{desc.length>120?"…":""}</p>}
+            {cr&&<div style={{display:"inline-flex",alignItems:"center",gap:4,background:T.ochreXL,borderRadius:4,padding:"4px 10px"}}>
+              <span style={{fontFamily:F.body,fontSize:12,color:T.ochre,fontWeight:700}}>◈ {cr}</span>
+              <span style={{fontFamily:F.body,fontSize:10,color:T.clay,fontWeight:300}}>per booking</span>
+            </div>}
+          </div>
+        </div>
+        <div style={{padding:"12px 18px",borderTop:`1px solid ${T.border}`}}>
+          <p style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,margin:0,lineHeight:1.5}}>This is an approximate preview. Your listing may look slightly different once live.</p>
+        </div>
+      </div>
+    </div>
+  ) : null;
 }
 
 function BusinessPortal({ onSetView }) {
@@ -2858,7 +2959,7 @@ function BusinessPortal({ onSetView }) {
       <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:24,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>Business sign in</h1>
       <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,margin:"0 0 28px"}}>Sign in to your Wello business dashboard.</p>
       <FieldLabel>Email address</FieldLabel>
-      <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setLoginErr("");}} placeholder="hello@yourstudio.com"
+      <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setLoginErr("");}} placeholder="hello@yourbusiness.com"
         style={{...INP3,borderColor:loginErr?T.clay:T.border}} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=loginErr?T.clay:T.border}/>
       <FieldLabel>Password</FieldLabel>
       <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setLoginErr("");}} placeholder="••••••••"
@@ -2891,7 +2992,7 @@ function BusinessPortal({ onSetView }) {
       ) : (
         <>
           <FieldLabel>Email address</FieldLabel>
-          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="hello@yourstudio.com"
+          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="hello@yourbusiness.com"
             style={INP3} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=T.border}/>
           <button onClick={doPasswordReset} disabled={loading||!email.trim()} style={{width:"100%",padding:"11px",background:email.trim()&&!loading?T.sage:T.border,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:email.trim()&&!loading?"pointer":"not-allowed",transition:"background .15s"}}>
             {loading?"Sending…":"Send reset link →"}
