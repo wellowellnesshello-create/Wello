@@ -167,47 +167,47 @@ const LOCS = ["All Mallorca","Palma","Sóller","Deià","Pollença","Alcúdia","S
 const SYNC = {1:"Mindbody",2:"Acuity",3:"Acuity",4:"FareHarbor",5:"Custom API",6:"Mindbody",7:"Gympass",8:"iCal",9:"Custom API"};
 
 const LISTINGS = [
-  { id:1, name:"Calma Studio", cat:"Yoga", loc:"Sóller", rating:4.9, reviews:127, cr:20,
+  { id:1, name:"Sol Yoga", cat:"Yoga", loc:"Sóller", rating:4.9, reviews:127, cr:20,
     desc:"Rooftop yoga overlooking the Tramuntana mountains. Sunrise & sunset sessions with certified instructors.",
     img:"https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80",
     tags:["Rooftop","All Levels","Mountain Views"],
-    slots:[{id:"s1",date:"2026-03-22",time:"07:00",dur:"75 min",spots:8,booked:3,name:"Sunrise Flow"},{id:"s2",date:"2026-03-22",time:"18:30",dur:"90 min",spots:10,booked:7,name:"Sunset Vinyasa"},{id:"s3",date:"2026-03-23",time:"07:00",dur:"75 min",spots:8,booked:1,name:"Sunrise Flow"}] },
-  { id:2, name:"Casa Blava Wellness", cat:"Hotel Gym", loc:"Palma", rating:4.8, reviews:64, cr:40,
+    slots:[{id:"s1",date:"2026-03-22",time:"07:00",dur:"75 min",spots:8,booked:3,name:"Morning Flow"},{id:"s2",date:"2026-03-22",time:"18:30",dur:"90 min",spots:10,booked:7,name:"Evening Flow"},{id:"s3",date:"2026-03-23",time:"07:00",dur:"75 min",spots:8,booked:1,name:"Morning Flow"}] },
+  { id:2, name:"Bay Hotel Gym", cat:"Hotel Gym", loc:"Palma", rating:4.8, reviews:64, cr:40,
     desc:"Five-star hotel fitness centre with heated infinity pool and panoramic sea views. Day passes available.",
     img:"https://images.unsplash.com/photo-1540497077202-7c8a3999166f?w=600&q=80",
     tags:["5-Star","Infinity Pool","Sea Views"],
     slots:[{id:"s5",date:"2026-03-22",time:"06:30",dur:"Open",spots:15,booked:5,name:"Gym & Pool Pass"},{id:"s6",date:"2026-03-22",time:"16:00",dur:"Open",spots:15,booked:9,name:"Afternoon Access"},{id:"s7",date:"2026-03-23",time:"06:30",dur:"Open",spots:15,booked:2,name:"Gym & Pool Pass"}] },
-  { id:3, name:"Serra Pilates", cat:"Pilates", loc:"Valldemossa", rating:5.0, reviews:43, cr:20,
+  { id:3, name:"Mountain Pilates", cat:"Pilates", loc:"Valldemossa", rating:5.0, reviews:43, cr:20,
     desc:"Reformer and mat Pilates inside a restored 18th-century farmhouse. Small groups, meticulous attention.",
     img:"https://images.unsplash.com/photo-1518611012118-696072aa579a?w=600&q=80",
     tags:["Reformer","Small Groups","Historic"],
     slots:[{id:"s8",date:"2026-03-22",time:"09:00",dur:"55 min",spots:6,booked:6,name:"Reformer"},{id:"s9",date:"2026-03-22",time:"11:00",dur:"55 min",spots:6,booked:2,name:"Mat Pilates"},{id:"s10",date:"2026-03-23",time:"09:00",dur:"55 min",spots:6,booked:0,name:"Intro Reformer"}] },
-  { id:4, name:"Marea Surf & Yoga", cat:"Surfing", loc:"Alcúdia", rating:4.7, reviews:89, cr:40,
+  { id:4, name:"Bay Surf School", cat:"Surfing", loc:"Alcúdia", rating:4.7, reviews:89, cr:40,
     desc:"North coast beach packages — paddle out at dawn, practice yoga as the sun rises over the bay.",
     img:"https://images.unsplash.com/photo-1515016886654-94c06b8a8c7d?w=600&q=80",
     tags:["Beach","Surf","Full Experience"],
     slots:[{id:"s12",date:"2026-03-22",time:"08:00",dur:"Half Day",spots:8,booked:5,name:"Surf + Yoga"},{id:"s13",date:"2026-03-23",time:"08:00",dur:"Half Day",spots:8,booked:1,name:"Surf + Yoga"}] },
-  { id:5, name:"Mirador Pool Club", cat:"Pool Access", loc:"Palma", rating:4.9, reviews:52, cr:40,
+  { id:5, name:"Clifftop Pool Club", cat:"Pool Access", loc:"Palma", rating:4.9, reviews:52, cr:40,
     desc:"Fortress hotel — infinity pool carved into the cliffs, spa circuit and breathwork sessions. Extraordinary luxury.",
     img:"https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=600&q=80",
     tags:["Luxury","Cliff Pool","Spa"],
     slots:[{id:"s15",date:"2026-03-22",time:"10:00",dur:"Full Day",spots:6,booked:2,name:"Pool & Spa Day"},{id:"s16",date:"2026-03-23",time:"10:00",dur:"Full Day",spots:6,booked:0,name:"Pool & Spa Day"}] },
-  { id:6, name:"Olivera Yoga", cat:"Yoga", loc:"Deià", rating:4.8, reviews:71, cr:20,
+  { id:6, name:"Garden Yoga Deià", cat:"Yoga", loc:"Deià", rating:4.8, reviews:71, cr:20,
     desc:"Open-air platform in the artist village of Deià. Iyengar practice surrounded by ancient olive groves.",
     img:"https://images.unsplash.com/photo-1508672019048-805c876b67e2?w=600&q=80",
     tags:["Outdoor","Iyengar","Olive Groves"],
-    slots:[{id:"s18",date:"2026-03-22",time:"08:30",dur:"90 min",spots:10,booked:8,name:"Iyengar Morning"},{id:"s19",date:"2026-03-22",time:"17:00",dur:"90 min",spots:10,booked:4,name:"Restorative Evening"}] },
-  { id:7, name:"Nord Fitness", cat:"Fitness Class", loc:"Pollença", rating:4.6, reviews:110, cr:15,
+    slots:[{id:"s18",date:"2026-03-22",time:"08:30",dur:"90 min",spots:10,booked:8,name:"Morning Session"},{id:"s19",date:"2026-03-22",time:"17:00",dur:"90 min",spots:10,booked:4,name:"Evening Session"}] },
+  { id:7, name:"Peak Fitness", cat:"Fitness Class", loc:"Pollença", rating:4.6, reviews:110, cr:15,
     desc:"High-intensity training in a converted mill. 45-minute sessions, expert coaching, maximum results.",
     img:"https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=600&q=80",
     tags:["HIIT","Small Groups","Expert Coaches"],
-    slots:[{id:"s21",date:"2026-03-22",time:"07:30",dur:"45 min",spots:14,booked:10,name:"HIIT Express"},{id:"s22",date:"2026-03-22",time:"12:00",dur:"45 min",spots:14,booked:6,name:"Lunchtime"},{id:"s24",date:"2026-03-23",time:"07:30",dur:"45 min",spots:14,booked:4,name:"HIIT Express"}] },
-  { id:8, name:"Caleta Meditation", cat:"Meditation", loc:"Santanyí", rating:5.0, reviews:38, cr:15,
+    slots:[{id:"s21",date:"2026-03-22",time:"07:30",dur:"45 min",spots:14,booked:10,name:"HIIT Class"},{id:"s22",date:"2026-03-22",time:"12:00",dur:"45 min",spots:14,booked:6,name:"Lunchtime"},{id:"s24",date:"2026-03-23",time:"07:30",dur:"45 min",spots:14,booked:4,name:"HIIT Class"}] },
+  { id:8, name:"Coast Meditation", cat:"Meditation", loc:"Santanyí", rating:5.0, reviews:38, cr:15,
     desc:"Cliffside meditation and breathwork with the Mediterranean as your backdrop. Intimate and transformative.",
     img:"https://images.unsplash.com/photo-1593811167562-9cef47bfc4d7?w=600&q=80",
     tags:["Cliffside","Breathwork","Sea Views"],
-    slots:[{id:"s25",date:"2026-03-22",time:"06:00",dur:"60 min",spots:8,booked:5,name:"Dawn Breathwork"},{id:"s26",date:"2026-03-22",time:"19:30",dur:"60 min",spots:8,booked:2,name:"Sunset Meditation"}] },
-  { id:9, name:"Palau Pool Club", cat:"Pool Access", loc:"Palma", rating:4.7, reviews:93, cr:25,
+    slots:[{id:"s25",date:"2026-03-22",time:"06:00",dur:"60 min",spots:8,booked:5,name:"Dawn Breathwork"},{id:"s26",date:"2026-03-22",time:"19:30",dur:"60 min",spots:8,booked:2,name:"Evening Meditation"}] },
+  { id:9, name:"Rooftop Pool Club", cat:"Pool Access", loc:"Palma", rating:4.7, reviews:93, cr:25,
     desc:"Rooftop pool at the heart of Palma. Lap lanes from 8am, day club all afternoon. Hotel gym access included.",
     img:"https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=600&q=80",
     tags:["Rooftop Pool","Lap Lanes","Day Pass"],
@@ -975,15 +975,15 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
   
   // Venue coordinates for map
   const COORDS = {
-    "Calma Studio":         [39.7697, 2.7149],
-    "Casa Blava Wellness":       [39.5697, 2.6200],
-    "Serra Pilates":      [39.7079, 2.6151],
-    "Marea Surf & Yoga":     [39.8567, 3.1201],
-    "Mirador Pool Club":   [39.5201, 2.6891],
-    "Olivera Yoga":   [39.7482, 2.6489],
-    "Nord Fitness":    [39.8782, 3.0162],
-    "Caleta Meditation":[39.3574, 3.1287],
-    "Palau Pool Club": [39.5697, 2.6501],
+    "Sol Yoga":           [39.7697, 2.7149],
+    "Bay Hotel Gym":      [39.5697, 2.6200],
+    "Mountain Pilates":   [39.7079, 2.6151],
+    "Bay Surf School":    [39.8567, 3.1201],
+    "Clifftop Pool Club": [39.5201, 2.6891],
+    "Garden Yoga Deià":   [39.7482, 2.6489],
+    "Peak Fitness":       [39.8782, 3.0162],
+    "Coast Meditation":   [39.3574, 3.1287],
+    "Rooftop Pool Club":  [39.5697, 2.6501],
   };
   const filtered=listings.filter(b=>{
     const mC=activeCat==="All"||b.cat===activeCat;
@@ -1601,7 +1601,7 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
 
             <div>
               <FieldLabel>Business name *</FieldLabel>
-              <input placeholder="e.g. Calma Studio" value={listing.name}
+              <input placeholder="e.g. My Wellness Studio" value={listing.name}
                 onChange={e=>setListing(p=>({...p,name:e.target.value}))}
                 style={INP3} onFocus={onF} onBlur={onB}/>
             </div>
@@ -1966,13 +1966,13 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
 
 function BusinessPortalDashboard({ onExit }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
-  const bizData = { name:"Calma Studio", cat:"Yoga", loc:"Sóller", monthlyBookings:24, monthlyCredits:86 };
+  const bizData = { name:"Demo Studio", cat:"Yoga", loc:"Sóller", monthlyBookings:24, monthlyCredits:86 };
   const [tab, setTab] = useState("overview");
   const [selDay, setSelDay] = useState(0);
   const [showAddSlot, setShowAddSlot] = useState(false);
   const [newSlot, setNewSlot] = useState({name:"",time:"09:00",spots:10,credits:3,dur:"60 min"});
   const [editListing, setEditListing] = useState(false);
-  const [listing, setListing] = useState({name:"Calma Studio",cat:"Yoga",cat2:"Meditation",loc:"Sóller",desc:"Rooftop yoga overlooking the Tramuntana mountains. All levels welcome.",credits:3,tags:"Rooftop, All Levels, Mountain Views"});
+  const [listing, setListing] = useState({name:"Demo Studio",cat:"Yoga",cat2:"Meditation",loc:"Sóller",desc:"Your venue description here.",credits:3,tags:""});
   const [integration, setIntegration] = useState(null);
 
   const TABS = [["overview","Overview"],["schedule","Schedule"],["payouts","Payouts"],["listing","My Listing"],["settings","Settings"]];
@@ -2956,7 +2956,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
       footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
                <OBtn key="n" saving={saving} onClick={()=>goNext({})} label="Save & continue →"/>]}>
       <div style={{pointerEvents:"none",opacity:1}}>
-        {[{l:"Account name",p:"e.g. Calma Studio SL"},{l:"IBAN",p:"e.g. ES12 3456 7890 1234 5678 9012"},{l:"BIC / SWIFT",p:"e.g. CAIXESBBXXX"}].map(({l,p})=>(
+        {[{l:"Account name",p:"e.g. My Studio SL"},{l:"IBAN",p:"e.g. ES12 3456 7890 1234 5678 9012"},{l:"BIC / SWIFT",p:"e.g. CAIXESBBXXX"}].map(({l,p})=>(
           <div key={l} style={{marginBottom:14}}>
             <label style={FL}>{l}</label>
             <input disabled placeholder={p}
@@ -3163,7 +3163,7 @@ function BusinessPortal({ onSetView }) {
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div>
                   <FieldLabel>Business name *</FieldLabel>
-                  <input placeholder="e.g. Calma Studio" value={regForm.name} onChange={e=>setRegForm(p=>({...p,name:e.target.value}))} style={INP3} onFocus={onF3} onBlur={onB3}/>
+                  <input placeholder="e.g. My Wellness Studio" value={regForm.name} onChange={e=>setRegForm(p=>({...p,name:e.target.value}))} style={INP3} onFocus={onF3} onBlur={onB3}/>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                   <div>
