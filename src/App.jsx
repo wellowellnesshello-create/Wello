@@ -1971,33 +1971,103 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const [showAddSlot, setShowAddSlot] = useState(false);
   const [newSlot, setNewSlot] = useState({name:"",time:"09:00",spots:10,credits:3,dur:"60 min"});
   const [editListing, setEditListing] = useState(false);
-  const [listing, setListing] = useState({name:"Demo Studio",cat:"Yoga",cat2:"Meditation",loc:"Sóller",desc:"Your venue description here.",credits:3,tags:""});
+  const [listing, setListing] = useState(isPreview
+    ? {name:"Demo Studio",cat:"Yoga",cat2:"Meditation",loc:"Sóller",desc:"Your venue description here.",credits:3,tags:""}
+    : {
+        name: bizData.name || "",
+        cat:  bizData.category || bizData.cat || "",
+        cat2: bizData.cat2 || "",
+        loc:  bizData.location || bizData.loc || "",
+        desc: bizData.description || bizData.desc || "",
+        credits: bizData.cr || 3,
+        tags: Array.isArray(bizData.tags) ? bizData.tags.join(", ") : (bizData.tags || ""),
+      });
   const [integration, setIntegration] = useState(null);
 
   const TABS = [["overview","Overview"],["schedule","Schedule"],["payouts","Payouts"],["listing","My Listing"],["settings","Settings"]];
 
   const WEEK_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-  const WEEK_DATES = ["14 Apr","15 Apr","16 Apr","17 Apr","18 Apr","19 Apr","20 Apr"];
+  // Compute the current Mon→Sun week as "14 Apr"-style labels — always live so dates never go stale.
+  const WEEK_DATES = (()=>{
+    const today = new Date();
+    const dow = today.getDay(); // 0=Sun..6=Sat
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1));
+    const fmt = new Intl.DateTimeFormat('en-GB', { day:'numeric', month:'short' });
+    return Array.from({length:7}, (_,i)=>{
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return fmt.format(d);
+    });
+  })();
 
-  const [CLS, setCLS] = useState([
-    {id:1,day:0,time:"07:00",name:"Sunrise Flow",   spots:8, booked:6, credits:3, dur:"60 min", live:true},
-    {id:2,day:0,time:"18:30",name:"Sunset Vinyasa", spots:10,booked:8, credits:15, dur:"75 min", live:true},
-    {id:3,day:1,time:"09:00",name:"Morning Yin",    spots:8, booked:3, credits:2, dur:"60 min", live:true},
-    {id:4,day:2,time:"07:00",name:"Sunrise Flow",   spots:8, booked:8, credits:3, dur:"60 min", live:true},
-    {id:5,day:2,time:"18:30",name:"Sunset Vinyasa", spots:10,booked:5, credits:15, dur:"75 min", live:true},
-    {id:6,day:3,time:"07:00",name:"Sunrise Flow",   spots:8, booked:2, credits:3, dur:"60 min", live:true},
-    {id:7,day:3,time:"12:00",name:"Lunchtime Flow", spots:6, booked:6, credits:12, dur:"45 min", live:false},
-    {id:8,day:4,time:"07:00",name:"Sunrise Flow",   spots:8, booked:7, credits:3, dur:"60 min", live:true},
-    {id:9,day:5,time:"09:00",name:"Weekend Flow",   spots:12,booked:10,credits:15, dur:"90 min", live:true},
-    {id:10,day:6,time:"09:00",name:"Weekend Flow",  spots:12,booked:12,credits:3, dur:"90 min", live:true},
-  ]);
+  // Real partners start with their recurring slot template from onboarding, expanded
+  // into one entry per (slot × weekday). Preview gets the curated demo schedule.
+  const [CLS, setCLS] = useState(isPreview
+    ? [
+        {id:1,day:0,time:"07:00",name:"Sunrise Flow",   spots:8, booked:6, credits:3, dur:"60 min", live:true},
+        {id:2,day:0,time:"18:30",name:"Sunset Vinyasa", spots:10,booked:8, credits:15, dur:"75 min", live:true},
+        {id:3,day:1,time:"09:00",name:"Morning Yin",    spots:8, booked:3, credits:2, dur:"60 min", live:true},
+        {id:4,day:2,time:"07:00",name:"Sunrise Flow",   spots:8, booked:8, credits:3, dur:"60 min", live:true},
+        {id:5,day:2,time:"18:30",name:"Sunset Vinyasa", spots:10,booked:5, credits:15, dur:"75 min", live:true},
+        {id:6,day:3,time:"07:00",name:"Sunrise Flow",   spots:8, booked:2, credits:3, dur:"60 min", live:true},
+        {id:7,day:3,time:"12:00",name:"Lunchtime Flow", spots:6, booked:6, credits:12, dur:"45 min", live:false},
+        {id:8,day:4,time:"07:00",name:"Sunrise Flow",   spots:8, booked:7, credits:3, dur:"60 min", live:true},
+        {id:9,day:5,time:"09:00",name:"Weekend Flow",   spots:12,booked:10,credits:15, dur:"90 min", live:true},
+        {id:10,day:6,time:"09:00",name:"Weekend Flow",  spots:12,booked:12,credits:3, dur:"90 min", live:true},
+      ]
+    : (()=>{
+        const dayIdx = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5, Sun:6 };
+        return (bizData.slots || []).flatMap((sl,sli)=>
+          (sl.days || []).map((dayName,di)=>({
+            id: `${sl.id || sli}-${dayName}-${di}`,
+            day: dayIdx[dayName] ?? 0,
+            time: sl.time || "09:00",
+            name: sl.name || "",
+            spots: +sl.spots || 10,
+            booked: 0,
+            credits: +sl.cr || +sl.credits || bizData.cr || 3,
+            dur: sl.dur || "60 min",
+            live: true,
+          }))
+        );
+      })());
 
-  const RECENT = [
+  const RECENT = isPreview ? [
     {initials:"SM",name:"Sarah M.",  cls:"Sunrise Flow",   when:"Today 07:00",     cr:15,status:"Confirmed"},
     {initials:"JT",name:"James T.",  cls:"Sunset Vinyasa", when:"Today 18:30",     cr:15,status:"Confirmed"},
     {initials:"AK",name:"Anna K.",   cls:"Weekend Flow",   when:"Sat 19 Apr 09:00",cr:15,status:"Confirmed"},
     {initials:"MW",name:"Marcus W.", cls:"Sunrise Flow",   when:"Wed 16 Apr 07:00",cr:15,status:"Confirmed"},
     {initials:"LM",name:"Léa M.",    cls:"Morning Yin",    when:"Tue 15 Apr 09:00",cr:12,status:"Pending"},
+  ] : [];
+
+  // Header + Overview stats. Live partners pull from businesses-table fields; missing
+  // values render as "0" / "—" rather than fake demo numbers.
+  const monthLabel = new Date().toLocaleDateString('en-GB', { month:'long', year:'numeric' });
+  const monthlyBookings = +bizData.monthly_bookings || 0;
+  const monthlyCredits  = +bizData.monthly_credits  || 0;
+  const payoutAmt = monthlyCredits > 0 ? "€"+(monthlyCredits*0.8).toFixed(0) : "€0";
+  const stats = isPreview ? [
+    {label:"Bookings this month",value:"24",   sub:"April 2026",       accent:"#CAECBA"},
+    {label:"Credits redeemed",   value:"◈ 86", sub:"this month",       accent:"rgba(255,255,255,0.25)"},
+    {label:"Payout due",         value:"€619", sub:"paid this Friday", accent:"#4ade80"},
+    {label:"Avg rating",         value:"4.9",  sub:"38 reviews",       accent:"#D6B47C"},
+  ] : [
+    {label:"Bookings this month",value:String(monthlyBookings),       sub:monthLabel,                                                accent:"#CAECBA"},
+    {label:"Credits redeemed",   value:"◈ "+monthlyCredits,           sub:"this month",                                              accent:"rgba(255,255,255,0.25)"},
+    {label:"Payout due",         value:payoutAmt,                     sub:monthlyCredits>0?"paid this Friday":"no payout yet",       accent:"#4ade80"},
+    {label:"Avg rating",         value:bizData.rating?String(bizData.rating):"—", sub:bizData.reviews?`${bizData.reviews} reviews`:"no reviews yet", accent:"#D6B47C"},
+  ];
+  const overviewCards = isPreview ? [
+    {label:"Total sessions",       value:"142",  sub:"Last 6 months",          color:"#213C18"},
+    {label:"Customer return rate", value:"68%",  sub:"booked more than once",  color:"#213C18"},
+    {label:"Avg credits/booking",  value:"◈ 18", sub:"April 2026",             color:"#B8925C"},
+    {label:"Revenue this month",   value:"€619", sub:"paid this Friday",       color:"#213C18"},
+  ] : [
+    {label:"Total sessions",       value:String(monthlyBookings),    sub:"all time",                                                color:"#213C18"},
+    {label:"Customer return rate", value:"—",                        sub:"no bookings yet",                                         color:"#213C18"},
+    {label:"Avg credits/booking",  value:monthlyBookings>0?"◈ "+Math.round(monthlyCredits/monthlyBookings):"◈ —", sub:monthLabel,    color:"#B8925C"},
+    {label:"Revenue this month",   value:payoutAmt,                  sub:monthlyCredits>0?"paid this Friday":"no revenue yet",      color:"#213C18"},
   ];
 
   const INP = {width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:13,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4"};
@@ -2029,12 +2099,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           </div>
           {/* Stats row */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(140px,1fr))",gap:8,marginBottom:0,overflowX:"auto"}}>
-            {[
-              {label:"Bookings this month",value:"24",sub:"April 2026",accent:"#CAECBA"},
-              {label:"Credits redeemed",value:"◈ 86",sub:"this month",accent:"rgba(255,255,255,0.25)"},
-              {label:"Payout due",value:"€619",sub:"paid this Friday",accent:"#4ade80"},
-              {label:"Avg rating",value:"4.9",sub:"38 reviews",accent:"#D6B47C"},
-            ].map(({label,value,sub,accent})=>(
+            {stats.map(({label,value,sub,accent})=>(
               <div key={label} style={{background:"rgba(0,0,0,0.15)",borderRadius:"8px 8px 0 0",padding:"14px 16px",borderTop:`3px solid ${accent}`}}>
                 <p style={{fontFamily:F2,fontSize:9,color:"rgba(255,255,255,0.4)",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 6px"}}>{label}</p>
                 <p style={{fontFamily:F2,fontSize:24,fontWeight:800,color:"#fff",letterSpacing:"-1px",margin:"0 0 3px",lineHeight:1}}>{value}</p>
@@ -2062,12 +2127,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           <div style={{display:"flex",flexDirection:"column",gap:20}}>
             {/* Summary cards */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(45%,200px),1fr))",gap:10}}>
-              {[
-                {label:"Total sessions",value:"142",sub:"Last 6 months",color:"#213C18"},
-                {label:"Customer return rate",value:"68%",sub:"booked more than once",color:"#213C18"},
-                {label:"Avg credits/booking",value:"◈ 18",sub:"April 2026",color:"#B8925C"},
-                {label:"Revenue this month",value:"€619",sub:"paid this Friday",color:"#213C18"},
-              ].map(({label,value,sub,color})=>(
+              {overviewCards.map(({label,value,sub,color})=>(
                 <div key={label} style={{background:"#fff",borderRadius:12,padding:"18px 20px",borderTop:`3px solid ${color}`,boxShadow:"0 1px 8px rgba(0,0,0,0.04)"}}>
                   <p style={{fontFamily:F2,fontSize:9,color:"#74796E",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 8px"}}>{label}</p>
                   <p style={{fontFamily:F2,fontSize:28,fontWeight:800,color:"#213C18",letterSpacing:"-1px",margin:"0 0 4px",lineHeight:1}}>{value}</p>
@@ -2085,9 +2145,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     <p style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 2px",letterSpacing:"-0.3px"}}>Monthly revenue</p>
                     <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>Credits redeemed × €1 · less commission</p>
                   </div>
-                  <p style={{fontFamily:F2,fontSize:20,fontWeight:800,color:"#213C18",letterSpacing:"-0.5px",margin:0}}>€619</p>
+                  <p style={{fontFamily:F2,fontSize:20,fontWeight:800,color:"#213C18",letterSpacing:"-0.5px",margin:0}}>{isPreview?"€619":payoutAmt}</p>
                 </div>
-                {(()=>{
+                {isPreview ? (()=>{
                   const months=[{m:"Nov",v:280},{m:"Dec",v:310},{m:"Jan",v:390},{m:"Feb",v:480},{m:"Mar",v:530},{m:"Apr",v:619}];
                   const max=Math.max(...months.map(x=>x.v));
                   return (
@@ -2105,7 +2165,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                       })}
                     </div>
                   );
-                })()}
+                })() : (
+                  <div style={{height:120,display:"flex",alignItems:"center",justifyContent:"center",borderTop:"1px dashed #E4E2DD",borderBottom:"1px dashed #E4E2DD"}}>
+                    <p style={{fontFamily:F2,fontSize:12,color:"#A3B18A",margin:0,textAlign:"center"}}>No revenue yet — your monthly chart will appear here once bookings start coming in.</p>
+                  </div>
+                )}
               </div>
 
               {/* Live bookings */}
@@ -2117,6 +2181,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     <span style={{fontFamily:F2,fontSize:10,color:"#213C18",fontWeight:600}}>Live</span>
                   </div>
                 </div>
+                {RECENT.length===0 ? (
+                  <div style={{padding:"40px 0",textAlign:"center"}}>
+                    <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 4px"}}>No bookings yet.</p>
+                    <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:0}}>New bookings will show up here in real time.</p>
+                  </div>
+                ) : (
                 <div style={{display:"flex",flexDirection:"column",gap:0}}>
                   {RECENT.map((b,i)=>(
                     <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<RECENT.length-1?"1px solid rgba(195,200,188,0.2)":"none"}}>
@@ -2129,6 +2199,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     </div>
                   ))}
                 </div>
+                )}
               </div>
             </div>
           </div>
@@ -2329,19 +2400,19 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             <div style={{background:"#213C18",borderRadius:12,padding:"20px 24px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
               <div>
                 <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 4px"}}>Next payout</p>
-                <p style={{fontFamily:F2,fontSize:28,fontWeight:800,color:"#fff",letterSpacing:"-1px",margin:"0 0 2px"}}>€619.20</p>
-                <p style={{fontFamily:F2,fontSize:12,color:"rgba(255,255,255,0.5)",margin:0}}>Processed this Friday · direct to your IBAN</p>
+                <p style={{fontFamily:F2,fontSize:28,fontWeight:800,color:"#fff",letterSpacing:"-1px",margin:"0 0 2px"}}>{isPreview?"€619.20":payoutAmt}</p>
+                <p style={{fontFamily:F2,fontSize:12,color:"rgba(255,255,255,0.5)",margin:0}}>{isPreview||monthlyCredits>0?"Processed this Friday · direct to your IBAN":"No payout this week"}</p>
               </div>
               <div style={{background:"rgba(255,255,255,0.1)",borderRadius:10,padding:"12px 16px",textAlign:"right"}}>
                 <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",margin:"0 0 2px"}}>Commission rate</p>
                 <p style={{fontFamily:F2,fontSize:16,fontWeight:700,color:"#CAECBA",margin:0}}>Agreed with Wello</p>
               </div>
             </div>
-            {[
+            {(isPreview ? [
               {date:"14 Mar 2026",credits:170,bookings:4,gross:306,commission:null,invNo:"WLO-2026-014"},
               {date:"07 Mar 2026",credits:140,bookings:3,gross:252,commission:null,invNo:"WLO-2026-013"},
               {date:"28 Feb 2026",credits:120,bookings:3,gross:216,commission:null,invNo:"WLO-2026-012"},
-            ].map((row,i)=>{
+            ] : []).map((row,i)=>{
               // Net shown only when commission is explicitly set for this venue
               const net = row.commission ? +(row.gross*(1-row.commission/100)).toFixed(2) : null;
               return (
@@ -2360,6 +2431,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 </div>
               );
             })}
+            {!isPreview && (
+              <div style={{background:"#fff",borderRadius:12,padding:"32px 20px",textAlign:"center",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
+                <p style={{fontFamily:F2,fontSize:14,color:"#74796E",fontWeight:600,margin:"0 0 4px"}}>No payouts yet</p>
+                <p style={{fontFamily:F2,fontSize:12,color:"#A3B18A",margin:0,lineHeight:1.6}}>Your first payout statement will appear here once bookings have been processed.</p>
+              </div>
+            )}
             <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",textAlign:"center",marginTop:4}}>Payouts every Friday · questions? hello@wello-wellness.com</p>
           </div>
         )}
@@ -2370,7 +2447,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             {/* Listing preview */}
             <div style={{background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
               <div style={{position:"relative",height:180}}>
-                <img src="https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&q=80" alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                <img src={bizData.img || "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&q=80"} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
                 <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(27,28,25,0.7) 0%,transparent 60%)"}}/>
                 <div style={{position:"absolute",bottom:12,left:14,right:14}}>
                   <p style={{fontFamily:F2,fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{listing.name}</p>
@@ -2414,7 +2491,15 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
               <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 14px"}}>Contact & payment</h3>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {[{l:"Contact email",v:"hello@solyalmayoga.com"},{l:"Phone",v:"+34 971 234 567"},{l:"IBAN",v:"ES12 3456 7890 1234 5678"}].map(f=>(
+                {(isPreview ? [
+                  {l:"Contact email",v:"hello@solyalmayoga.com"},
+                  {l:"Phone",v:"+34 971 234 567"},
+                  {l:"IBAN",v:"ES12 3456 7890 1234 5678"},
+                ] : [
+                  {l:"Contact email",v:bizData.email || ""},
+                  {l:"Phone",v:bizData.phone || ""},
+                  {l:"IBAN",v:bizData.iban || ""},
+                ]).map(f=>(
                   <div key={f.l}>
                     <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:5}}>{f.l}</label>
                     <input defaultValue={f.v} style={{...INP}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
