@@ -261,6 +261,180 @@ function FieldLabel({ children }) {
 }
 const INP = {width:"100%",padding:"9px 11px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:12,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",boxSizing:"border-box",transition:"border-color .18s"};
 
+// ─── Auth Modal (Member sign-in / sign-up / magic link) ──────────────────────
+// Centered modal, brand-token styling, matches BizPanel/BookingModal pattern.
+// Customers only — partner sign-in lives inside the Business tab and stays
+// separate (no shared UI). The Supabase auth session itself is shared per
+// browser, but only customers with a row in `profiles` see the member
+// experience; only partners with a row in `businesses` see the portal.
+function AuthModal({ initialMode = "signin", onClose, onSuccess }) {
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  const [mode, setMode] = useState(initialMode); // signin | signup | magic | magic_sent | signup_check
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function clearErr(){ if(err) setErr(""); }
+
+  async function doSignIn() {
+    setBusy(true); setErr("");
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    setBusy(false);
+    if (error) { setErr("Email or password not recognised."); return; }
+    onSuccess?.();
+  }
+
+  async function doSignUp() {
+    if (!fullName.trim()) { setErr("Please enter your name."); return; }
+    if (password.length < 8) { setErr("Password must be at least 8 characters."); return; }
+    setBusy(true); setErr("");
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: { data: { full_name: fullName.trim() } },
+    });
+    setBusy(false);
+    if (error) { setErr(error.message || "Couldn't create account."); return; }
+    // If email confirmations are on, session is null and user must confirm.
+    if (!data.session) { setMode("signup_check"); return; }
+    // Auto-confirmed (e.g. dev mode) — onSuccess handler picks up the session.
+    onSuccess?.();
+  }
+
+  async function doMagic() {
+    setBusy(true); setErr("");
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: { emailRedirectTo: window.location.origin },
+    });
+    setBusy(false);
+    if (error) { setErr(error.message || "Couldn't send magic link."); return; }
+    setMode("magic_sent");
+  }
+
+  const INP3 = {
+    width:"100%", padding:"11px 13px", border:`1px solid ${T.border}`, borderRadius:4,
+    fontSize:13, fontFamily:F2, background:T.paper, color:T.ink, outline:"none",
+    boxSizing:"border-box", transition:"border-color .18s",
+  };
+
+  const onF = e => e.target.style.borderColor = T.sage;
+  const onB = e => e.target.style.borderColor = err ? T.clay : T.border;
+
+  // Success-state body for magic link / signup confirmation screens
+  if (mode === "magic_sent") return (
+    <ModalShell onClose={onClose}>
+      <div style={{textAlign:"center",padding:"32px 8px"}}>
+        <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontSize:22}}>✓</div>
+        <h2 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:T.sage,letterSpacing:"-0.4px",margin:"0 0 8px"}}>Check your email</h2>
+        <p style={{fontFamily:F2,fontSize:13,color:T.stone,lineHeight:1.6,margin:0}}>We sent a magic link to <strong style={{color:T.ink,fontWeight:600}}>{email}</strong>. Click it to sign in.</p>
+      </div>
+    </ModalShell>
+  );
+
+  if (mode === "signup_check") return (
+    <ModalShell onClose={onClose}>
+      <div style={{textAlign:"center",padding:"32px 8px"}}>
+        <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontSize:22}}>✓</div>
+        <h2 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:T.sage,letterSpacing:"-0.4px",margin:"0 0 8px"}}>Welcome to Wello</h2>
+        <p style={{fontFamily:F2,fontSize:13,color:T.stone,lineHeight:1.6,margin:0}}>Confirm your email at <strong style={{color:T.ink,fontWeight:600}}>{email}</strong> to activate your account, then sign in.</p>
+      </div>
+    </ModalShell>
+  );
+
+  return (
+    <ModalShell onClose={onClose}>
+      <div style={{padding:"28px 28px 24px"}}>
+        <div style={{fontFamily:F2,fontSize:22,fontWeight:800,color:T.sage,letterSpacing:"-0.8px",marginBottom:4}}>wello</div>
+        <h2 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:T.ink,letterSpacing:"-0.4px",margin:"0 0 4px"}}>
+          {mode==="signin" ? "Sign in" : mode==="signup" ? "Create your account" : "Email me a magic link"}
+        </h2>
+        <p style={{fontFamily:F2,fontSize:12,color:T.stone,fontWeight:400,margin:"0 0 22px"}}>
+          {mode==="signin" ? "Welcome back." : mode==="signup" ? "Wello members buy credits and book wellness across Mallorca." : "We'll send a one-tap sign-in link."}
+        </p>
+
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          {mode==="signup" && (
+            <div>
+              <label style={{fontFamily:F2,fontSize:9,letterSpacing:"1.5px",textTransform:"uppercase",color:T.stone,display:"block",marginBottom:5}}>Full name</label>
+              <input value={fullName} onChange={e=>{setFullName(e.target.value);clearErr();}} placeholder="Your name"
+                style={{...INP3, borderColor: err ? T.clay : T.border}} onFocus={onF} onBlur={onB}/>
+            </div>
+          )}
+
+          <div>
+            <label style={{fontFamily:F2,fontSize:9,letterSpacing:"1.5px",textTransform:"uppercase",color:T.stone,display:"block",marginBottom:5}}>Email address</label>
+            <input type="email" value={email} onChange={e=>{setEmail(e.target.value);clearErr();}} placeholder="you@email.com"
+              style={{...INP3, borderColor: err ? T.clay : T.border}} onFocus={onF} onBlur={onB}/>
+          </div>
+
+          {mode !== "magic" && (
+            <div>
+              <label style={{fontFamily:F2,fontSize:9,letterSpacing:"1.5px",textTransform:"uppercase",color:T.stone,display:"block",marginBottom:5}}>Password</label>
+              <input type="password" value={password} onChange={e=>{setPassword(e.target.value);clearErr();}}
+                placeholder={mode==="signup" ? "At least 8 characters" : "••••••••"}
+                style={{...INP3, borderColor: err ? T.clay : T.border}} onFocus={onF} onBlur={onB}
+                onKeyDown={e=>{ if(e.key==="Enter") mode==="signin" ? doSignIn() : doSignUp(); }}/>
+            </div>
+          )}
+
+          {err && <div style={{fontFamily:F2,fontSize:11,color:T.clay}}>{err}</div>}
+
+          <button
+            onClick={mode==="signin" ? doSignIn : mode==="signup" ? doSignUp : doMagic}
+            disabled={busy || !email.trim() || (mode==="signup" && (!fullName.trim() || password.length<8)) || (mode==="signin" && !password)}
+            style={{
+              padding:"12px",
+              background: busy ? T.border : T.sage,
+              color: busy ? T.stone : "#fff",
+              border:"none", borderRadius:4, fontFamily:F2, fontSize:13, fontWeight:700,
+              cursor: busy ? "not-allowed" : "pointer", marginTop:4, letterSpacing:"0.2px",
+            }}>
+            {busy ? "Please wait…"
+              : mode==="signin" ? "Sign in →"
+              : mode==="signup" ? "Create account →"
+              : "Send magic link →"}
+          </button>
+
+          {mode==="signin" && (
+            <button onClick={()=>{setMode("magic");setErr("");}} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",padding:"4px 0",marginTop:2}}>
+              Or email me a magic link
+            </button>
+          )}
+          {mode==="magic" && (
+            <button onClick={()=>{setMode("signin");setErr("");}} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",padding:"4px 0",marginTop:2}}>
+              ← Back to password sign-in
+            </button>
+          )}
+        </div>
+
+        {/* Mode switch footer */}
+        <div style={{marginTop:18,paddingTop:14,borderTop:`1px solid ${T.border}`,textAlign:"center"}}>
+          {mode==="signup"
+            ? <span style={{fontFamily:F2,fontSize:12,color:T.stone}}>Already a member? <button onClick={()=>{setMode("signin");setErr("");}} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",padding:0}}>Sign in</button></span>
+            : <span style={{fontFamily:F2,fontSize:12,color:T.stone}}>New to Wello? <button onClick={()=>{setMode("signup");setErr("");}} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",padding:0}}>Create your account</button></span>
+          }
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+// Shared modal shell (centered, padded, brand-token close button) — used by AuthModal
+function ModalShell({ onClose, children }) {
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:1300,background:"rgba(27,28,25,0.7)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px"}} onClick={onClose}>
+      <div style={{position:"relative",background:T.paper,borderRadius:16,maxWidth:420,width:"100%",maxHeight:"calc(100vh - 48px)",overflow:"hidden",overflowY:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.25)",animation:"su .25s ease"}} onClick={e=>e.stopPropagation()}>
+        <button onClick={onClose} aria-label="Close"
+          style={{position:"absolute",top:12,right:12,zIndex:10,background:"rgba(255,255,255,0.92)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",border:`1px solid rgba(195,200,188,0.35)`,color:T.ink,width:32,height:32,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.12)"}}>×</button>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ─── Booking Modal ────────────────────────────────────────────────────────────
 function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
@@ -737,7 +911,7 @@ function SyncEngine({ listings, onUpdate }) {
 // ═══════════════════════════════════════════════════════════════
 // PAGE: HOME
 // ═══════════════════════════════════════════════════════════════
-function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onToggleSave, onSetView, syncingIds }) {
+function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onToggleSave, onSetView, syncingIds, onGotoCredits }) {
   const [aiQ,setAiQ]=useState(""); const [aiLoading,setAiLoading]=useState(false);
   const [aiNote,setAiNote]=useState(""); const [aiResults,setAiResults]=useState(null);
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
@@ -782,7 +956,7 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
           {aiNote&&<p style={{fontFamily:F2,fontSize:11,color:"#74796E",fontStyle:"italic",margin:"0 0 16px"}}>✦ {aiNote}</p>}
           {/* CTAs */}
           <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginTop:"clamp(16px,3vw,28px)"}}>
-            <button onClick={()=>onSetView("credits")}
+            <button onClick={onGotoCredits || (()=>onSetView("credits"))}
               style={{display:"flex",alignItems:"center",gap:8,padding:"12px clamp(16px,4vw,36px)",borderRadius:999,background:"#213C18",color:"#fff",border:"none",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>
               Get Your Pass →
             </button>
@@ -1190,12 +1364,47 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
 // ═══════════════════════════════════════════════════════════════
 // PAGE: PROFILE
 // ═══════════════════════════════════════════════════════════════
-function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetView, isBiz, onToggleBiz, onPreviewDashboard }) {
+function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetView, isBiz, onToggleBiz, onPreviewDashboard, profile, authSession, onSignOut, onOpenSignIn, bookingsVersion = 0 }) {
   const [tab,setTab]=useState("reservations");
   const saved=listings.filter(b=>savedIds.includes(b.id));
   const [friends]=useState(FRIENDS);
   const TABS=[["reservations","Reservations"],["saved","Saved"],["friends","Friends"],["settings","Settings"]];
   const F2="'Manrope','Jost',system-ui,sans-serif";
+
+  // Source-of-truth bookings: Supabase rows for signed-in members; in-memory
+  // prop for the anonymous demo state (used only when this page is reached
+  // without auth, which we now redirect away from below).
+  const [remoteBookings, setRemoteBookings] = useState(null);
+  useEffect(() => {
+    if (!authSession?.user?.id) { setRemoteBookings(null); return; }
+    let cancelled = false;
+    supabase.from('bookings')
+      .select('id, business_id, slot_id, booking_date, start_time, duration, credits_used, status, acuity_appointment_id, created_at')
+      .eq('user_id', authSession.user.id)
+      .order('booking_date', { ascending: false })
+      .then(({ data }) => { if (!cancelled) setRemoteBookings(data || []); });
+    return () => { cancelled = true; };
+  }, [authSession?.user?.id, bookingsVersion]);
+
+  // Anonymous landing on /profile: show a clean sign-in prompt instead of
+  // fake member content. Partner sign-in stays inside the Business tab.
+  if (!authSession) return (
+    <div style={{paddingTop:24,paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
+      <div style={{maxWidth:520,margin:"0 auto",padding:"60px clamp(16px,4vw,32px)",textAlign:"center"}}>
+        <div style={{width:64,height:64,background:"#CAECBA",border:"1px solid #A3B18A",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontFamily:F2,fontSize:26,fontWeight:800,color:"#213C18"}}>◈</div>
+        <h1 style={{fontFamily:F2,fontSize:24,fontWeight:800,color:"#213C18",letterSpacing:"-0.8px",margin:"0 0 8px"}}>Sign in to your Wello</h1>
+        <p style={{fontFamily:F2,fontSize:13,color:"#74796E",lineHeight:1.6,margin:"0 0 22px"}}>Your bookings, credit balance and saved venues all live here.</p>
+        <button onClick={onOpenSignIn}
+          style={{padding:"12px 28px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+          Sign in or create your account →
+        </button>
+      </div>
+    </div>
+  );
+
+  const displayName = profile?.full_name || authSession.user?.email?.split('@')[0] || "Member";
+  const initial = displayName.trim().charAt(0).toUpperCase();
+  const shownBookings = remoteBookings ?? bookings;
 
   return (
     <div style={{paddingTop:24,paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
@@ -1207,25 +1416,30 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
           <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:16}}>
             <div style={{position:"relative",flexShrink:0}}>
               <div style={{width:64,height:64,borderRadius:12,overflow:"hidden",background:"#213C18",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                <span style={{fontFamily:F2,fontSize:28,fontWeight:800,color:"#fff"}}>J</span>
+                <span style={{fontFamily:F2,fontSize:28,fontWeight:800,color:"#fff"}}>{initial}</span>
               </div>
-              <button style={{position:"absolute",bottom:-8,right:-8,background:"#213C18",color:"#fff",border:"none",width:24,height:24,borderRadius:"50%",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>✏</button>
             </div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:4}}>
-                <h1 style={{fontFamily:F2,fontSize:"clamp(20px,4vw,44px)",fontWeight:800,color:"#213C18",letterSpacing:"-1px",margin:0,whiteSpace:"nowrap"}}>Jane Smith</h1>
+                <h1 style={{fontFamily:F2,fontSize:"clamp(20px,4vw,44px)",fontWeight:800,color:"#213C18",letterSpacing:"-1px",margin:0,overflow:"hidden",textOverflow:"ellipsis"}}>{displayName}</h1>
                 <span style={{background:"#FADEC0",color:"#766149",padding:"3px 10px",borderRadius:999,fontSize:10,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",flexShrink:0}}>Member</span>
               </div>
-              <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:0,lineHeight:1.4}}>Exploring wellness across the island.</p>
+              <p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:0,lineHeight:1.4}}>{authSession.user?.email}</p>
             </div>
-            <button onClick={()=>onSetView("credits")}
-              style={{flexShrink:0,background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"10px 16px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 14px rgba(33,60,24,0.25)",whiteSpace:"nowrap"}}>
-              + Credits
-            </button>
+            <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap"}}>
+              <button onClick={()=>onSetView("credits")}
+                style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"10px 16px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 14px rgba(33,60,24,0.25)",whiteSpace:"nowrap"}}>
+                + Credits
+              </button>
+              <button onClick={onSignOut}
+                style={{background:"transparent",color:"#74796E",border:"1px solid rgba(195,200,188,0.5)",borderRadius:999,padding:"10px 14px",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
+                Sign out
+              </button>
+            </div>
           </div>
           {/* Stats row */}
           <div style={{display:"flex",gap:16,flexWrap:"wrap",background:"#F5F3EE",borderRadius:12,padding:"12px 16px"}}>
-            {[["📍","Mallorca"],["◈",`${credits} credits`],["📅",`${bookings.length} bookings`]].map(([icon,val])=>(
+            {[["📍","Mallorca"],["◈",`${credits} credits`],["📅",`${shownBookings.length} bookings`]].map(([icon,val])=>(
               <div key={val} style={{display:"flex",alignItems:"center",gap:6,fontFamily:F2,fontSize:13,fontWeight:600,color:"#213C18"}}>
                 <span>{icon}</span><span>{val}</span>
               </div>
@@ -3645,6 +3859,47 @@ export default function App() {
   const [newPwErr,setNewPwErr] = useState("");
   const [newPwDone,setNewPwDone] = useState(false);
 
+  // Load (or create) the customer profile row whenever the auth session changes.
+  // A user can have BOTH a profiles row (customer) and a businesses row (partner)
+  // — the two are kept separate by which UI surfaces use which row. We always
+  // upsert here so partners signing in via Business also get a profile shell
+  // they can opt into later if they want to book as a member.
+  useEffect(()=>{
+    const uid = authSession?.user?.id;
+    if (!uid) { setProfile(null); return; }
+    let cancelled = false;
+    (async () => {
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', uid)
+        .maybeSingle();
+      if (cancelled) return;
+      if (existing) { setProfile(existing); return; }
+      const u = authSession.user;
+      const { data: created } = await supabase
+        .from('profiles')
+        .insert({
+          id: uid,
+          email: u.email ?? null,
+          full_name: u.user_metadata?.full_name || (u.email?.split('@')[0] ?? 'Member'),
+          credits: 0,
+        })
+        .select('*')
+        .single();
+      if (!cancelled && created) setProfile(created);
+    })();
+    return () => { cancelled = true; };
+  }, [authSession?.user?.id]);
+
+  async function doSignOut() {
+    await supabase.auth.signOut();
+    setProfile(null);
+    setAuthSession(null);
+    setBookings([]);
+    showToast("Signed out.","info");
+  }
+
   // Detect Supabase password recovery or invite redirect; track auth session
   useEffect(()=>{
     supabase.auth.getSession().then(({data:{session}})=>{
@@ -3693,12 +3948,31 @@ export default function App() {
   const [syncingIds,setSyncing]= useState({});
   const [selBiz,setSelBiz]     = useState(null);
   const [bkData,setBkData]     = useState(null);
-  const [credits,setCredits]   = useState(6);
+  const [localCredits,setLocalCredits] = useState(0); // anonymous browsing fallback only
+  // Single source of truth for the credit balance shown across the app: profile
+  // when signed in, otherwise local state (which stays at 0 since anon users
+  // can't actually book or buy).
+  const credits = profile ? profile.credits : localCredits;
+  function setCredits(updater) {
+    if (profile) {
+      const next = typeof updater === 'function' ? updater(profile.credits) : updater;
+      setProfile(p => p ? { ...p, credits: next } : p);
+      // Best-effort persist; if it fails the local state is already updated and
+      // we'll catch up on the next profile reload.
+      supabase.from('profiles').update({ credits: next }).eq('id', profile.id)
+        .then(({ error }) => { if (error) console.warn('credits persist failed:', error.message); });
+    } else {
+      setLocalCredits(updater);
+    }
+  }
   const [bookings,setBookings] = useState([]);
   const [saved,setSaved]       = useState([]);
   const [isBiz,setIsBiz]       = useState(false);
   const [authSession,setAuthSession] = useState(null);
   const [authChecked,setAuthChecked] = useState(false);
+  const [profile,setProfile] = useState(null);             // customer profile row (null if anonymous or partner-only)
+  const [authModal,setAuthModal] = useState(null);         // { mode } | null — opens the AuthModal when set
+  const [bookingsVersion,setBookingsVersion] = useState(0); // increments on a successful insert; ProfilePage refetches on change
   const [bizPreview,setBizPreview] = useState(false);
   const [toast,setToast]       = useState(null);
 
@@ -3774,13 +4048,20 @@ export default function App() {
 
   function onSelect(biz){ setSelBiz(biz); }
   function onBook(biz,slot){
-    // Auth gate: anonymous customers cannot book. Customer auth flow ships in
-    // the customer sprint; for now, surface a clear sign-in message and stop.
+    // Auth gate: anonymous customers cannot book. Open the AuthModal so they
+    // can sign in or sign up in-flow.
     if (!authSession) {
-      showToast("Please sign in to book.","info");
+      setSelBiz(null);
+      setAuthModal({ mode: "signin" });
       return;
     }
     setBkData({biz,slot}); setSelBiz(null);
+  }
+  // Wrapper used by the nav Pass icon, the HomePage 'Get Your Pass' CTA, and
+  // anywhere else that should require auth before reaching the credits page.
+  function gotoCredits(){
+    if (!authSession) { setAuthModal({ mode: "signup" }); return; }
+    setView("credits");
   }
   async function onConfirm({biz,slot,form,cost}){
     // Defensive auth re-check in case the session expired between opening the
@@ -3830,6 +4111,10 @@ export default function App() {
         return;
       }
 
+      // Tick the bookings refresh counter so ProfilePage refetches and the
+      // new row shows up immediately (it was rendered from a fetched list).
+      setBookingsVersion(v => v + 1);
+
       // 3. Fire-and-forget server-side Acuity sync. The edge function uses
       //    service-role to look up the partner's credentials (never exposed to
       //    this browser), POSTs to Acuity, writes acuity_appointment_id back.
@@ -3841,6 +4126,9 @@ export default function App() {
       }).then(({ data, error }) => {
         if (error) console.warn('bookings-sync failed:', error.message);
         else if (data?.acuity_error) console.warn('Acuity sync issue:', data.acuity_error);
+        // Acuity sync writes acuity_appointment_id (or sets acuity_sync_failed
+        // status) on the row. Tick again so ProfilePage shows the latest.
+        setBookingsVersion(v => v + 1);
       });
     } catch (e) {
       console.error('onConfirm persist error:', e);
@@ -3946,12 +4234,21 @@ export default function App() {
             </div>
             {/* Right — credits + avatar */}
             <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0,marginLeft:"auto"}}>
-              <div onClick={()=>setView("credits")}
+              <div onClick={gotoCredits}
                 style={{display:"flex",alignItems:"center",gap:5,background:"#213C18",color:"#fff",borderRadius:999,padding:"7px 14px",cursor:"pointer"}}>
                 <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,fontWeight:700}}>◈ {credits}</span>
               </div>
-              <div onClick={()=>setView("profile")}
-                style={{width:32,height:32,borderRadius:"50%",background:"#213C18",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,fontWeight:800,color:"#fff",flexShrink:0}}>J</div>
+              {authSession ? (
+                <div onClick={()=>setView("profile")}
+                  style={{width:32,height:32,borderRadius:"50%",background:"#213C18",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,fontWeight:800,color:"#fff",flexShrink:0}}>
+                  {(profile?.full_name || authSession.user?.email || "M").trim().charAt(0).toUpperCase()}
+                </div>
+              ) : (
+                <button onClick={()=>setAuthModal({mode:"signin"})}
+                  style={{background:"transparent",border:"1px solid #213C18",color:"#213C18",borderRadius:999,padding:"6px 14px",cursor:"pointer",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:12,fontWeight:700}}>
+                  Sign in
+                </button>
+              )}
             </div>
           </div>
         </nav>
@@ -3959,9 +4256,9 @@ export default function App() {
 
         {/* PAGES — padded for fixed banner+nav */}
         <div style={{paddingTop:headerH}}>
-          {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds}/>}
+          {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds} onGotoCredits={gotoCredits}/>}
           {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds}/>}
-          {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)}/>}
+          {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion}/>}
           {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
           {view==="business"   &&<BusinessPage isBiz={true} onSetView={setView} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
           {view==="credits"    &&<CreditsPage credits={credits} onPurchase={onPurchase} listings={listings}/>}
@@ -4099,6 +4396,7 @@ export default function App() {
 
       {selBiz   &&<BizPanel biz={selBiz}        onClose={()=>setSelBiz(null)}  onBook={onBook}/>}
       {bkData   &&<BookingModal biz={bkData.biz} slot={bkData.slot} onClose={()=>setBkData(null)} onConfirm={onConfirm} credits={credits} onBuyCredits={()=>{setBkData(null);setView("credits");}}/>}
+      {authModal&&<AuthModal initialMode={authModal.mode} onClose={()=>setAuthModal(null)} onSuccess={()=>setAuthModal(null)}/>}
       <SyncEngine listings={listings} onUpdate={onSyncUpdate}/>
       <Chatbot listings={listings} credits={credits} bookings={bookings} onSelectBiz={onSelect}/>
 
