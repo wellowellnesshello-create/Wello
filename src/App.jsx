@@ -3859,6 +3859,18 @@ export default function App() {
   const [newPwErr,setNewPwErr] = useState("");
   const [newPwDone,setNewPwDone] = useState(false);
 
+  // Customer auth, profile + bookings state — declared up here so the effects
+  // below and the credits derivation can reference them without hitting the
+  // const TDZ on each render. (Was the cause of the "Cannot access 'profile'
+  // before initialization" crash on the previous deploy.)
+  const [authSession,setAuthSession] = useState(null);
+  const [authChecked,setAuthChecked] = useState(false);
+  const [profile,setProfile] = useState(null);
+  const [authModal,setAuthModal] = useState(null);
+  const [bookingsVersion,setBookingsVersion] = useState(0);
+  const [localCredits,setLocalCredits] = useState(0);
+  const [bookings,setBookings] = useState([]);
+
   // Load (or create) the customer profile row whenever the auth session changes.
   // A user can have BOTH a profiles row (customer) and a businesses row (partner)
   // — the two are kept separate by which UI surfaces use which row. We always
@@ -3948,31 +3960,21 @@ export default function App() {
   const [syncingIds,setSyncing]= useState({});
   const [selBiz,setSelBiz]     = useState(null);
   const [bkData,setBkData]     = useState(null);
-  const [localCredits,setLocalCredits] = useState(0); // anonymous browsing fallback only
-  // Single source of truth for the credit balance shown across the app: profile
-  // when signed in, otherwise local state (which stays at 0 since anon users
-  // can't actually book or buy).
+  // Credit derivation lives here because it reads `profile` and `localCredits`,
+  // both declared at the top of the component.
   const credits = profile ? profile.credits : localCredits;
   function setCredits(updater) {
     if (profile) {
       const next = typeof updater === 'function' ? updater(profile.credits) : updater;
       setProfile(p => p ? { ...p, credits: next } : p);
-      // Best-effort persist; if it fails the local state is already updated and
-      // we'll catch up on the next profile reload.
       supabase.from('profiles').update({ credits: next }).eq('id', profile.id)
         .then(({ error }) => { if (error) console.warn('credits persist failed:', error.message); });
     } else {
       setLocalCredits(updater);
     }
   }
-  const [bookings,setBookings] = useState([]);
   const [saved,setSaved]       = useState([]);
   const [isBiz,setIsBiz]       = useState(false);
-  const [authSession,setAuthSession] = useState(null);
-  const [authChecked,setAuthChecked] = useState(false);
-  const [profile,setProfile] = useState(null);             // customer profile row (null if anonymous or partner-only)
-  const [authModal,setAuthModal] = useState(null);         // { mode } | null — opens the AuthModal when set
-  const [bookingsVersion,setBookingsVersion] = useState(0); // increments on a successful insert; ProfilePage refetches on change
   const [bizPreview,setBizPreview] = useState(false);
   const [toast,setToast]       = useState(null);
 
