@@ -250,6 +250,20 @@ function Pill({ label, active, onClick, color }) {
 }
 function Toast({ t }) {
   if (!t) return null;
+  // Welcome variant — longer message, multi-line, Forest Green on Alabaster.
+  // Used by the customer email-confirmation landing.
+  if (t.type === "welcome") {
+    return <div style={{
+      position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:4000,
+      background:T.sage,color:T.bg,
+      padding:"14px 22px",borderRadius:10,
+      fontFamily:F.body,fontSize:13,fontWeight:500,lineHeight:1.55,
+      boxShadow:"0 10px 32px rgba(33,60,24,0.28)",
+      animation:"toastIn .28s ease",
+      maxWidth:"min(440px, calc(100vw - 32px))",
+      textAlign:"center",
+    }}>{t.msg}</div>;
+  }
   const bg = t.type==="gold"?T.ochre:t.type==="success"?T.sage:T.clay;
   return <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:4000,background:bg,color:"#fff",padding:"9px 20px",borderRadius:3,fontFamily:F.body,fontSize:12,fontWeight:600,boxShadow:"0 6px 22px rgba(0,0,0,.18)",animation:"toastIn .28s ease",whiteSpace:"nowrap"}}>{t.msg}</div>;
 }
@@ -3944,8 +3958,13 @@ export default function App() {
     // Customer email-confirmation landing: clear the flag from the URL and toast.
     if (customerConfirmed) {
       try { window.history.replaceState({}, "", window.location.pathname); } catch(e) {}
-      // Defer toast slightly so it shows after the layout settles.
-      setTimeout(() => showToast("Welcome to Wello — your account is confirmed.","success"), 200);
+      // Defer toast slightly so it shows after the layout settles. 5s duration
+      // because the welcome message is longer than a standard confirmation toast.
+      setTimeout(() => showToast(
+        "Welcome to Wello. Thanks for giving us a go and supporting our local partners in Mallorca.",
+        "welcome",
+        5000,
+      ), 200);
     }
 
     const {data:{subscription}} = supabase.auth.onAuthStateChange((event, session)=>{
@@ -4060,7 +4079,7 @@ export default function App() {
     }
     fetchListings();
   }, []);
-  const showToast=(msg,type="info")=>{ setToast({msg,type}); setTimeout(()=>setToast(null),2600); };
+  const showToast=(msg,type="info",duration=2600)=>{ setToast({msg,type}); setTimeout(()=>setToast(null),duration); };
 
   const onSyncUpdate=useCallback((bizId,slotId,delta)=>{
     setSyncing(p=>({...p,[bizId]:true}));
