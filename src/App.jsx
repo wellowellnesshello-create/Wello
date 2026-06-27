@@ -577,7 +577,7 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave, compact = false }) 
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   // Compact = denser cards for the carousel rows; standard = full-bleed grid cards.
   const s = compact ? {
-    imgPad:"75%", imgMargin:8, imgRadius:10,
+    imgPad:"100%", imgMargin:8, imgRadius:10,
     badgeT:8, badgeR:8, badgePad:"2px 8px", badgeFont:10,
     saveT:8, saveL:8, saveSize:26, saveFont:12,
     nameFont:13, ratingFont:11, ratingIcon:10,
@@ -585,7 +585,7 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave, compact = false }) 
     pillFont:9, pillPad:"2px 7px", pillGap:4, pillMargin:4,
     slotFont:10, tagsToShow:1,
   } : {
-    imgPad:"clamp(60%,25vw,125%)", imgMargin:16, imgRadius:12,
+    imgPad:"100%", imgMargin:16, imgRadius:12,
     badgeT:14, badgeR:14, badgePad:"4px 12px", badgeFont:11,
     saveT:12, saveL:12, saveSize:32, saveFont:14,
     nameFont:16, ratingFont:13, ratingIcon:12,
@@ -823,7 +823,7 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
           ? <div style={{display:"flex",gap:16,overflowX:"hidden"}}>
               {[1,2,3,4].map(i=>(
                 <div key={i} style={{minWidth:"clamp(200px,60vw,260px)",flexShrink:0}}>
-                  <div style={{paddingBottom:"125%",borderRadius:12,background:"linear-gradient(90deg,#E4E2DD 25%,#EAE8E3 50%,#E4E2DD 75%)",backgroundSize:"200% 100%",animation:"shimmer 1.5s infinite",marginBottom:12}}/>
+                  <div style={{paddingBottom:"100%",borderRadius:12,background:"linear-gradient(90deg,#E4E2DD 25%,#EAE8E3 50%,#E4E2DD 75%)",backgroundSize:"200% 100%",animation:"shimmer 1.5s infinite",marginBottom:12}}/>
                   <div style={{height:16,borderRadius:8,background:"#E4E2DD",marginBottom:8,width:"70%"}}/>
                   <div style={{height:12,borderRadius:8,background:"#E4E2DD",width:"50%"}}/>
                 </div>
@@ -2514,8 +2514,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,300px),1fr))",gap:16,alignItems:"start"}}>
             {/* Listing preview */}
             <div style={{background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
-              <div style={{position:"relative",height:180}}>
-                <img src={bizData.img || "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&q=80"} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+              <div style={{position:"relative",aspectRatio:"1"}}>
+                <img src={bizData.img || "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&q=80"} alt="" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
                 <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(27,28,25,0.7) 0%,transparent 60%)"}}/>
                 <div style={{position:"absolute",bottom:12,left:14,right:14}}>
                   <p style={{fontFamily:F2,fontSize:16,fontWeight:700,color:"#fff",margin:"0 0 4px"}}>{listing.name}</p>
