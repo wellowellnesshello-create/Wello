@@ -298,14 +298,17 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) 
   }
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(27,28,25,0.75)",backdropFilter:"blur(6px)",display:"flex",alignItems:"flex-end",justifyContent:"center",padding:0}} onClick={onClose}>
-      <div style={{background:"#fff",borderRadius:"20px 20px 0 0",maxWidth:480,width:"100%",maxHeight:"92vh",overflowY:"auto",boxShadow:"0 -8px 40px rgba(0,0,0,0.22)",animation:"slideUp .3s ease"}} onClick={e=>e.stopPropagation()}>
+    <div style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(27,28,25,0.75)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px"}} onClick={onClose}>
+      <div style={{position:"relative",background:"#fff",borderRadius:16,maxWidth:480,width:"100%",maxHeight:"calc(100vh - 48px)",overflow:"hidden",overflowY:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.25)",animation:"su .25s ease"}} onClick={e=>e.stopPropagation()}>
+
+        {/* Universal close button — frosted, visible on both dark header and white success view */}
+        <button onClick={onClose} aria-label="Close"
+          style={{position:"absolute",top:12,right:12,zIndex:10,background:"rgba(255,255,255,0.92)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",border:"1px solid rgba(195,200,188,0.35)",color:"#1B1C19",width:32,height:32,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.12)"}}>×</button>
 
         {step===1&&(
           <>
             {/* Header */}
             <div style={{background:"#213C18",padding:"20px 24px",position:"relative"}}>
-              <button onClick={onClose} style={{position:"absolute",top:14,right:14,background:"rgba(255,255,255,0.15)",border:"none",color:"#fff",width:28,height:28,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
               <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",letterSpacing:"2px",textTransform:"uppercase",margin:"0 0 6px",fontWeight:600}}>Reserve your spot</p>
               <h2 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.5px"}}>{slot.name}</h2>
               <p style={{fontFamily:F2,fontSize:13,color:"rgba(255,255,255,0.65)",margin:"0 0 14px"}}>{biz.name} · {fd(slot.date)} · {slot.time} · {slot.dur}</p>
