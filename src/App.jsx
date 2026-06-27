@@ -1587,9 +1587,8 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
 
         {/* Header */}
         <div style={{marginBottom:32}}>
-          <div style={{display:"inline-flex",alignItems:"center",gap:6,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:2,padding:"4px 10px",marginBottom:16}}>
-            <span style={{width:5,height:5,borderRadius:"50%",background:T.sage,display:"inline-block"}}/>
-            <span style={{fontFamily:F.body,fontSize:9,color:T.sage,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase"}}>For wellness businesses</span>
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
+            <button onClick={()=>onSetView("biz-portal")} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:"pointer",padding:0}}>Already a partner? Sign in →</button>
           </div>
           <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:26,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 12px"}}>Register your interest</h1>
           <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:0}}>Tell us about your venue and we'll be in touch within 2 working days to discuss how Wello works and agree the right setup for you. No commitment required.</p>
@@ -3220,14 +3219,20 @@ function BusinessPortal({ onSetView }) {
       <button onClick={()=>setScreen("landing")} style={{background:"transparent",border:"none",color:T.stone,fontFamily:F.body,fontSize:11,cursor:"pointer",marginBottom:24,padding:0,fontWeight:300}}>← Back</button>
       <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:24,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 6px"}}>Business sign in</h1>
       <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,margin:"0 0 28px"}}>Sign in to your Wello business dashboard.</p>
-      <FieldLabel>Email address</FieldLabel>
-      <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setLoginErr("");}} placeholder="hello@yourbusiness.com"
-        style={{...INP3,borderColor:loginErr?T.clay:T.border}} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=loginErr?T.clay:T.border}/>
-      <FieldLabel>Password</FieldLabel>
-      <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setLoginErr("");}} placeholder="••••••••"
-        style={{...INP3,borderColor:loginErr?T.clay:T.border}} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=loginErr?T.clay:T.border}
-        onKeyDown={e=>e.key==="Enter"&&doLogin()}/>
-      {loginErr&&<div style={{fontFamily:F.body,fontSize:11,color:T.clay,marginTop:-8,marginBottom:12}}>{loginErr}</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:14}}>
+        <div>
+          <FieldLabel>Email address</FieldLabel>
+          <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setLoginErr("");}} placeholder="hello@yourbusiness.com"
+            style={{...INP3,borderColor:loginErr?T.clay:T.border}} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=loginErr?T.clay:T.border}/>
+        </div>
+        <div>
+          <FieldLabel>Password</FieldLabel>
+          <input type="password" value={pw} onChange={e=>{setPw(e.target.value);setLoginErr("");}} placeholder="••••••••"
+            style={{...INP3,borderColor:loginErr?T.clay:T.border}} onFocus={e=>e.target.style.borderColor=T.sage} onBlur={e=>e.target.style.borderColor=loginErr?T.clay:T.border}
+            onKeyDown={e=>e.key==="Enter"&&doLogin()}/>
+        </div>
+        {loginErr&&<div style={{fontFamily:F.body,fontSize:11,color:T.clay}}>{loginErr}</div>}
+      </div>
       <button onClick={doLogin} disabled={loading} style={{width:"100%",padding:"11px",background:loading?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:loading?"not-allowed":"pointer",marginBottom:14,transition:"background .15s"}}
         onMouseEnter={e=>{if(!loading)e.target.style.background=T.sage2;}} onMouseLeave={e=>{if(!loading)e.target.style.background=T.sage;}}>
         {loading?"Signing in…":"Sign in →"}
@@ -3387,7 +3392,10 @@ export default function App() {
 
   // Detect Supabase password recovery or invite redirect; track auth session
   useEffect(()=>{
-    supabase.auth.getSession().then(({data:{session}})=>setAuthSession(session));
+    supabase.auth.getSession().then(({data:{session}})=>{
+      setAuthSession(session);
+      setAuthChecked(true);
+    });
 
     const hash = window.location.hash;
     const params = new URLSearchParams(window.location.search);
@@ -3435,6 +3443,7 @@ export default function App() {
   const [saved,setSaved]       = useState([]);
   const [isBiz,setIsBiz]       = useState(false);
   const [authSession,setAuthSession] = useState(null);
+  const [authChecked,setAuthChecked] = useState(false);
   const [bizPreview,setBizPreview] = useState(false);
   const [toast,setToast]       = useState(null);
 
