@@ -1963,9 +1963,9 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
   );
 }
 
-function BusinessPortalDashboard({ onExit }) {
+function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = true }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
-  const bizData = { name:"Demo Studio", cat:"Yoga", loc:"Sóller", monthlyBookings:24, monthlyCredits:86 };
+  const bizData = bizDataProp || { name:"Demo Studio", cat:"Yoga", loc:"Sóller", monthlyBookings:24, monthlyCredits:86 };
   const [tab, setTab] = useState("overview");
   const [selDay, setSelDay] = useState(0);
   const [showAddSlot, setShowAddSlot] = useState(false);
@@ -2024,7 +2024,7 @@ function BusinessPortalDashboard({ onExit }) {
             </div>
             <div style={{display:"flex",gap:8}}>
               <button onClick={()=>setTab("listing")} style={{padding:"8px 16px",background:"rgba(255,255,255,0.12)",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer"}}>Edit listing</button>
-              <button onClick={onExit} style={{padding:"8px 16px",background:"transparent",color:"rgba(255,255,255,0.45)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:999,fontFamily:F2,fontSize:11,cursor:"pointer"}}>✕ Exit preview</button>
+              <button onClick={onExit} style={{padding:"8px 16px",background:"transparent",color:"rgba(255,255,255,0.45)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:999,fontFamily:F2,fontSize:11,cursor:"pointer"}}>{isPreview ? "✕ Exit preview" : "Sign out →"}</button>
             </div>
           </div>
           {/* Stats row */}
@@ -3312,51 +3312,9 @@ function BusinessPortal({ onSetView }) {
   );
 
   // ── Approved dashboard ────────────────────────────────────────
-  if (screen==="dashboard") {
-  const monthlyBookings = bizData.monthly_bookings || 0;
-  const monthlyCredits = bizData.monthly_credits || 0;
-  const payoutAmt = monthlyCredits > 0 ? "€"+(monthlyCredits*0.8).toFixed(0) : "€0";
-  return (
-    <div style={{maxWidth:880,margin:"0 auto",padding:"32px 28px 58px"}}>
-      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
-        <div>
-          <Label>Business Dashboard</Label>
-          <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 3px"}}>{bizData.name}</h1>
-          <div style={{display:"flex",alignItems:"center",gap:7}}>
-            <span style={{width:6,height:6,borderRadius:"50%",background:T.sage,display:"inline-block",animation:"pulse 2s infinite"}}/>
-            <span style={{fontFamily:F.body,fontSize:10,color:T.sage,fontWeight:600}}>Live on marketplace</span>
-            <span style={{fontFamily:F.body,fontSize:10,color:T.stone2}}>· {bizData.cat} · {bizData.loc}</span>
-          </div>
-        </div>
-        <div style={{display:"flex",gap:8}}>
-          <a href="#" style={{padding:"7px 14px",background:T.sageXL,color:T.sage,border:`1px solid ${T.sageL}`,borderRadius:2,fontFamily:F.body,fontSize:10,fontWeight:600,textDecoration:"none"}}>View listing ↗</a>
-          <button onClick={doSignOut} style={{padding:"7px 14px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:300}}>Sign out</button>
-        </div>
-      </div>
-      {/* Quick stats */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(148px,1fr))",gap:10,marginBottom:24}}>
-        {[["Bookings this month",monthlyBookings||"0"],["Credits redeemed","◈ "+(monthlyCredits||"0")],["Payout due",payoutAmt],["Avg rating",bizData.rating?""+bizData.rating+" ★":"—"]].map(([l,v])=>(
-          <div key={l} style={{background:T.paper,borderRadius:3,border:`1px solid ${T.border}`,padding:"12px 14px"}}>
-            <Label>{l}</Label><div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,letterSpacing:"-0.3px"}}>{v}</div>
-          </div>
-        ))}
-      </div>
-      {/* Payout statements */}
-      <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden",marginBottom:14}}>
-        <div style={{padding:"11px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>Payout statements</div>
-        </div>
-        <div style={{padding:"20px 16px",textAlign:"center"}}>
-          <div style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300}}>No payouts yet.</div>
-          <div style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300,marginTop:4}}>Your first payout statement will appear here once bookings are processed.</div>
-        </div>
-      </div>
-      <div style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:3,padding:"11px 14px"}}>
-        <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,lineHeight:1.6}}>Payouts processed every Friday · Your commission rate is agreed with the Wello team · Contact hello@wello-wellness.com for any payout queries</div>
-      </div>
-    </div>
+  if (screen==="dashboard") return (
+    <BusinessPortalDashboard onExit={doSignOut} bizData={bizData} isPreview={false}/>
   );
-  }
 
   return null;
 }
