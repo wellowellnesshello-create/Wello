@@ -293,7 +293,12 @@ function AuthModal({ initialMode = "signin", onClose, onSuccess }) {
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(),
       password,
-      options: { data: { full_name: fullName.trim() } },
+      options: {
+        data: { full_name: fullName.trim() },
+        // Send customers back to the main app with a flag so App.jsx knows
+        // this is a customer confirmation, not a partner invite/recovery flow.
+        emailRedirectTo: `${window.location.origin}/?confirmed=true`,
+      },
     });
     setBusy(false);
     if (error) { setErr(error.message || "Couldn't create account."); return; }
@@ -307,7 +312,8 @@ function AuthModal({ initialMode = "signin", onClose, onSuccess }) {
     setBusy(true); setErr("");
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
-      options: { emailRedirectTo: window.location.origin },
+      // Customer magic link returns to the main app (no portal flag).
+      options: { emailRedirectTo: `${window.location.origin}/?signed_in=true` },
     });
     setBusy(false);
     if (error) { setErr(error.message || "Couldn't send magic link."); return; }
@@ -3922,12 +3928,24 @@ export default function App() {
     const hash = window.location.hash;
     const params = new URLSearchParams(window.location.search);
     const portalParam = params.get("portal") === "business";
+    const customerConfirmed = params.get("confirmed") === "true";
 
-    if(hash.includes("type=recovery") || hash.includes("type=invite") || hash.includes("type=signup")) {
+    // Partner-specific signals: explicit ?portal=business, or Supabase invite
+    // / recovery URL hashes (used only by the partner setting-up + reset flow).
+    // type=signup and type=magiclink are NOT partner-specific — customers also
+    // use them, so we route only on the truly partner-specific markers.
+    if (hash.includes("type=recovery") || hash.includes("type=invite")) {
       setRecovering(true);
       setView("biz-portal");
-    } else if(portalParam) {
+    } else if (portalParam) {
       setView("biz-portal");
+    }
+
+    // Customer email-confirmation landing: clear the flag from the URL and toast.
+    if (customerConfirmed) {
+      try { window.history.replaceState({}, "", window.location.pathname); } catch(e) {}
+      // Defer toast slightly so it shows after the layout settles.
+      setTimeout(() => showToast("Welcome to Wello — your account is confirmed.","success"), 200);
     }
 
     const {data:{subscription}} = supabase.auth.onAuthStateChange((event, session)=>{
@@ -3939,7 +3957,9 @@ export default function App() {
         if(h.includes("type=invite") || h.includes("type=recovery")) {
           setRecovering(true);
           setView("biz-portal");
-        } else if(p || h.includes("type=magiclink") || h.includes("type=signup")) {
+        } else if(p) {
+          // Only ?portal=business is a partner signal here. type=magiclink and
+          // type=signup belong to the customer flow and should stay on home.
           setView("biz-portal");
         }
       }
