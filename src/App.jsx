@@ -572,24 +572,39 @@ function BizPanel({ biz, onClose, onBook }) {
 }
 
 // ─── Listing Card ─────────────────────────────────────────────────────────────
-function Card({ biz, onSelect, syncing, saved, onToggleSave }) {
+function Card({ biz, onSelect, syncing, saved, onToggleSave, compact = false }) {
   const next = biz.slots.find(s => s.booked < s.spots);
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  // Compact = denser cards for the carousel rows; standard = full-bleed grid cards.
+  const s = compact ? {
+    imgPad:"75%", imgMargin:8, imgRadius:10,
+    badgeT:8, badgeR:8, badgePad:"2px 8px", badgeFont:10,
+    saveT:8, saveL:8, saveSize:26, saveFont:12,
+    nameFont:13, ratingFont:11, ratingIcon:10,
+    locFont:11, locMargin:4, locIcon:9,
+    pillFont:9, pillPad:"2px 7px", pillGap:4, pillMargin:4,
+    slotFont:10, tagsToShow:1,
+  } : {
+    imgPad:"clamp(60%,25vw,125%)", imgMargin:16, imgRadius:12,
+    badgeT:14, badgeR:14, badgePad:"4px 12px", badgeFont:11,
+    saveT:12, saveL:12, saveSize:32, saveFont:14,
+    nameFont:16, ratingFont:13, ratingIcon:12,
+    locFont:13, locMargin:8, locIcon:11,
+    pillFont:11, pillPad:"3px 10px", pillGap:6, pillMargin:6,
+    slotFont:11, tagsToShow:2,
+  };
   return (
     <div onClick={()=>onSelect(biz)} style={{cursor:"pointer"}}>
-      {/* 4:5 image */}
-      <div style={{position:"relative",paddingBottom:"clamp(60%,25vw,125%)",borderRadius:12,overflow:"hidden",marginBottom:16,background:"#E4E2DD"}}>
+      <div style={{position:"relative",paddingBottom:s.imgPad,borderRadius:s.imgRadius,overflow:"hidden",marginBottom:s.imgMargin,background:"#E4E2DD"}}>
         <img src={biz.img} alt={biz.name}
           style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover",transition:"transform .7s ease"}}
           onMouseEnter={e=>e.target.style.transform="scale(1.05)"}
           onMouseLeave={e=>e.target.style.transform="scale(1)"}/>
-        {/* Credit badge */}
-        <div style={{position:"absolute",top:14,right:14,background:"rgba(255,255,255,0.92)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",borderRadius:999,padding:"4px 12px"}}>
-          <span style={{fontFamily:F2,fontSize:11,fontWeight:800,color:"#213C18"}}>◈ {biz.cr}</span>
+        <div style={{position:"absolute",top:s.badgeT,right:s.badgeR,background:"rgba(255,255,255,0.92)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",borderRadius:999,padding:s.badgePad}}>
+          <span style={{fontFamily:F2,fontSize:s.badgeFont,fontWeight:800,color:"#213C18"}}>◈ {biz.cr}</span>
         </div>
-        {/* Save button */}
         <button onClick={e=>{e.stopPropagation();onToggleSave(biz.id);}}
-          style={{position:"absolute",top:12,left:12,width:32,height:32,borderRadius:"50%",background:"rgba(255,255,255,0.92)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:saved?"#e05c5c":"#74796e"}}>
+          style={{position:"absolute",top:s.saveT,left:s.saveL,width:s.saveSize,height:s.saveSize,borderRadius:"50%",background:"rgba(255,255,255,0.92)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:s.saveFont,color:saved?"#e05c5c":"#74796e"}}>
           {saved ? "♥" : "♡"}
         </button>
         {syncing&&(
@@ -599,28 +614,26 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave }) {
           </div>
         )}
       </div>
-      {/* Card info */}
       <div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
-          <h3 style={{fontFamily:F2,fontSize:16,fontWeight:700,color:"#1B1C19",letterSpacing:"-0.3px",margin:0,flex:1,paddingRight:8}}>{biz.name}</h3>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:2}}>
+          <h3 style={{fontFamily:F2,fontSize:s.nameFont,fontWeight:700,color:"#1B1C19",letterSpacing:"-0.3px",margin:0,flex:1,paddingRight:8,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{biz.name}</h3>
           <div style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-            <span style={{color:"#6F5B44",fontSize:12}}>★</span>
-            <span style={{fontFamily:F2,fontSize:13,fontWeight:700}}>{biz.rating}</span>
+            <span style={{color:"#6F5B44",fontSize:s.ratingIcon}}>★</span>
+            <span style={{fontFamily:F2,fontSize:s.ratingFont,fontWeight:700}}>{biz.rating}</span>
           </div>
         </div>
-        <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 8px",display:"flex",alignItems:"center",gap:4}}>
-          <span style={{fontSize:11}}>📍</span> {biz.loc}
+        <p style={{fontFamily:F2,fontSize:s.locFont,color:"#74796E",margin:`0 0 ${s.locMargin}px`,display:"flex",alignItems:"center",gap:4}}>
+          <span style={{fontSize:s.locIcon}}>📍</span> {biz.loc}
         </p>
-        {/* Category tag pills */}
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}>
-          <span style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#766149",background:"rgba(250,222,192,0.5)",padding:"3px 10px",borderRadius:999}}>{biz.cat}</span>
-          {biz.tags?.slice(0,2).map(t=>(
-            <span key={t} style={{fontFamily:F2,fontSize:11,fontWeight:500,color:"#74796E",background:"rgba(228,226,221,0.6)",padding:"3px 10px",borderRadius:999}}>{t}</span>
+        <div style={{display:"flex",gap:s.pillGap,flexWrap:"wrap",marginBottom:s.pillMargin}}>
+          <span style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:600,color:"#766149",background:"rgba(250,222,192,0.5)",padding:s.pillPad,borderRadius:999}}>{biz.cat}</span>
+          {biz.tags?.slice(0,s.tagsToShow).map(t=>(
+            <span key={t} style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:500,color:"#74796E",background:"rgba(228,226,221,0.6)",padding:s.pillPad,borderRadius:999}}>{t}</span>
           ))}
         </div>
         {next
-          ? <p style={{fontFamily:F2,fontSize:11,color:"#213C18",fontWeight:600,margin:0}}>{next.spots-next.booked} spots left · {next.time}</p>
-          : <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>Fully booked · check back soon</p>
+          ? <p style={{fontFamily:F2,fontSize:s.slotFont,color:"#213C18",fontWeight:600,margin:0}}>{next.spots-next.booked} spots left · {next.time}</p>
+          : <p style={{fontFamily:F2,fontSize:s.slotFont,color:"#74796E",margin:0}}>Fully booked · check back soon</p>
         }
       </div>
     </div>
@@ -1087,25 +1100,25 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
             );
           }
           return (
-            <div style={{display:"flex",flexDirection:"column",gap:28}}>
+            <div style={{display:"flex",flexDirection:"column",gap:18}}>
               {sections.map(({theme,items}) => (
                 <section key={theme.name}>
-                  <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:10,gap:12}}>
+                  <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6,gap:12}}>
                     <div>
-                      <h2 style={{fontFamily:F2,fontSize:"clamp(18px,2.2vw,22px)",fontWeight:800,color:"#213C18",letterSpacing:"-0.8px",margin:"0 0 2px",lineHeight:1.1}}>{theme.name}</h2>
-                      <p style={{fontFamily:F2,fontSize:12,color:"#74796E",fontWeight:400,margin:0}}>{theme.blurb} · {items.length} {items.length===1?"venue":"venues"}</p>
+                      <h2 style={{fontFamily:F2,fontSize:"clamp(15px,1.8vw,18px)",fontWeight:800,color:"#213C18",letterSpacing:"-0.5px",margin:"0 0 1px",lineHeight:1.1}}>{theme.name}</h2>
+                      <p style={{fontFamily:F2,fontSize:11,color:"#74796E",fontWeight:400,margin:0}}>{theme.blurb} · {items.length} {items.length===1?"venue":"venues"}</p>
                     </div>
                     {theme.cats.length===1 && (
                       <button onClick={()=>setActiveCat(theme.cats[0])}
-                        style={{background:"transparent",border:"none",color:"#213C18",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",padding:0,whiteSpace:"nowrap"}}>
+                        style={{background:"transparent",border:"none",color:"#213C18",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",padding:0,whiteSpace:"nowrap"}}>
                         View all →
                       </button>
                     )}
                   </div>
-                  <div style={{display:"flex",gap:14,overflowX:"auto",scrollbarWidth:"none",paddingBottom:6}}>
+                  <div style={{display:"flex",gap:8,overflowX:"auto",scrollbarWidth:"none",paddingBottom:4}}>
                     {items.map(b=>(
-                      <div key={b.id} style={{minWidth:"clamp(200px,28vw,240px)",maxWidth:240,flexShrink:0}}>
-                        <Card biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave}/>
+                      <div key={b.id} style={{minWidth:"clamp(140px,20vw,170px)",maxWidth:170,flexShrink:0}}>
+                        <Card biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave} compact/>
                       </div>
                     ))}
                   </div>
