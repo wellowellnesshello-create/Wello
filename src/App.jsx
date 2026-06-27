@@ -164,6 +164,18 @@ const INTEGRATIONS = [
 ];
 const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","Meditation","Padel","Tennis","Pickleball"];
 const LOCS = ["All Mallorca","Palma","Sóller","Deià","Pollença","Alcúdia","Santanyí","Valldemossa"];
+
+// Themed groups for the Explore-page carousels. Each section is hidden if it has
+// zero matching listings under the active location/search filter.
+const THEMES = [
+  { name: "Yoga",           cats: ["Yoga"],                                                            blurb: "Find your flow"          },
+  { name: "Pilates",        cats: ["Pilates"],                                                         blurb: "Reformer and mat"        },
+  { name: "Racquet sports", cats: ["Padel","Tennis","Pickleball"],                                     blurb: "Court time on the island"},
+  { name: "Pools & Spa",    cats: ["Pool Access"],                                                     blurb: "Resort-style days"       },
+  { name: "Gym & Fitness",  cats: ["Hotel Gym","Fitness Class"],                                       blurb: "Train your way"          },
+  { name: "Outdoor",        cats: ["Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking"], blurb: "Sea and mountains"     },
+  { name: "Meditation",     cats: ["Meditation"],                                                      blurb: "Stillness and breath"    },
+];
 const SYNC = {1:"Mindbody",2:"Acuity",3:"Acuity",4:"FareHarbor",5:"Custom API",6:"Mindbody",7:"Gympass",8:"iCal",9:"Custom API"};
 
 const LISTINGS = [
@@ -1058,19 +1070,62 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
 
       {/* Grid */}
       <div style={{maxWidth:1200,margin:"24px auto 0",padding:"0 clamp(16px,4vw,32px)"}}>
-        {viewMode==="grid"&&filtered.length===0
+        {viewMode==="grid" && activeCat==="All" && (()=>{
+          // Themed carousels — each filtered by the active location/search.
+          const matchLocSearch = b => (activeLoc==="All Mallorca"||b.loc===activeLoc) &&
+            (!search||b.name.toLowerCase().includes(search.toLowerCase())||b.loc.toLowerCase().includes(search.toLowerCase())||b.cat.toLowerCase().includes(search.toLowerCase()));
+          const sections = THEMES
+            .map(theme => ({ theme, items: listings.filter(b => theme.cats.includes(b.cat) && matchLocSearch(b)) }))
+            .filter(s => s.items.length > 0);
+          if (sections.length === 0) {
+            return (
+              <div style={{textAlign:"center",padding:"96px 20px"}}>
+                <div style={{fontSize:36,marginBottom:12,color:"#C3C8BC"}}>∅</div>
+                <h3 style={{fontFamily:F2,fontSize:20,color:"#213C18",fontWeight:700,marginBottom:8}}>No results</h3>
+                <p style={{fontFamily:F2,color:"#74796E",fontSize:14}}>Try adjusting your filters</p>
+              </div>
+            );
+          }
+          return (
+            <div style={{display:"flex",flexDirection:"column",gap:28}}>
+              {sections.map(({theme,items}) => (
+                <section key={theme.name}>
+                  <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:10,gap:12}}>
+                    <div>
+                      <h2 style={{fontFamily:F2,fontSize:"clamp(18px,2.2vw,22px)",fontWeight:800,color:"#213C18",letterSpacing:"-0.8px",margin:"0 0 2px",lineHeight:1.1}}>{theme.name}</h2>
+                      <p style={{fontFamily:F2,fontSize:12,color:"#74796E",fontWeight:400,margin:0}}>{theme.blurb} · {items.length} {items.length===1?"venue":"venues"}</p>
+                    </div>
+                    {theme.cats.length===1 && (
+                      <button onClick={()=>setActiveCat(theme.cats[0])}
+                        style={{background:"transparent",border:"none",color:"#213C18",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",padding:0,whiteSpace:"nowrap"}}>
+                        View all →
+                      </button>
+                    )}
+                  </div>
+                  <div style={{display:"flex",gap:14,overflowX:"auto",scrollbarWidth:"none",paddingBottom:6}}>
+                    {items.map(b=>(
+                      <div key={b.id} style={{minWidth:"clamp(200px,28vw,240px)",maxWidth:240,flexShrink:0}}>
+                        <Card biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave}/>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          );
+        })()}
+
+        {viewMode==="grid" && activeCat!=="All" && (filtered.length===0
           ? <div style={{textAlign:"center",padding:"96px 20px"}}>
               <div style={{fontSize:36,marginBottom:12,color:"#C3C8BC"}}>∅</div>
               <h3 style={{fontFamily:F2,fontSize:20,color:"#213C18",fontWeight:700,marginBottom:8}}>No results</h3>
               <p style={{fontFamily:F2,color:"#74796E",fontSize:14}}>Try adjusting your filters</p>
             </div>
-          : viewMode==="grid"
-            ? <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,200px),1fr))",columnGap:"clamp(12px,2vw,24px)",rowGap:12}}>
-                {filtered.map(b=><Card key={b.id} biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave}/>)}
-              </div>
-            : null
-        }
-        {filtered.length>8&&viewMode==="grid"&&(
+          : <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,200px),1fr))",columnGap:"clamp(12px,2vw,24px)",rowGap:12}}>
+              {filtered.map(b=><Card key={b.id} biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave}/>)}
+            </div>
+        )}
+        {activeCat!=="All"&&filtered.length>8&&viewMode==="grid"&&(
           <div style={{textAlign:"center",marginTop:60}}>
             <button style={{padding:"14px 36px",borderRadius:999,border:"2px solid #213C18",background:"transparent",color:"#213C18",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer",transition:"all .2s"}}
               onMouseEnter={e=>{e.target.style.background="#213C18";e.target.style.color="#fff"}}
