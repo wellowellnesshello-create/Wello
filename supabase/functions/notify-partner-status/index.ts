@@ -95,6 +95,7 @@ serve(async (req) => {
     const { data: listing, error: listingError } = await supabase
       .from('listings')
       .insert({
+        business_id: record.id,
         name: record.name,
         cat: record.category ?? null,
         loc: record.location ?? record.address ?? null,
@@ -137,6 +138,7 @@ serve(async (req) => {
               spots: sl.spots ?? 10,
               booked: 0,
               credits: sl.cr ?? record.cr ?? 3,
+              acuity_type_id: sl.acuity_type_id ?? null,
             })
           }
         }

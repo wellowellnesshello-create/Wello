@@ -2711,6 +2711,60 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   const [gallery, setGallery] = useState(bizData.gallery || []);
   const [availType, setAvailType] = useState(bizData.acuity_key ? "acuity" : "manual");
   const [acuityKey, setAcuityKey] = useState(bizData.acuity_key || "");
+  const [acuityUserId, setAcuityUserId] = useState(bizData.acuity_user_id || "");
+  const [acuityTypes, setAcuityTypes] = useState(bizData.acuity_appointment_types || []);
+  const [selectedAcuityIds, setSelectedAcuityIds] = useState(
+    new Set((bizData.acuity_appointment_types || []).map(t => t.id))
+  );
+  const [acuityStatus, setAcuityStatus] = useState(
+    (bizData.acuity_appointment_types || []).length ? "success" : "idle"
+  ); // idle | loading | success | error
+  const [acuityError, setAcuityError] = useState("");
+
+  async function fetchAcuityTypes() {
+    if (!acuityUserId.trim() || !acuityKey.trim()) {
+      setAcuityError("Enter both your Acuity User ID and API key.");
+      setAcuityStatus("error");
+      return;
+    }
+    setAcuityStatus("loading"); setAcuityError("");
+    try {
+      const { data, error } = await supabase.functions.invoke('acuity-proxy', {
+        body: { userId: acuityUserId.trim(), apiKey: acuityKey.trim(), endpoint: 'appointment-types' }
+      });
+      if (error) {
+        setAcuityError("Couldn't reach the Acuity proxy. Check your connection and try again.");
+        setAcuityStatus("error"); return;
+      }
+      if (data?.error) {
+        setAcuityError(
+          data.status === 401
+            ? "Invalid User ID or API key. Find both in Acuity → Business Settings → Integrations → API."
+            : `Acuity: ${data.error}`
+        );
+        setAcuityStatus("error"); return;
+      }
+      if (!Array.isArray(data)) {
+        setAcuityError("Unexpected response from Acuity. Please try again.");
+        setAcuityStatus("error"); return;
+      }
+      setAcuityTypes(data);
+      setSelectedAcuityIds(new Set(data.map(t => t.id))); // default: all selected
+      setAcuityStatus("success");
+    } catch (e) {
+      setAcuityError(e?.message || "Couldn't connect to Acuity.");
+      setAcuityStatus("error");
+    }
+  }
+
+  function toggleAcuityType(id) {
+    setSelectedAcuityIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
   const [slots, setSlots] = useState(bizData.slots || []);
   const [cr, setCr] = useState(bizData.cr ? String(bizData.cr) : "");
   const [newSlot, setNewSlot] = useState({ name:"", days:[], time:"09:00", dur:"60 min", spots:10 });
@@ -2970,11 +3024,37 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   }
 
   if (step===4) return (
-    <OWrap title="List your availabilities" sub="Connect your existing booking system or add your slots manually — you can always update this later." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+    <OWrap title="List your availabilities" sub="Connect Acuity Scheduling to sync your classes automatically, or add slots manually — you can always update this later." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
       footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(3)} label="← Back" variant="secondary"/>,
-               <OBtn key="n" saving={saving} onClick={()=>goNext(availType==="acuity"?{acuity_key:acuityKey,integration_request:intgRequest}:{slots,integration_request:intgRequest})} label="Save & continue →"/>]}>
-      <div style={{display:"flex",background:T.bg2,borderRadius:3,padding:3,marginBottom:24}}>
-        {[["manual","Add manually"],["acuity","e.g. Acuity integration"]].map(([mode,label])=>(
+               <OBtn key="n" saving={saving} onClick={()=>{
+                 if (availType === "acuity") {
+                   const selected = acuityTypes.filter(t => selectedAcuityIds.has(t.id));
+                   // Mirror each selected Acuity type as a businesses.slots entry so it
+                   // expands into concrete slot rows on approval. acuity_type_id carries
+                   // through so bookings-sync can pass it as appointmentTypeID to Acuity.
+                   const slotsFromAcuity = selected.map(t => ({
+                     id: `acuity-${t.id}`,
+                     name: t.name || "",
+                     days: [],
+                     time: "09:00",
+                     dur: t.duration ? `${t.duration} min` : "60 min",
+                     spots: 10,
+                     cr: Math.max(1, Math.round(parseFloat(t.price) || (+cr || catAvg))),
+                     acuity_type_id: t.id,
+                   }));
+                   goNext({
+                     acuity_key: acuityKey.trim(),
+                     acuity_user_id: acuityUserId.trim(),
+                     acuity_appointment_types: selected,
+                     slots: slotsFromAcuity,
+                     integration_request: intgRequest,
+                   });
+                 } else {
+                   goNext({ slots, integration_request: intgRequest });
+                 }
+               }} label="Save & continue →"/>]}>
+      <div style={{display:"flex",background:T.bg2,borderRadius:3,padding:3,marginBottom:20}}>
+        {[["manual","Manual slots"],["acuity","Connect Acuity"]].map(([mode,label])=>(
           <button key={mode} onClick={()=>setAvailType(mode)} style={{flex:1,padding:"9px 0",background:availType===mode?T.paper:"transparent",color:availType===mode?T.ink:T.stone,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:availType===mode?600:300,cursor:"pointer",transition:"all .15s",boxShadow:availType===mode?"0 1px 3px rgba(0,0,0,0.08)":"none"}}>
             {label}
           </button>
@@ -2982,14 +3062,75 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
       </div>
       {availType==="acuity" ? (
         <>
-          <label style={FL}>Acuity API key</label>
-          <input value={acuityKey} onChange={e=>setAcuityKey(e.target.value)} placeholder="Your Acuity Scheduling API key"
-            style={{...INP,marginBottom:10}} onFocus={onFi} onBlur={onBl}/>
-          <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.6,margin:"0 0 20px"}}>Save your key now and we'll activate the sync as we roll out integrations — we'll let you know when it's live.</p>
-          <div style={{background:T.bg2,borderRadius:6,padding:"12px 14px"}}>
-            <div style={{fontFamily:F.body,fontSize:10,fontWeight:600,color:T.stone,letterSpacing:"0.5px",textTransform:"uppercase",marginBottom:8}}>More integrations coming soon</div>
+          <div style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:6,padding:"10px 12px",marginBottom:16}}>
+            <div style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:600,marginBottom:2}}>Heads up — Acuity API access requires a paid plan</div>
+            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.5}}>Acuity charges ~$16/month for API access. Find your User ID and API key in Acuity → Business Settings → Integrations → API.</div>
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+            <div>
+              <label style={FL}>Acuity User ID</label>
+              <input value={acuityUserId} onChange={e=>{setAcuityUserId(e.target.value);if(acuityStatus==="error")setAcuityStatus("idle");}} placeholder="e.g. 12345678"
+                style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+            </div>
+            <div>
+              <label style={FL}>Acuity API key</label>
+              <input value={acuityKey} onChange={e=>{setAcuityKey(e.target.value);if(acuityStatus==="error")setAcuityStatus("idle");}} placeholder="Your Acuity API key" type="password"
+                style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+            </div>
+          </div>
+
+          <button onClick={fetchAcuityTypes} disabled={acuityStatus==="loading"||!acuityUserId.trim()||!acuityKey.trim()}
+            style={{padding:"10px 18px",background:acuityStatus==="loading"||!acuityUserId.trim()||!acuityKey.trim()?T.border:T.sage,color:acuityStatus==="loading"||!acuityUserId.trim()||!acuityKey.trim()?T.stone:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:acuityStatus==="loading"||!acuityUserId.trim()||!acuityKey.trim()?"not-allowed":"pointer",marginBottom:14}}>
+            {acuityStatus==="loading" ? "Connecting…" : acuityStatus==="success" ? "↻ Refresh classes from Acuity" : "Connect & fetch classes"}
+          </button>
+
+          {acuityStatus==="error" && (
+            <div style={{background:"#FFF5F5",border:`1px solid ${T.clay}`,borderRadius:6,padding:"10px 12px",marginBottom:14}}>
+              <div style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:600,marginBottom:2}}>Couldn't connect</div>
+              <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.5}}>{acuityError}</div>
+            </div>
+          )}
+
+          {acuityStatus==="success" && acuityTypes.length>0 && (
+            <div style={{marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <label style={{...FL,marginBottom:0}}>Pick which classes to list on Wello</label>
+                <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{selectedAcuityIds.size} of {acuityTypes.length} selected</span>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:280,overflowY:"auto",border:`1px solid ${T.border}`,borderRadius:6,padding:6,background:T.paper}}>
+                {acuityTypes.map(t => {
+                  const checked = selectedAcuityIds.has(t.id);
+                  return (
+                    <label key={t.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:checked?T.sageXL:T.bg2,border:`1px solid ${checked?T.sageL:T.border}`,borderRadius:4,cursor:"pointer",transition:"all .12s"}}>
+                      <input type="checkbox" checked={checked} onChange={()=>toggleAcuityType(t.id)}
+                        style={{accentColor:T.sage,cursor:"pointer",flexShrink:0}}/>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.name || "Untitled class"}</div>
+                        <div style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>
+                          {t.duration ? `${t.duration} min` : "—"}
+                          {t.price ? ` · ${t.price}${typeof t.price === "string" && !t.price.match(/[€$£]/) ? "" : ""}` : ""}
+                          {t.category ? ` · ${t.category}` : ""}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+              <p style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,margin:"8px 0 0"}}>We'll save the selected classes with your listing. Live calendar sync (concrete dates) ships with the customer launch.</p>
+            </div>
+          )}
+
+          {acuityStatus==="success" && acuityTypes.length===0 && (
+            <div style={{background:T.bg2,borderRadius:6,padding:"10px 12px",marginBottom:8}}>
+              <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.5}}>Connected, but no appointment types were returned by Acuity. Create some in your Acuity dashboard then click Refresh.</div>
+            </div>
+          )}
+
+          <div style={{background:T.bg2,borderRadius:6,padding:"10px 12px",marginTop:14}}>
+            <div style={{fontFamily:F.body,fontSize:10,fontWeight:600,color:T.stone,letterSpacing:"0.5px",textTransform:"uppercase",marginBottom:6}}>More integrations coming soon</div>
             {["Mindbody","TeamUp","Fresha"].map(n=>(
-              <div key={n} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${T.border}`}}>
+              <div key={n} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${T.border}`}}>
                 <span style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{n}</span>
                 <span style={{fontFamily:F.body,fontSize:9,color:T.stone2,border:`1px solid ${T.border}`,borderRadius:2,padding:"2px 7px"}}>Soon</span>
               </div>
@@ -3566,6 +3707,7 @@ export default function App() {
     function transformRows(listingRows) {
       return listingRows.map(row => ({
         id: row.id,
+        business_id: row.business_id || null,
         name: row.name,
         cat: row.category || row.cat || "Other",
         cat2: row.cat2 || null,
@@ -3585,6 +3727,7 @@ export default function App() {
           spots: s.spots,
           booked: s.booked,
           credits: s.credits,
+          acuity_type_id: s.acuity_type_id ?? null,
         }))
       }));
     }
@@ -3630,12 +3773,78 @@ export default function App() {
   },[]);
 
   function onSelect(biz){ setSelBiz(biz); }
-  function onBook(biz,slot){ setBkData({biz,slot}); setSelBiz(null); }
-  function onConfirm({biz,slot,form,cost}){
+  function onBook(biz,slot){
+    // Auth gate: anonymous customers cannot book. Customer auth flow ships in
+    // the customer sprint; for now, surface a clear sign-in message and stop.
+    if (!authSession) {
+      showToast("Please sign in to book.","info");
+      return;
+    }
+    setBkData({biz,slot}); setSelBiz(null);
+  }
+  async function onConfirm({biz,slot,form,cost}){
+    // Defensive auth re-check in case the session expired between opening the
+    // modal and confirming. Bail before touching any local state so the user
+    // doesn't see fake "Booked!" feedback they can't actually have.
+    const { data: sess } = await supabase.auth.getSession();
+    const uid = sess?.session?.user?.id;
+    if (!uid) {
+      showToast("Please sign in to book.","info");
+      return;
+    }
+    if (!biz.business_id) {
+      console.error('onConfirm: listing missing business_id — cannot persist booking', { listing_id: biz.id });
+      showToast("Couldn't complete booking. Please try again.","error");
+      return;
+    }
+
+    // 1. Instant UI: credit + local bookings + slot capacity.
     setCredits(c=>c-cost);
     setBookings(p=>[{id:Date.now(),biz,slot,form,cost},...p]);
     setListings(p=>p.map(b=>b.id!==biz.id?b:{...b,slots:b.slots.map(s=>s.id!==slot.id?s:{...s,booked:s.booked+form.guests})}));
     showToast(`Booked! ◈ ${cost} credits used.`,"success");
+
+    // 2. Persist to Supabase + fire Acuity sync.
+    try {
+
+      // Peak window: 07:00–09:00 (inclusive of 07:00, exclusive of 09:00).
+      const t = (slot.time || '').slice(0,5);
+      const peak_flag = t >= '07:00' && t < '09:00';
+
+      const { data: inserted, error: insErr } = await supabase.from('bookings').insert({
+        user_id: uid,
+        business_id: biz.business_id,
+        venue_id: biz.business_id, // placeholder until a venues table exists
+        slot_id: String(slot.id),
+        booking_date: slot.date,
+        start_time: t,
+        duration: slot.dur,
+        credits_used: cost,
+        peak_flag,
+        status: 'confirmed',
+        notes: form?.note || null,
+      }).select('id').single();
+
+      if (insErr) {
+        console.error('Booking insert failed:', insErr.message);
+        return;
+      }
+
+      // 3. Fire-and-forget server-side Acuity sync. The edge function uses
+      //    service-role to look up the partner's credentials (never exposed to
+      //    this browser), POSTs to Acuity, writes acuity_appointment_id back.
+      supabase.functions.invoke('bookings-sync', {
+        body: {
+          booking_id: inserted.id,
+          acuity_type_id: slot.acuity_type_id ?? null,
+        },
+      }).then(({ data, error }) => {
+        if (error) console.warn('bookings-sync failed:', error.message);
+        else if (data?.acuity_error) console.warn('Acuity sync issue:', data.acuity_error);
+      });
+    } catch (e) {
+      console.error('onConfirm persist error:', e);
+    }
   }
   function onPurchase(purchase){ setCredits(c=>c+purchase.cr); showToast(`◈ ${purchase.cr} credits added!`,"gold"); }
   function toggleSave(id){ setSaved(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]); showToast(saved.includes(id)?"Removed from saved":"Saved!","success"); }
