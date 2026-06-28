@@ -654,7 +654,7 @@ function BizPanel({ biz, onClose, onBook }) {
           <img src={biz.img} alt={biz.name} style={{width:"100%",height:"100%",objectFit:"cover"}}
             onError={e=>{e.target.src="https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80";}}/>
           <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(27,28,25,0.88) 0%,rgba(27,28,25,0.05) 55%)"}}/>
-          <button onClick={onClose} style={{position:"absolute",top:14,right:14,background:"rgba(255,255,255,0.15)",backdropFilter:"blur(8px)",border:"none",color:"#fff",width:32,height:32,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+          <button onClick={onClose} aria-label="Close" style={{position:"absolute",top:12,right:12,zIndex:10,background:"rgba(255,255,255,0.95)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",border:"1px solid rgba(195,200,188,0.4)",color:"#1B1C19",width:40,height:40,borderRadius:"50%",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,boxShadow:"0 4px 12px rgba(0,0,0,0.18)"}}>×</button>
           {sys&&<div style={{position:"absolute",top:14,left:14,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(8px)",borderRadius:999,padding:"4px 10px",display:"flex",alignItems:"center",gap:5}}>
             <span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
             <span style={{fontFamily:F2,fontSize:10,color:"#fff",fontWeight:500}}>Live · {sys}</span>
@@ -1994,7 +1994,11 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
 // PAGE: ADD CREDITS
 // ═══════════════════════════════════════════════════════════════
 function CreditsPage({ credits, onPurchase, listings=[] }) {
-  const [customCr, setCustomCr] = useState(10);
+  // Stored as string so the user can clear it / type freely without React clobbering
+  // mid-typing. parseInt'd for display + math via `customCrNum` below.
+  const [customCr, setCustomCr] = useState("10");
+  const customCrNum = Math.max(1, parseInt(customCr) || 0);
+  const CR_MAX = 5000; // Upper bound: avoids a "type 99999999" denial-of-service on the renderer.
   const [pay, setPay]   = useState("card");
   const [step, setStep] = useState(1);
   const [card, setCard] = useState({number:"",expiry:"",cvc:"",name:""});
@@ -2004,7 +2008,7 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
   const fmtCard=v=>v.replace(/\D/g,"").slice(0,16).replace(/(.{4})/g,"$1 ").trim();
   const fmtExp=v=>{const d=v.replace(/\D/g,"").slice(0,4);return d.length>2?d.slice(0,2)+"/"+d.slice(2):d;};
   const expiryDate=()=>{const d=new Date();d.setMonth(d.getMonth()+6);return d.toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});};
-  const totalPrice = +(customCr * 1).toFixed(2);
+  const totalPrice = +(customCrNum * 1).toFixed(2);
   const serviceFee = +Math.min(totalPrice * 0.10, 5).toFixed(2);
   const grandTotal = +(totalPrice + serviceFee).toFixed(2);
 
@@ -2049,17 +2053,25 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
               <div style={{position:"absolute",top:-30,right:-30,width:180,height:180,borderRadius:"50%",background:"rgba(33,60,24,0.04)",filter:"blur(40px)"}}/>
               <p style={{fontFamily:F2,fontSize:12,color:"#54584F",fontWeight:500,marginBottom:24,position:"relative"}}>How many credits?</p>
               <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:28,marginBottom:28,position:"relative"}}>
-                <button onClick={()=>setCustomCr(c=>Math.max(1,c-1))}
+                <button onClick={()=>setCustomCr(String(Math.max(1, customCrNum - 1)))}
                   style={{width:"clamp(40px,10vw,52px)",height:"clamp(40px,10vw,52px)",borderRadius:"50%",background:"#fff",border:"1px solid rgba(195,200,188,0.3)",color:"#213C18",fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",transition:"transform .15s"}}
                   onMouseEnter={e=>e.target.style.transform="scale(1.05)"}
                   onMouseLeave={e=>e.target.style.transform="scale(1)"}>−</button>
                 <div style={{textAlign:"center"}}>
-                  <input type="number" min="1" max="200" value={customCr}
-                    onChange={e=>{const v=parseInt(e.target.value);if(!isNaN(v))setCustomCr(Math.min(200,Math.max(1,v)));}}
+                  <input type="number" inputMode="numeric" min="1" max={CR_MAX} value={customCr}
+                    onChange={e=>{
+                      // Allow empty + free typing; cap raw input length so users
+                      // can't paste 9999999999 and bork the renderer.
+                      const raw = e.target.value.replace(/[^0-9]/g, "").slice(0,4);
+                      if (raw === "") { setCustomCr(""); return; }
+                      const v = parseInt(raw);
+                      setCustomCr(String(Math.min(CR_MAX, v)));
+                    }}
+                    onBlur={()=>{ if (customCr === "" || parseInt(customCr) < 1) setCustomCr("1"); }}
                     style={{fontFamily:F2,fontSize:"clamp(48px,15vw,80px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",lineHeight:1,textAlign:"center",width:"clamp(100px,30vw,160px)",background:"transparent",border:"none",outline:"none"}}/>
                   <p style={{fontFamily:F2,fontSize:12,color:"rgba(33,60,24,0.5)",fontWeight:600,letterSpacing:"3px",textTransform:"uppercase",margin:0}}>Credits</p>
                 </div>
-                <button onClick={()=>setCustomCr(c=>Math.min(200,c+1))}
+                <button onClick={()=>setCustomCr(String(Math.min(CR_MAX, customCrNum + 1)))}
                   style={{width:"clamp(40px,10vw,52px)",height:"clamp(40px,10vw,52px)",borderRadius:"50%",background:"#213C18",border:"none",color:"#fff",fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 14px rgba(33,60,24,0.3)",transition:"transform .15s"}}
                   onMouseEnter={e=>e.target.style.transform="scale(1.05)"}
                   onMouseLeave={e=>e.target.style.transform="scale(1)"}>+</button>
@@ -2067,7 +2079,7 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
               {/* Quick add pills */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:8,position:"relative"}}>
                 {[1,5,10,25].map(n=>(
-                  <button key={n} onClick={()=>setCustomCr(c=>Math.min(200,c+n))}
+                  <button key={n} onClick={()=>setCustomCr(String(Math.min(CR_MAX, customCrNum + n)))}
                     style={{padding:"12px 8px",borderRadius:12,border:"1px solid rgba(195,200,188,0.3)",background:n===10?"#FADEC0":"#fff",color:n===10?"#766149":"#43483F",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer",transition:"all .15s"}}
                     onMouseEnter={e=>{if(n!==10){e.target.style.background="#213C18";e.target.style.color="#fff";e.target.style.borderColor="#213C18";}}}
                     onMouseLeave={e=>{if(n!==10){e.target.style.background="#fff";e.target.style.color="#43483F";e.target.style.borderColor="rgba(195,200,188,0.3)";}}}
@@ -2152,7 +2164,7 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",paddingBottom:12}}>
                   <div>
                     <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 4px"}}>Credits</p>
-                    <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#213C18",margin:0}}>{customCr} credits</p>
+                    <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#213C18",margin:0}}>{customCrNum} credits</p>
                   </div>
                   <p style={{fontFamily:F2,fontSize:15,fontWeight:600,color:"#213C18",margin:0}}>€{totalPrice}</p>
                 </div>
@@ -2168,7 +2180,7 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
                     <span style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#213C18"}}>Total due</span>
                     <div style={{textAlign:"right"}}>
                       <span style={{fontFamily:F2,fontSize:40,fontWeight:800,color:"#213C18",letterSpacing:"-2px"}}>€{grandTotal}</span>
-                      <p style={{fontFamily:F2,fontSize:10,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",margin:"4px 0 0"}}>{customCr} credits · no booking fees</p>
+                      <p style={{fontFamily:F2,fontSize:10,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",margin:"4px 0 0"}}>{customCrNum} credits · no booking fees</p>
                     </div>
                   </div>
                 </div>
@@ -2193,14 +2205,14 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
       {/* Step 2 */}
       {step===2&&(
         <div style={{maxWidth:520,margin:"0 auto",padding:"0 32px"}}>
-          <StepBar/>
+          {StepBar()}
           <button onClick={()=>setStep(1)} style={{display:"flex",alignItems:"center",gap:6,background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:13,cursor:"pointer",marginBottom:24,padding:0}}
             onMouseEnter={e=>e.currentTarget.style.color="#213C18"} onMouseLeave={e=>e.currentTarget.style.color="#54584F"}>← Back</button>
           <div style={{background:"#213C18",borderRadius:16,padding:"20px 24px",marginBottom:24,display:"flex",justifyContent:"space-between",alignItems:"center",position:"relative",overflow:"hidden"}}>
             <div style={{position:"absolute",right:16,top:8,opacity:0.06,fontSize:60,color:"#fff"}}>◈</div>
             <div>
               <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",letterSpacing:"3px",textTransform:"uppercase",marginBottom:6,fontWeight:600}}>Order summary</p>
-              <p style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 2px"}}>◈ {customCr} credits · Expires {expiryDate()}</p>
+              <p style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 2px"}}>◈ {customCrNum} credits · Expires {expiryDate()}</p>
             </div>
             <p style={{fontFamily:F2,fontSize:24,fontWeight:800,color:"#fff",letterSpacing:"-1px",margin:0}}>€{totalPrice}</p>
           </div>
@@ -2239,7 +2251,7 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
               </div>
             </div>
           )}
-          <button onClick={()=>{onPurchase({cr:customCr,price:totalPrice});setStep(3);}}
+          <button onClick={()=>{onPurchase({cr:customCrNum,price:totalPrice});setStep(3);}}
             style={{width:"100%",padding:"18px 0",borderRadius:999,background:"#213C18",color:"#fff",border:"none",fontFamily:F2,fontSize:16,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 14px rgba(33,60,24,0.2)",transition:"transform .15s"}}
             onMouseEnter={e=>e.currentTarget.style.transform="scale(1.02)"}
             onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
@@ -2253,7 +2265,7 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
         <div style={{maxWidth:420,margin:"0 auto",padding:"0 32px",textAlign:"center",paddingTop:40}}>
           <div style={{width:64,height:64,background:"#CAECBA",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",fontSize:28}}>✓</div>
           <h1 style={{fontFamily:F2,fontSize:32,fontWeight:800,color:"#213C18",letterSpacing:"-1.5px",margin:"0 0 12px"}}>Credits added!</h1>
-          <p style={{fontFamily:F2,fontSize:15,color:"#54584F",margin:"0 0 4px"}}>◈ {customCr} added to your pass.</p>
+          <p style={{fontFamily:F2,fontSize:15,color:"#54584F",margin:"0 0 4px"}}>◈ {customCrNum} added to your pass.</p>
           <p style={{fontFamily:F2,fontSize:13,color:"#C3C8BC",margin:"0 0 32px"}}>They expire on {expiryDate()}.</p>
           <button onClick={()=>setStep(1)}
             style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"14px 32px",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>
@@ -3599,6 +3611,30 @@ function BusinessPortal({ onSetView }) {
   const [regDone, setRegDone]   = useState(false);
   const [regDuplicate, setRegDuplicate] = useState(false);
 
+  // Declared before the useEffect so the linter sees it; the useEffect callback
+  // only runs after mount so this would also work via hoisting at runtime.
+  async function loadBizData(userEmail) {
+    setScreen("loading");
+    const {data: rows, error} = await supabase.from("businesses").select("*").eq("email", userEmail).order("created_at", {ascending: false}).limit(1);
+    if(error) {
+      console.error("loadBizData error:", error.message, "| code:", error.code, "| email:", userEmail);
+      setScreen("pending");
+      return;
+    }
+    const data = rows?.[0] ?? null;
+    if(!data) {
+      console.warn("loadBizData: no row found for", userEmail);
+      setScreen("pending");
+      return;
+    }
+    console.log("loadBizData: status =", data.status);
+    setBizData(data);
+    if(data.status==="approved")        setScreen("dashboard");
+    else if(data.status==="setting_up") setScreen("onboarding");
+    else if(data.status==="submitted")  setScreen("submitted");
+    else                                setScreen("pending");
+  }
+
   useEffect(()=>{
     // Check for an existing session immediately so authenticated partners
     // skip the landing screen and go straight to their dashboard/onboarding.
@@ -3624,28 +3660,6 @@ function BusinessPortal({ onSetView }) {
     });
     return ()=>subscription.unsubscribe();
   },[]);
-
-  async function loadBizData(userEmail) {
-    setScreen("loading");
-    const {data: rows, error} = await supabase.from("businesses").select("*").eq("email", userEmail).order("created_at", {ascending: false}).limit(1);
-    if(error) {
-      console.error("loadBizData error:", error.message, "| code:", error.code, "| email:", userEmail);
-      setScreen("pending");
-      return;
-    }
-    const data = rows?.[0] ?? null;
-    if(!data) {
-      console.warn("loadBizData: no row found for", userEmail);
-      setScreen("pending");
-      return;
-    }
-    console.log("loadBizData: status =", data.status);
-    setBizData(data);
-    if(data.status==="approved")        setScreen("dashboard");
-    else if(data.status==="setting_up") setScreen("onboarding");
-    else if(data.status==="submitted")  setScreen("submitted");
-    else                                setScreen("pending");
-  }
 
   async function doLogin() {
     setLoginErr(""); setLoading(true);
@@ -3931,13 +3945,24 @@ export default function App() {
   // const TDZ on each render. (Was the cause of the "Cannot access 'profile'
   // before initialization" crash on the previous deploy.)
   const [authSession,setAuthSession] = useState(null);
-  const [authChecked,setAuthChecked] = useState(false);
   const [profile,setProfile] = useState(null);
   const [authModal,setAuthModal] = useState(null);
   const [bookingsVersion,setBookingsVersion] = useState(0);
   const [mobileMenuOpen,setMobileMenuOpen] = useState(false);
   const [localCredits,setLocalCredits] = useState(0);
   const [bookings,setBookings] = useState([]);
+  const [toast,setToast] = useState(null);
+
+  function showToast(msg, type="info", duration=2600) { setToast({msg,type}); setTimeout(()=>setToast(null),duration); }
+
+  // Signs the customer out of Supabase and clears local profile/bookings/session state.
+  async function doSignOut() {
+    await supabase.auth.signOut();
+    setProfile(null);
+    setAuthSession(null);
+    setBookings([]);
+    showToast("Signed out.","info");
+  }
 
   // Load (or create) the customer profile row whenever the auth session changes.
   // Uses upsert so it works atomically whether the row exists or not — no race
@@ -3978,19 +4003,10 @@ export default function App() {
     return () => { cancelled = true; };
   }, [authSession?.user?.id]);
 
-  async function doSignOut() {
-    await supabase.auth.signOut();
-    setProfile(null);
-    setAuthSession(null);
-    setBookings([]);
-    showToast("Signed out.","info");
-  }
-
   // Detect Supabase password recovery or invite redirect; track auth session
   useEffect(()=>{
     supabase.auth.getSession().then(({data:{session}})=>{
       setAuthSession(session);
-      setAuthChecked(true);
     });
 
     const hash = window.location.hash;
@@ -4011,7 +4027,7 @@ export default function App() {
 
     // Customer email-confirmation landing: clear the flag from the URL and toast.
     if (customerConfirmed) {
-      try { window.history.replaceState({}, "", window.location.pathname); } catch(e) {}
+      try { window.history.replaceState({}, "", window.location.pathname); } catch { /* non-critical: ignore */ }
       // Defer toast slightly so it shows after the layout settles. 5s duration
       // because the welcome message is longer than a standard confirmation toast.
       setTimeout(() => showToast(
@@ -4069,7 +4085,6 @@ export default function App() {
   const [saved,setSaved]       = useState([]);
   const [isBiz,setIsBiz]       = useState(false);
   const [bizPreview,setBizPreview] = useState(false);
-  const [toast,setToast]       = useState(null);
 
   // Fetch listings + slots from Supabase (with localStorage cache for instant load)
   useEffect(()=>{
@@ -4109,7 +4124,7 @@ export default function App() {
           setListings(JSON.parse(cached));
           setListingsLoading(false);
         }
-      } catch(e) {}
+      } catch { /* non-critical: ignore */ }
 
       // Approved businesses are synced into the listings table by the
       // notify-partner-status Edge Function when status changes to 'approved'.
@@ -4125,7 +4140,7 @@ export default function App() {
       } else if (listingRows && listingRows.length > 0) {
         const transformed = transformRows(listingRows);
         setListings(transformed);
-        try { localStorage.setItem("wello_listings", JSON.stringify(transformed)); } catch(e) {}
+        try { localStorage.setItem("wello_listings", JSON.stringify(transformed)); } catch { /* non-critical: ignore */ }
       } else {
         if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
       }
@@ -4133,7 +4148,6 @@ export default function App() {
     }
     fetchListings();
   }, []);
-  const showToast=(msg,type="info",duration=2600)=>{ setToast({msg,type}); setTimeout(()=>setToast(null),duration); };
 
   const onSyncUpdate=useCallback((bizId,slotId,delta)=>{
     setSyncing(p=>({...p,[bizId]:true}));
