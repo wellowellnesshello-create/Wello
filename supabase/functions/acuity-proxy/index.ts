@@ -53,7 +53,10 @@ serve(async (req) => {
         (acuityRes.status === 401
           ? 'Invalid Acuity User ID or API key.'
           : `Acuity returned HTTP ${acuityRes.status}.`)
-      return json({ error: message, status: acuityRes.status, body: data }, acuityRes.status)
+      // Return 200 with error in body so supabase-js client doesn't drop the
+      // payload (it treats non-2xx as network error and nulls `data`). The
+      // client distinguishes success from upstream failure via `data.error`.
+      return json({ error: message, status: acuityRes.status, body: data })
     }
 
     return json(data)

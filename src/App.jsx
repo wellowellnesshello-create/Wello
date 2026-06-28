@@ -106,7 +106,7 @@ const T = {
   paper:   "#FFFFFF",   // Surface container lowest
   ink:     "#1B1C19",   // Obsidian — near-black with green undertone
   ink2:    "#43483F",   // On-surface variant
-  stone:   "#74796E",   // Outline
+  stone:   "#54584F",   // Outline (darkened from #54584F for AA contrast — readable as body text on alabaster/paper)
   stone2:  "#C3C8BC",   // Outline variant
   sage:    "#213C18",   // Forest Green — primary brand
   sage2:   "#37532D",   // Primary container
@@ -456,12 +456,15 @@ function ModalShell({ onClose, children }) {
 }
 
 // ─── Booking Modal ────────────────────────────────────────────────────────────
-function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) {
+function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, profile, authSession, onOpenSignIn }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   const [step, setSt] = useState(1);
-  const [myName, setMyName] = useState("");
-  const [myEmail, setMyEmail] = useState("");
-  const [guests, setGuests] = useState([]); // [{type:"friend"|"new", id, name, email}]
+  const signedIn = !!authSession?.user;
+  const profileName  = profile?.full_name || authSession?.user?.user_metadata?.full_name || "";
+  const profileEmail = authSession?.user?.email || profile?.email || "";
+  const [myName, setMyName] = useState(profileName);
+  const [myEmail, setMyEmail] = useState(profileEmail);
+  const [guests, setGuests] = useState([]); // [{type:"new", id, name, email}]
   const [newEmail, setNewEmail] = useState("");
   const avail = slot.spots - slot.booked;
   const totalPeople = 1 + guests.length;
@@ -469,17 +472,14 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) 
   const canAfford = credits >= cost;
   const canAddMore = totalPeople < avail;
 
-  const FRIENDS_LIST = [
-    { id:1, init:"AK", name:"Anna K.",   email:"anna@example.com" },
-    { id:2, init:"MT", name:"Marcus T.", email:"marcus@example.com" },
-    { id:3, init:"LM", name:"Léa M.",    email:"lea@example.com" },
-  ];
-
-  function addFriend(f) {
-    if (guests.find(g=>g.id===f.id)) return;
-    if (!canAddMore) return;
-    setGuests(p=>[...p, {type:"friend", id:f.id, name:f.name, email:f.email}]);
-  }
+  // If the profile loads after the modal opens (rare race), pull the prefilled
+  // values in. Won't clobber user edits because anon flow doesn't have a profile.
+  useEffect(() => {
+    if (signedIn) {
+      if (!myName  && profileName)  setMyName(profileName);
+      if (!myEmail && profileEmail) setMyEmail(profileEmail);
+    }
+  }, [signedIn, profileName, profileEmail]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function addNewGuest() {
     if (!newEmail.trim() || !canAddMore) return;
@@ -520,59 +520,56 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) 
               {/* Balance */}
               <div style={{background:canAfford?"#F5F3EE":"#FFF5F5",borderRadius:10,padding:"10px 14px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
-                  <p style={{fontFamily:F2,fontSize:9,color:"#74796E",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>Your balance</p>
+                  <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>Your balance</p>
                   <p style={{fontFamily:F2,fontSize:18,fontWeight:800,color:"#213C18",margin:0,letterSpacing:"-0.5px"}}>◈ {credits}</p>
                 </div>
                 {!canAfford
                   ? <button onClick={onBuyCredits} style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"8px 16px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>Add Credits</button>
-                  : <p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:0}}>◈ {credits-cost} remaining</p>
+                  : <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0}}>◈ {credits-cost} remaining</p>
                 }
               </div>
 
-              {/* Your details */}
-              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Your details</p>
-              <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:20}}>
-                {[{l:"Name",v:myName,set:setMyName,p:"Your full name"},{l:"Email",v:myEmail,set:setMyEmail,p:"you@example.com",t:"email"}].map(f=>(
-                  <div key={f.l}>
-                    <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:4}}>{f.l}</label>
-                    <input type={f.t||"text"} placeholder={f.p} value={f.v} onChange={e=>f.set(e.target.value)}
-                      style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s"}}
-                      onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+              {/* Your details — chip when signed in, fields + sign-in link when not */}
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Booking as</p>
+              {signedIn ? (
+                <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:"#F5F3EE",borderRadius:10,border:"1px solid rgba(195,200,188,0.4)",marginBottom:20}}>
+                  <div style={{width:36,height:36,borderRadius:"50%",background:"#213C18",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:14,fontWeight:800,color:"#fff",flexShrink:0}}>
+                    {(profileName || profileEmail || "M").trim().charAt(0).toUpperCase()}
                   </div>
-                ))}
-              </div>
-
-              {/* Add friends */}
-              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Bring friends <span style={{fontFamily:F2,fontSize:10,color:"#74796E",fontWeight:400,letterSpacing:0,textTransform:"none"}}>— optional</span></p>
-
-              {/* Friends list */}
-              <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:12}}>
-                {FRIENDS_LIST.map(f=>{
-                  const added = guests.find(g=>g.id===f.id);
-                  return (
-                    <div key={f.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:added?"rgba(33,60,24,0.06)":"#F5F3EE",borderRadius:10,border:added?"1px solid rgba(33,60,24,0.15)":"1px solid transparent",transition:"all .15s"}}>
-                      <div style={{width:32,height:32,borderRadius:"50%",background:"#213C18",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:11,fontWeight:700,color:"#fff",flexShrink:0}}>{f.init}</div>
-                      <div style={{flex:1}}>
-                        <p style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#1B1C19",margin:0}}>{f.name}</p>
-                        <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>{f.email}</p>
+                  <div style={{flex:1,minWidth:0}}>
+                    <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{profileName || "Member"}</p>
+                    <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{profileEmail}</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:6}}>
+                    {[{l:"Name",v:myName,set:setMyName,p:"Your full name"},{l:"Email",v:myEmail,set:setMyEmail,p:"you@example.com",t:"email"}].map(f=>(
+                      <div key={f.l}>
+                        <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:4}}>{f.l}</label>
+                        <input type={f.t||"text"} placeholder={f.p} value={f.v} onChange={e=>f.set(e.target.value)}
+                          style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s"}}
+                          onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
                       </div>
-                      <button onClick={()=>added?removeGuest(f.id):addFriend(f)}
-                        style={{width:28,height:28,borderRadius:"50%",border:"none",background:added?"#213C18":"rgba(33,60,24,0.1)",color:added?"#fff":"#213C18",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,transition:"all .15s"}}>
-                        {added?"−":"+"}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
+                    ))}
+                  </div>
+                  {onOpenSignIn && (
+                    <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 20px"}}>
+                      Already a member? <button onClick={onOpenSignIn} style={{background:"transparent",border:"none",color:"#213C18",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>Log in</button>
+                    </p>
+                  )}
+                </>
+              )}
 
-              {/* Add by email */}
+              {/* Bring friends — invite by email only (real friends list not built yet) */}
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Bring friends <span style={{fontFamily:F2,fontSize:10,color:"#54584F",fontWeight:400,letterSpacing:0,textTransform:"none"}}>— optional</span></p>
               <div style={{display:"flex",gap:8,marginBottom:20}}>
                 <input type="email" placeholder="Friend's email address" value={newEmail} onChange={e=>setNewEmail(e.target.value)}
                   onKeyDown={e=>e.key==="Enter"&&addNewGuest()}
                   style={{flex:1,border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:13,color:"#1B1C19",outline:"none",background:"#FBF9F4",transition:"border-color .15s"}}
                   onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
                 <button onClick={addNewGuest} disabled={!newEmail.trim()||!canAddMore}
-                  style={{padding:"10px 16px",background:newEmail.trim()&&canAddMore?"#213C18":"#E4E2DD",color:newEmail.trim()&&canAddMore?"#fff":"#74796E",border:"none",borderRadius:8,fontFamily:F2,fontSize:13,fontWeight:700,cursor:newEmail.trim()&&canAddMore?"pointer":"not-allowed",transition:"all .15s",whiteSpace:"nowrap"}}>
+                  style={{padding:"10px 16px",background:newEmail.trim()&&canAddMore?"#213C18":"#E4E2DD",color:newEmail.trim()&&canAddMore?"#fff":"#54584F",border:"none",borderRadius:8,fontFamily:F2,fontSize:13,fontWeight:700,cursor:newEmail.trim()&&canAddMore?"pointer":"not-allowed",transition:"all .15s",whiteSpace:"nowrap"}}>
                   + Add
                 </button>
               </div>
@@ -580,11 +577,11 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) 
               {/* Added guests list */}
               {guests.length>0&&(
                 <div style={{background:"#F5F3EE",borderRadius:10,padding:"10px 14px",marginBottom:16}}>
-                  <p style={{fontFamily:F2,fontSize:10,color:"#74796E",fontWeight:600,margin:"0 0 8px",letterSpacing:"1px",textTransform:"uppercase"}}>Booking for {totalPeople} people</p>
+                  <p style={{fontFamily:F2,fontSize:10,color:"#54584F",fontWeight:600,margin:"0 0 8px",letterSpacing:"1px",textTransform:"uppercase"}}>Booking for {totalPeople} people</p>
                   {guests.filter(g=>g.type==="new").map(g=>(
                     <div key={g.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                      <p style={{fontFamily:F2,fontSize:12,color:"#1B1C19",margin:0}}>📧 {g.email} <span style={{color:"#74796E",fontSize:11}}>(invite will be sent)</span></p>
-                      <button onClick={()=>removeGuest(g.id)} style={{background:"transparent",border:"none",color:"#74796E",cursor:"pointer",fontSize:16}}>×</button>
+                      <p style={{fontFamily:F2,fontSize:12,color:"#1B1C19",margin:0}}>📧 {g.email} <span style={{color:"#54584F",fontSize:11}}>(invite will be sent)</span></p>
+                      <button onClick={()=>removeGuest(g.id)} style={{background:"transparent",border:"none",color:"#54584F",cursor:"pointer",fontSize:16}}>×</button>
                     </div>
                   ))}
                 </div>
@@ -593,18 +590,18 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) 
               {/* Order summary */}
               <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 14px",marginBottom:16}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                  <span style={{fontFamily:F2,fontSize:13,color:"#74796E"}}>{totalPeople} × ◈ {biz.cr} credits</span>
+                  <span style={{fontFamily:F2,fontSize:13,color:"#54584F"}}>{totalPeople} × ◈ {biz.cr} credits</span>
                   <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>◈ {cost}</span>
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid rgba(195,200,188,0.3)",paddingTop:6}}>
-                  <span style={{fontFamily:F2,fontSize:13,color:"#74796E"}}>Balance after</span>
+                  <span style={{fontFamily:F2,fontSize:13,color:"#54584F"}}>Balance after</span>
                   <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:canAfford?"#213C18":"#e05c5c"}}>{canAfford?`◈ ${credits-cost}`:"Insufficient credits"}</span>
                 </div>
               </div>
 
               <button onClick={()=>{if(myName&&myEmail&&canAfford){onConfirm({biz,slot,form:{name:myName,email:myEmail,guests:totalPeople},cost});setSt(2);}}}
                 disabled={!myName||!myEmail||!canAfford}
-                style={{width:"100%",padding:"16px 0",borderRadius:999,background:myName&&myEmail&&canAfford?"#213C18":"#E4E2DD",color:myName&&myEmail&&canAfford?"#fff":"#74796E",border:"none",fontFamily:F2,fontSize:15,fontWeight:700,cursor:myName&&myEmail&&canAfford?"pointer":"not-allowed",transition:"all .15s",boxShadow:myName&&myEmail&&canAfford?"0 4px 14px rgba(33,60,24,0.2)":"none"}}>
+                style={{width:"100%",padding:"16px 0",borderRadius:999,background:myName&&myEmail&&canAfford?"#213C18":"#E4E2DD",color:myName&&myEmail&&canAfford?"#fff":"#54584F",border:"none",fontFamily:F2,fontSize:15,fontWeight:700,cursor:myName&&myEmail&&canAfford?"pointer":"not-allowed",transition:"all .15s",boxShadow:myName&&myEmail&&canAfford?"0 4px 14px rgba(33,60,24,0.2)":"none"}}>
                 {!canAfford?"Insufficient Credits":`Confirm · ◈ ${cost} credits`}
               </button>
             </div>
@@ -615,18 +612,18 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits }) 
           <div style={{padding:"48px 32px",textAlign:"center"}}>
             <div style={{width:64,height:64,background:"#CAECBA",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>✓</div>
             <h2 style={{fontFamily:F2,fontSize:22,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.5px"}}>Booking confirmed!</h2>
-            <p style={{fontFamily:F2,fontSize:14,color:"#74796E",margin:"0 0 4px"}}>{slot.name} · {biz.name}</p>
-            <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 20px"}}>{fd(slot.date)} · {slot.time}</p>
+            <p style={{fontFamily:F2,fontSize:14,color:"#54584F",margin:"0 0 4px"}}>{slot.name} · {biz.name}</p>
+            <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 20px"}}>{fd(slot.date)} · {slot.time}</p>
             {guests.filter(g=>g.type==="new").length>0&&(
               <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 16px",marginBottom:20,textAlign:"left"}}>
                 <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#213C18",margin:"0 0 6px"}}>📧 Invite emails sent to:</p>
                 {guests.filter(g=>g.type==="new").map(g=>(
-                  <p key={g.id} style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:"0 0 2px"}}>{g.email}</p>
+                  <p key={g.id} style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 2px"}}>{g.email}</p>
                 ))}
               </div>
             )}
             <div style={{background:"#F5F3EE",borderRadius:10,padding:"10px 16px",marginBottom:24,display:"inline-block"}}>
-              <span style={{fontFamily:F2,fontSize:13,color:"#74796E"}}>◈ {cost} used · balance ◈ {credits-cost}</span>
+              <span style={{fontFamily:F2,fontSize:13,color:"#54584F"}}>◈ {cost} used · balance ◈ {credits-cost}</span>
             </div>
             <br/>
             <button onClick={onClose} style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"12px 32px",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>Done</button>
@@ -681,7 +678,7 @@ function BizPanel({ biz, onClose, onBook }) {
         </div>
 
         <div style={{padding:"clamp(14px,3vw,20px) clamp(16px,3vw,24px)"}}>
-          <p style={{fontFamily:F2,fontSize:14,color:"#74796E",lineHeight:1.7,margin:"0 0 20px"}}>{biz.desc}</p>
+          <p style={{fontFamily:F2,fontSize:14,color:"#54584F",lineHeight:1.7,margin:"0 0 20px"}}>{biz.desc}</p>
 
           {/* Calendar date pills */}
           <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>Available dates</p>
@@ -694,13 +691,13 @@ function BizPanel({ biz, onClose, onBook }) {
                   style={{flexShrink:0,padding:"10px 16px",borderRadius:12,border:"none",cursor:"pointer",textAlign:"center",transition:"all .15s",
                     background:isSelected?"#213C18":hasSlots?"#F5F3EE":"#F0EDEA",
                     opacity:hasSlots?1:0.5}}>
-                  <p style={{fontFamily:F2,fontSize:10,fontWeight:600,color:isSelected?"rgba(255,255,255,0.7)":"#74796E",margin:"0 0 2px",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                  <p style={{fontFamily:F2,fontSize:10,fontWeight:600,color:isSelected?"rgba(255,255,255,0.7)":"#54584F",margin:"0 0 2px",letterSpacing:"0.5px",textTransform:"uppercase"}}>
                     {new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short"})}
                   </p>
                   <p style={{fontFamily:F2,fontSize:16,fontWeight:800,color:isSelected?"#fff":"#213C18",margin:"0 0 2px",letterSpacing:"-0.5px"}}>
                     {new Date(d+"T00:00:00").getDate()}
                   </p>
-                  <p style={{fontFamily:F2,fontSize:10,color:isSelected?"rgba(255,255,255,0.6)":"#74796E",margin:0}}>
+                  <p style={{fontFamily:F2,fontSize:10,color:isSelected?"rgba(255,255,255,0.6)":"#54584F",margin:0}}>
                     {new Date(d+"T00:00:00").toLocaleDateString("en-GB",{month:"short"})}
                   </p>
                   {hasSlots&&!isSelected&&<div style={{width:4,height:4,borderRadius:"50%",background:"#213C18",margin:"4px auto 0"}}/>}
@@ -717,7 +714,7 @@ function BizPanel({ biz, onClose, onBook }) {
               </p>
               <div style={{display:"flex",flexDirection:"column",gap:8,paddingBottom:8}}>
                 {slotsForDate.length===0
-                  ? <p style={{fontFamily:F2,fontSize:13,color:"#74796E",padding:"20px 0",textAlign:"center"}}>No classes on this day</p>
+                  ? <p style={{fontFamily:F2,fontSize:13,color:"#54584F",padding:"20px 0",textAlign:"center"}}>No classes on this day</p>
                   : slotsForDate.map(sl=>{
                       const avail = sl.spots - sl.booked;
                       const full = avail===0;
@@ -729,7 +726,7 @@ function BizPanel({ biz, onClose, onBook }) {
                           {/* Time */}
                           <div style={{textAlign:"center",minWidth:48,flexShrink:0}}>
                             <p style={{fontFamily:F2,fontSize:16,fontWeight:800,color:"#213C18",margin:0,letterSpacing:"-0.5px"}}>{sl.time}</p>
-                            <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>{sl.dur}</p>
+                            <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>{sl.dur}</p>
                           </div>
                           <div style={{width:1,height:32,background:"rgba(195,200,188,0.5)",flexShrink:0}}/>
                           {/* Info */}
@@ -749,7 +746,7 @@ function BizPanel({ biz, onClose, onBook }) {
                           <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
                             <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18"}}>◈ {biz.cr}</span>
                             <button onClick={()=>!full&&onBook(biz,sl)} disabled={full}
-                              style={{padding:"10px 20px",background:full?"#E4E2DD":"#213C18",color:full?"#74796E":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:full?"not-allowed":"pointer",transition:"all .15s",whiteSpace:"nowrap"}}
+                              style={{padding:"10px 20px",background:full?"#E4E2DD":"#213C18",color:full?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:full?"not-allowed":"pointer",transition:"all .15s",whiteSpace:"nowrap"}}
                               onMouseEnter={e=>{if(!full)e.currentTarget.style.opacity="0.85"}}
                               onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
                               {full?"Full":"Book →"}
@@ -801,7 +798,7 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave, compact = false }) 
           <span style={{fontFamily:F2,fontSize:s.badgeFont,fontWeight:800,color:"#213C18"}}>◈ {biz.cr}</span>
         </div>
         <button onClick={e=>{e.stopPropagation();onToggleSave(biz.id);}}
-          style={{position:"absolute",top:s.saveT,left:s.saveL,width:s.saveSize,height:s.saveSize,borderRadius:"50%",background:"rgba(255,255,255,0.92)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:s.saveFont,color:saved?"#e05c5c":"#74796e"}}>
+          style={{position:"absolute",top:s.saveT,left:s.saveL,width:s.saveSize,height:s.saveSize,borderRadius:"50%",background:"rgba(255,255,255,0.92)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:s.saveFont,color:saved?"#e05c5c":"#54584F"}}>
           {saved ? "♥" : "♡"}
         </button>
         {syncing&&(
@@ -819,18 +816,18 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave, compact = false }) 
             <span style={{fontFamily:F2,fontSize:s.ratingFont,fontWeight:700}}>{biz.rating}</span>
           </div>
         </div>
-        <p style={{fontFamily:F2,fontSize:s.locFont,color:"#74796E",margin:`0 0 ${s.locMargin}px`,display:"flex",alignItems:"center",gap:4}}>
+        <p style={{fontFamily:F2,fontSize:s.locFont,color:"#54584F",margin:`0 0 ${s.locMargin}px`,display:"flex",alignItems:"center",gap:4}}>
           <span style={{fontSize:s.locIcon}}>📍</span> {biz.loc}
         </p>
         <div style={{display:"flex",gap:s.pillGap,flexWrap:"wrap",marginBottom:s.pillMargin}}>
           <span style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:600,color:"#766149",background:"rgba(250,222,192,0.5)",padding:s.pillPad,borderRadius:999}}>{biz.cat}</span>
           {biz.tags?.slice(0,s.tagsToShow).map(t=>(
-            <span key={t} style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:500,color:"#74796E",background:"rgba(228,226,221,0.6)",padding:s.pillPad,borderRadius:999}}>{t}</span>
+            <span key={t} style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:500,color:"#54584F",background:"rgba(228,226,221,0.6)",padding:s.pillPad,borderRadius:999}}>{t}</span>
           ))}
         </div>
         {next
           ? <p style={{fontFamily:F2,fontSize:s.slotFont,color:"#213C18",fontWeight:600,margin:0}}>{next.spots-next.booked} spots left · {next.time}</p>
-          : <p style={{fontFamily:F2,fontSize:s.slotFont,color:"#74796E",margin:0}}>Fully booked · check back soon</p>
+          : <p style={{fontFamily:F2,fontSize:s.slotFont,color:"#54584F",margin:0}}>Fully booked · check back soon</p>
         }
       </div>
     </div>
@@ -957,23 +954,23 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
         <div style={{position:"relative",zIndex:1,maxWidth:840,width:"100%",textAlign:"center",padding:"0 4px"}}>
           <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#A3B18A",letterSpacing:"4px",textTransform:"uppercase",margin:"0 0 8px"}}>The Wellness Pass</p>
           <h1 style={{fontFamily:F2,fontWeight:800,fontSize:"clamp(40px,11vw,160px)",color:"#213C18",lineHeight:1,letterSpacing:"clamp(-2px,-0.04em,-6px)",margin:"0 0 clamp(6px,2vw,20px)",userSelect:"none"}}>wello</h1>
-          <p style={{fontFamily:F2,fontSize:"clamp(12px,2vw,18px)",color:"#74796E",fontWeight:500,lineHeight:1.5,maxWidth:480,margin:"0 auto clamp(10px,2.5vw,32px)",letterSpacing:"-0.2px",padding:"0 8px"}}>
+          <p style={{fontFamily:F2,fontSize:"clamp(12px,2vw,18px)",color:"#54584F",fontWeight:500,lineHeight:1.5,maxWidth:480,margin:"0 auto clamp(10px,2.5vw,32px)",letterSpacing:"-0.2px",padding:"0 8px"}}>
             Book yoga classes, gym access, hotel pools, spa treatments and outdoor adventures — all with one pass. No membership needed.
           </p>
           {/* AI Search bar */}
           <div style={{maxWidth:560,margin:"0 auto 8px",background:"#fff",borderRadius:999,padding:"4px 4px 4px 16px",display:"flex",alignItems:"center",boxShadow:"0 1px 12px rgba(27,28,25,0.06)",border:"1px solid rgba(195,200,188,0.3)"}}>
-            <span style={{color:"#74796E",fontSize:13,marginRight:6,flexShrink:0}}>✦</span>
+            <span style={{color:"#54584F",fontSize:13,marginRight:6,flexShrink:0}}>✦</span>
             <input value={aiQ} onChange={e=>setAiQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runAI()}
               style={{flex:1,border:"none",outline:"none",fontFamily:F2,fontSize:13,background:"transparent",color:"#1B1C19",fontWeight:500,minWidth:0}}
               placeholder="Find a class, spa, gym or adventure..."/>
             {aiResults&&<button onClick={()=>{setAiResults(null);setAiQ("");setAiNote("");}}
-              style={{background:"transparent",border:"none",color:"#74796E",cursor:"pointer",fontSize:13,padding:"0 6px",flexShrink:0}}>✕</button>}
+              style={{background:"transparent",border:"none",color:"#54584F",cursor:"pointer",fontSize:13,padding:"0 6px",flexShrink:0}}>✕</button>}
             <button onClick={runAI} disabled={aiLoading||!aiQ.trim()}
               style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"10px clamp(12px,3vw,20px)",fontFamily:F2,fontSize:13,fontWeight:700,cursor:aiLoading||!aiQ.trim()?"not-allowed":"pointer",opacity:aiLoading||!aiQ.trim()?0.5:1,flexShrink:0}}>
               {aiLoading?"…":"Search"}
             </button>
           </div>
-          {aiNote&&<p style={{fontFamily:F2,fontSize:11,color:"#74796E",fontStyle:"italic",margin:"0 0 16px"}}>✦ {aiNote}</p>}
+          {aiNote&&<p style={{fontFamily:F2,fontSize:11,color:"#54584F",fontStyle:"italic",margin:"0 0 16px"}}>✦ {aiNote}</p>}
           {/* CTAs */}
           <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginTop:"clamp(16px,3vw,28px)"}}>
             <button onClick={onGotoCredits || (()=>onSetView("credits"))}
@@ -1008,7 +1005,7 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
         <div style={{display:"flex",flexWrap:"wrap",alignItems:"flex-end",justifyContent:"space-between",marginBottom:"clamp(24px,4vw,48px)",gap:12}}>
           <h2 style={{fontFamily:F2,fontSize:"clamp(28px,5vw,56px)",fontWeight:700,color:"#1B1C19",letterSpacing:"-2px",margin:0,lineHeight:1}}>Featured on Wello</h2>
           <div style={{display:"flex",alignItems:"center",gap:16}}>
-            <p style={{fontFamily:F2,fontSize:14,color:"#74796E",maxWidth:280,lineHeight:1.6,margin:0,display:"none"}}>Hand-picked spaces and experiences.</p>
+            <p style={{fontFamily:F2,fontSize:14,color:"#54584F",maxWidth:280,lineHeight:1.6,margin:0,display:"none"}}>Hand-picked spaces and experiences.</p>
             <button onClick={()=>onSetView("explore")}
               style={{background:"transparent",border:"none",fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",cursor:"pointer",whiteSpace:"nowrap",padding:0}}>
               See all →
@@ -1128,9 +1125,9 @@ function AboutPage({ onSetView }) {
 
         {/* Hero */}
         <div style={{textAlign:"center",padding:"clamp(48px,8vw,96px) 0 clamp(32px,5vw,64px)"}}>
-          <span style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"4px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:12}}>About Wello</span>
+          <span style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"4px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:12}}>About Wello</span>
           <h1 style={{fontFamily:F2,fontSize:"clamp(32px,5vw,60px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:"0 0 16px",lineHeight:1.05}}>Our wellness community.</h1>
-          <p style={{fontFamily:F2,fontSize:"clamp(14px,1.8vw,17px)",color:"#74796E",margin:"0 auto",maxWidth:560,lineHeight:1.75}}>We're a local platform built for Mallorca's wellness and fitness community - connecting people with the best studios, gyms, pools and outdoor experiences on the island.</p>
+          <p style={{fontFamily:F2,fontSize:"clamp(14px,1.8vw,17px)",color:"#54584F",margin:"0 auto",maxWidth:560,lineHeight:1.75}}>We're a local platform built for Mallorca's wellness and fitness community - connecting people with the best studios, gyms, pools and outdoor experiences on the island.</p>
         </div>
 
         {/* Why Wello cards */}
@@ -1146,7 +1143,7 @@ function AboutPage({ onSetView }) {
               <div key={title} style={{background:"#fff",borderRadius:16,padding:"clamp(18px,2.5vw,28px)",border:"1px solid rgba(195,200,188,0.3)"}}>
                 <div style={{width:40,height:40,background:"rgba(33,60,24,0.07)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,marginBottom:14}}>{icon}</div>
                 <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.3px"}}>{title}</h3>
-                <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:0,lineHeight:1.7}}>{body}</p>
+                <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:0,lineHeight:1.7}}>{body}</p>
               </div>
             ))}
           </div>
@@ -1155,7 +1152,7 @@ function AboutPage({ onSetView }) {
         {/* How it works */}
         <section style={{background:"#F5F3EE",borderRadius:20,padding:"clamp(28px,4vw,48px)",marginBottom:"clamp(48px,7vw,80px)"}}>
           <h2 style={{fontFamily:F2,fontSize:"clamp(20px,3vw,28px)",fontWeight:700,color:"#213C18",letterSpacing:"-0.8px",margin:"0 0 6px"}}>How Wello works</h2>
-          <p style={{fontFamily:F2,fontSize:14,color:"#74796E",margin:"0 0 clamp(20px,3vw,32px)"}}>Three steps to your next wellness experience.</p>
+          <p style={{fontFamily:F2,fontSize:14,color:"#54584F",margin:"0 0 clamp(20px,3vw,32px)"}}>Three steps to your next wellness experience.</p>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,220px),1fr))",gap:16}}>
             {[
               {n:"01",icon:"◈",title:"Buy your pass",desc:"Choose how many credits you want. Load them onto your Wello pass - no subscription, no commitment."},
@@ -1166,7 +1163,7 @@ function AboutPage({ onSetView }) {
                 <div style={{position:"absolute",top:16,right:20,fontFamily:F2,fontSize:40,fontWeight:800,color:"rgba(33,60,24,0.05)",lineHeight:1}}>{n}</div>
                 <div style={{width:44,height:44,background:"rgba(33,60,24,0.08)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,marginBottom:16,color:"#213C18"}}>{icon}</div>
                 <h3 style={{fontFamily:F2,fontSize:17,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.3px"}}>{title}</h3>
-                <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:0,lineHeight:1.7}}>{desc}</p>
+                <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:0,lineHeight:1.7}}>{desc}</p>
               </div>
             ))}
           </div>
@@ -1226,14 +1223,14 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
           <div style={{display:"flex",alignItems:"center",gap:12}}>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <span style={{width:8,height:8,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
-              <span style={{fontFamily:F2,fontSize:13,color:"#74796E",fontWeight:500}}>{filtered.length} experiences · Live sync</span>
+              <span style={{fontFamily:F2,fontSize:13,color:"#54584F",fontWeight:500}}>{filtered.length} experiences · Live sync</span>
             </div>
             <div style={{display:"flex",background:"#EAE8E3",borderRadius:999,padding:3,gap:2}}>
               {[["grid","⊞ Grid"],["map","📍 Map"]].map(([mode,label])=>(
                 <button key={mode} onClick={()=>setViewMode(mode)}
                   style={{padding:"5px 12px",borderRadius:999,border:"none",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",transition:"all .15s",
                     background:viewMode===mode?"#213C18":"transparent",
-                    color:viewMode===mode?"#fff":"#74796E"}}>
+                    color:viewMode===mode?"#fff":"#54584F"}}>
                   {label}
                 </button>
               ))}
@@ -1256,11 +1253,11 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
               </button>
             ))}
             <div style={{marginLeft:"auto",flexShrink:0,display:"flex",alignItems:"center",gap:8,background:"#F0EEE9",borderRadius:999,padding:"8px 16px"}}>
-              <span style={{color:"#74796E",fontSize:14}}>⌕</span>
+              <span style={{color:"#54584F",fontSize:14}}>⌕</span>
               <input value={search} onChange={e=>setSearch(e.target.value)}
                 style={{border:"none",outline:"none",fontFamily:F2,fontSize:13,background:"transparent",color:"#1B1C19",width:"clamp(60px,20vw,140px)"}}
                 placeholder="Search..."/>
-              {search&&<button onClick={()=>setSearch("")} style={{background:"transparent",border:"none",cursor:"pointer",color:"#74796E",fontSize:12}}>✕</button>}
+              {search&&<button onClick={()=>setSearch("")} style={{background:"transparent",border:"none",cursor:"pointer",color:"#54584F",fontSize:12}}>✕</button>}
             </div>
           </div>
           {/* Location pills */}
@@ -1269,7 +1266,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
               <button key={l} onClick={()=>setActiveLoc(l)}
                 style={{padding:"5px 14px",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer",whiteSpace:"nowrap",transition:"all .15s",flexShrink:0,
                   background:activeLoc===l?"#213C18":"transparent",
-                  color:activeLoc===l?"#fff":"#74796E",
+                  color:activeLoc===l?"#fff":"#54584F",
                   border:activeLoc===l?"1px solid #213C18":"1px solid rgba(195,200,188,0.5)"}}>
                 {l}
               </button>
@@ -1292,7 +1289,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
               <div style={{textAlign:"center",padding:"96px 20px"}}>
                 <div style={{fontSize:36,marginBottom:12,color:"#C3C8BC"}}>∅</div>
                 <h3 style={{fontFamily:F2,fontSize:20,color:"#213C18",fontWeight:700,marginBottom:8}}>No results</h3>
-                <p style={{fontFamily:F2,color:"#74796E",fontSize:14}}>Try adjusting your filters</p>
+                <p style={{fontFamily:F2,color:"#54584F",fontSize:14}}>Try adjusting your filters</p>
               </div>
             );
           }
@@ -1303,7 +1300,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
                   <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6,gap:12}}>
                     <div>
                       <h2 style={{fontFamily:F2,fontSize:"clamp(15px,1.8vw,18px)",fontWeight:800,color:"#213C18",letterSpacing:"-0.5px",margin:"0 0 1px",lineHeight:1.1}}>{theme.name}</h2>
-                      <p style={{fontFamily:F2,fontSize:11,color:"#74796E",fontWeight:400,margin:0}}>{theme.blurb} · {items.length} {items.length===1?"venue":"venues"}</p>
+                      <p style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:400,margin:0}}>{theme.blurb} · {items.length} {items.length===1?"venue":"venues"}</p>
                     </div>
                     {theme.cats.length===1 && (
                       <button onClick={()=>setActiveCat(theme.cats[0])}
@@ -1329,7 +1326,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
           ? <div style={{textAlign:"center",padding:"96px 20px"}}>
               <div style={{fontSize:36,marginBottom:12,color:"#C3C8BC"}}>∅</div>
               <h3 style={{fontFamily:F2,fontSize:20,color:"#213C18",fontWeight:700,marginBottom:8}}>No results</h3>
-              <p style={{fontFamily:F2,color:"#74796E",fontSize:14}}>Try adjusting your filters</p>
+              <p style={{fontFamily:F2,color:"#54584F",fontSize:14}}>Try adjusting your filters</p>
             </div>
           : <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(100%,200px),1fr))",columnGap:"clamp(12px,2vw,24px)",rowGap:12}}>
               {filtered.map(b=><Card key={b.id} biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave}/>)}
@@ -1368,7 +1365,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
                     </div>
                     <div style={{flex:1,minWidth:0}}>
                       <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#1B1C19",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.name}</p>
-                      <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>📍 {b.loc} · ◈ {b.cr}</p>
+                      <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>📍 {b.loc} · ◈ {b.cr}</p>
                     </div>
                   </div>
                 ))}
@@ -1413,7 +1410,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
       <div style={{maxWidth:520,margin:"0 auto",padding:"60px clamp(16px,4vw,32px)",textAlign:"center"}}>
         <div style={{width:64,height:64,background:"#CAECBA",border:"1px solid #A3B18A",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontFamily:F2,fontSize:26,fontWeight:800,color:"#213C18"}}>◈</div>
         <h1 style={{fontFamily:F2,fontSize:24,fontWeight:800,color:"#213C18",letterSpacing:"-0.8px",margin:"0 0 8px"}}>Sign in to your Wello</h1>
-        <p style={{fontFamily:F2,fontSize:13,color:"#74796E",lineHeight:1.6,margin:"0 0 22px"}}>Your bookings, credit balance and saved venues all live here.</p>
+        <p style={{fontFamily:F2,fontSize:13,color:"#54584F",lineHeight:1.6,margin:"0 0 22px"}}>Your bookings, credit balance and saved venues all live here.</p>
         <button onClick={onOpenSignIn}
           style={{padding:"12px 28px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer"}}>
           Sign in or create your account →
@@ -1444,7 +1441,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                 <h1 style={{fontFamily:F2,fontSize:"clamp(20px,4vw,44px)",fontWeight:800,color:"#213C18",letterSpacing:"-1px",margin:0,overflow:"hidden",textOverflow:"ellipsis"}}>{displayName}</h1>
                 <span style={{background:"#FADEC0",color:"#766149",padding:"3px 10px",borderRadius:999,fontSize:10,fontWeight:700,letterSpacing:"1px",textTransform:"uppercase",flexShrink:0}}>Member</span>
               </div>
-              <p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:0,lineHeight:1.4}}>{authSession.user?.email}</p>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.4}}>{authSession.user?.email}</p>
             </div>
             <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap"}}>
               <button onClick={()=>onSetView("credits")}
@@ -1452,7 +1449,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                 + Credits
               </button>
               <button onClick={onSignOut}
-                style={{background:"transparent",color:"#74796E",border:"1px solid rgba(195,200,188,0.5)",borderRadius:999,padding:"10px 14px",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
+                style={{background:"transparent",color:"#54584F",border:"1px solid rgba(195,200,188,0.5)",borderRadius:999,padding:"10px 14px",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
                 Sign out
               </button>
             </div>
@@ -1471,7 +1468,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
         <div style={{display:"flex",borderBottom:"1px solid rgba(195,200,188,0.3)",marginBottom:24,gap:0,overflowX:"auto",scrollbarWidth:"none"}}>
           {TABS.map(([k,l])=>(
             <button key={k} onClick={()=>setTab(k)}
-              style={{fontFamily:F2,fontSize:14,fontWeight:tab===k?700:500,color:tab===k?"#213C18":"#74796E",background:"transparent",border:"none",borderBottom:tab===k?"2px solid #213C18":"2px solid transparent",padding:"0 4px 16px",cursor:"pointer",marginRight:32,marginBottom:-1,whiteSpace:"nowrap",transition:"all .15s"}}>
+              style={{fontFamily:F2,fontSize:14,fontWeight:tab===k?700:500,color:tab===k?"#213C18":"#54584F",background:"transparent",border:"none",borderBottom:tab===k?"2px solid #213C18":"2px solid transparent",padding:"0 4px 16px",cursor:"pointer",marginRight:32,marginBottom:-1,whiteSpace:"nowrap",transition:"all .15s"}}>
               {l}
             </button>
           ))}
@@ -1504,8 +1501,8 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                         <div>
                           <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#6F5B44",letterSpacing:"2px",textTransform:"uppercase",display:"block",marginBottom:6}}>{bk.biz.cat}</span>
                           <h3 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>{bk.slot.name}</h3>
-                          <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 4px"}}>📅 {fd(bk.slot.date)} · {bk.slot.time}</p>
-                          <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:0}}>📍 {bk.biz.name}, {bk.biz.loc}</p>
+                          <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 4px"}}>📅 {fd(bk.slot.date)} · {bk.slot.time}</p>
+                          <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:0}}>📍 {bk.biz.name}, {bk.biz.loc}</p>
                         </div>
                         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:10}}>
                           <span style={{display:"flex",alignItems:"center",gap:6,background:"#CAECBA",color:"#213C18",padding:"6px 14px",borderRadius:999,fontSize:11,fontWeight:700}}>
@@ -1526,7 +1523,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
             ? <div style={{background:"#F5F3EE",borderRadius:16,padding:"80px 20px",textAlign:"center"}}>
                 <div style={{fontSize:40,marginBottom:16}}>♡</div>
                 <h3 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:"#213C18",marginBottom:8}}>Nothing saved yet</h3>
-                <p style={{fontFamily:F2,color:"#74796E",marginBottom:20,fontSize:14}}>Tap ♡ on any listing to save it</p>
+                <p style={{fontFamily:F2,color:"#54584F",marginBottom:20,fontSize:14}}>Tap ♡ on any listing to save it</p>
                 <button onClick={()=>onSetView("explore")} style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"12px 28px",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>Explore</button>
               </div>
             : <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(45%,200px),1fr))",gap:16}}>
@@ -1536,7 +1533,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                       <img src={b.img} alt={b.name} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
                     </div>
                     <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>{b.name}</h3>
-                    <p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:0}}>📍 {b.loc}</p>
+                    <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0}}>📍 {b.loc}</p>
                   </div>
                 ))}
               </div>
@@ -1546,7 +1543,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
         {tab==="friends"&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-              <span style={{fontFamily:F2,fontSize:14,color:"#74796E"}}>{friends.length} friends</span>
+              <span style={{fontFamily:F2,fontSize:14,color:"#54584F"}}>{friends.length} friends</span>
               <button style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"8px 18px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Invite</button>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -1554,10 +1551,10 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                 <div key={f.id} style={{display:"flex",alignItems:"center",gap:14,padding:"16px 20px",background:"#F5F3EE",borderRadius:12,transition:"background .15s"}}
                   onMouseEnter={e=>e.currentTarget.style.background="#EAE8E3"}
                   onMouseLeave={e=>e.currentTarget.style.background="#F5F3EE"}>
-                  <div style={{width:40,height:40,borderRadius:"50%",background:"#E4E2DD",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:12,fontWeight:700,color:"#74796E",flexShrink:0}}>{f.init}</div>
+                  <div style={{width:40,height:40,borderRadius:"50%",background:"#E4E2DD",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:12,fontWeight:700,color:"#54584F",flexShrink:0}}>{f.init}</div>
                   <div style={{flex:1}}>
                     <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#1B1C19",margin:"0 0 2px"}}>{f.name}</p>
-                    <p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:0}}>📍 {f.loc} · {f.bio}</p>
+                    <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0}}>📍 {f.loc} · {f.bio}</p>
                   </div>
                   <button style={{border:"1px solid rgba(195,200,188,0.5)",borderRadius:999,padding:"6px 16px",background:"transparent",color:"#213C18",fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer"}}>View</button>
                 </div>
@@ -1574,7 +1571,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                 <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:16}}>
                   {[{l:"Full Name",v:"Jane Smith"},{l:"Email",v:"jane@example.com"},{l:"Location",v:"Mallorca"}].map(f=>(
                     <div key={f.l}>
-                      <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:6}}>{f.l}</label>
+                      <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:6}}>{f.l}</label>
                       <input defaultValue={f.v} style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"12px 16px",fontFamily:F2,fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s"}}
                         onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
                     </div>
@@ -1587,14 +1584,14 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
                   <div>
                     <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#1B1C19",margin:"0 0 4px"}}>Business Account</p>
-                    <p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:0}}>Enable to list your venue, manage bookings and access your business dashboard.</p>
+                    <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0}}>Enable to list your venue, manage bookings and access your business dashboard.</p>
                   </div>
                   <div onClick={onToggleBiz} style={{width:44,height:24,borderRadius:999,background:isBiz?"#213C18":"#E4E2DD",cursor:"pointer",position:"relative",transition:"background .2s",flexShrink:0}}>
                     <div style={{position:"absolute",top:2,left:isBiz?22:2,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
                   </div>
                 </div>
                 {isBiz&&<button onClick={()=>onSetView("biz-portal")} style={{background:"#FADEC0",color:"#766149",border:"none",borderRadius:999,padding:"8px 18px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",marginRight:8}}>Manage Business →</button>}
-                {isBiz&&<button onClick={onPreviewDashboard} style={{background:"transparent",color:"#74796E",border:"1px solid rgba(195,200,188,0.6)",borderRadius:999,padding:"8px 18px",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer"}}>Preview dashboard →</button>}
+                {isBiz&&<button onClick={onPreviewDashboard} style={{background:"transparent",color:"#54584F",border:"1px solid rgba(195,200,188,0.6)",borderRadius:999,padding:"8px 18px",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer"}}>Preview dashboard →</button>}
               </div>
             )},{title:"Notifications",content:(
               <div style={{padding:"20px",display:"flex",flexDirection:"column",gap:14}}>
@@ -1609,7 +1606,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
               </div>
             )}].map(s=>(
               <div key={s.title} style={{background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 12px rgba(27,28,25,0.04)",border:"1px solid rgba(195,200,188,0.2)"}}>
-                <div style={{padding:"14px 20px",borderBottom:"1px solid rgba(195,200,188,0.2)"}}><span style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#74796E"}}>{s.title}</span></div>
+                <div style={{padding:"14px 20px",borderBottom:"1px solid rgba(195,200,188,0.2)"}}><span style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F"}}>{s.title}</span></div>
                 {s.content}
               </div>
             ))}
@@ -1634,9 +1631,9 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
           </div>
           <div style={{background:"#E4E2DD",padding:"clamp(24px,4vw,40px)",borderRadius:16,position:"relative",overflow:"hidden"}}>
             <div style={{position:"relative",zIndex:1}}>
-              <div style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"3px",textTransform:"uppercase",color:"#74796E",marginBottom:12}}>Discover more</div>
+              <div style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"3px",textTransform:"uppercase",color:"#54584F",marginBottom:12}}>Discover more</div>
               <h4 style={{fontFamily:F2,fontSize:"clamp(18px,3vw,22px)",fontWeight:700,color:"#213C18",margin:"0 0 10px"}}>Recommended for you</h4>
-              <p style={{fontFamily:F2,fontSize:13,color:"#74796E",maxWidth:320,margin:"0 0 20px",lineHeight:1.6}}>Discover new experiences based on what you've enjoyed.</p>
+              <p style={{fontFamily:F2,fontSize:13,color:"#54584F",maxWidth:320,margin:"0 0 20px",lineHeight:1.6}}>Discover new experiences based on what you've enjoyed.</p>
               <button onClick={()=>onSetView("explore")}
                 style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"12px 24px",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.08)"}}>
                 Explore →
@@ -2016,8 +2013,8 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
       {[["1","Choose credits"],["2","Payment"],["3","Done"]].map(([n,l],i)=>(
         <div key={n} style={{display:"flex",alignItems:"center",gap:8}}>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
-            <div style={{width:24,height:24,borderRadius:"50%",background:step>=i+1?"#213C18":"#E4E2DD",color:step>=i+1?"#fff":"#74796E",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:10,fontWeight:700,transition:"background .2s"}}>{step>i+1?"✓":n}</div>
-            <span style={{fontFamily:F2,fontSize:12,color:step===i+1?"#213C18":"#74796E",fontWeight:step===i+1?700:400}}>{l}</span>
+            <div style={{width:24,height:24,borderRadius:"50%",background:step>=i+1?"#213C18":"#E4E2DD",color:step>=i+1?"#fff":"#54584F",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:10,fontWeight:700,transition:"background .2s"}}>{step>i+1?"✓":n}</div>
+            <span style={{fontFamily:F2,fontSize:12,color:step===i+1?"#213C18":"#54584F",fontWeight:step===i+1?700:400}}>{l}</span>
           </div>
           {i<2&&<div style={{width:32,height:1,background:step>i+1?"#213C18":"#E4E2DD",transition:"background .2s"}}/>}
         </div>
@@ -2036,7 +2033,7 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
             <div style={{marginBottom:36}}>
               <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"4px",textTransform:"uppercase",display:"block",marginBottom:12}}>Your Pass</span>
               <h1 style={{fontFamily:F2,fontSize:"clamp(28px,4vw,48px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:"0 0 12px",lineHeight:1}}>Top Up Your Pass</h1>
-              <p style={{fontFamily:F2,fontSize:16,color:"#74796E",maxWidth:440,lineHeight:1.6,margin:0}}>Load your Wello pass and use it across any studio, gym, spa or outdoor adventure.</p>
+              <p style={{fontFamily:F2,fontSize:16,color:"#54584F",maxWidth:440,lineHeight:1.6,margin:0}}>Load your Wello pass and use it across any studio, gym, spa or outdoor adventure.</p>
             </div>
 
             {/* Balance card */}
@@ -2050,7 +2047,7 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
             {/* Credit counter */}
             <div style={{background:"#F5F3EE",borderRadius:16,padding:"36px",marginBottom:20,position:"relative",overflow:"hidden",textAlign:"center"}}>
               <div style={{position:"absolute",top:-30,right:-30,width:180,height:180,borderRadius:"50%",background:"rgba(33,60,24,0.04)",filter:"blur(40px)"}}/>
-              <p style={{fontFamily:F2,fontSize:12,color:"#74796E",fontWeight:500,marginBottom:24,position:"relative"}}>How many credits?</p>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",fontWeight:500,marginBottom:24,position:"relative"}}>How many credits?</p>
               <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:28,marginBottom:28,position:"relative"}}>
                 <button onClick={()=>setCustomCr(c=>Math.max(1,c-1))}
                   style={{width:"clamp(40px,10vw,52px)",height:"clamp(40px,10vw,52px)",borderRadius:"50%",background:"#fff",border:"1px solid rgba(195,200,188,0.3)",color:"#213C18",fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",transition:"transform .15s"}}
@@ -2085,7 +2082,7 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
                 <div key={title} style={{background:"rgba(228,226,221,0.5)",borderRadius:12,padding:"20px"}}>
                   <div style={{fontSize:20,marginBottom:8}}>{icon}</div>
                   <h4 style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>{title}</h4>
-                  <p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:0,lineHeight:1.5}}>{desc}</p>
+                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.5}}>{desc}</p>
                 </div>
               ))}
             </div>
@@ -2109,7 +2106,7 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
                       <span style={{fontSize:16,flexShrink:0,marginTop:1,color:"#213C18"}}>{icon}</span>
                       <div style={{textAlign:"left"}}>
                         <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#1B1C19",margin:"0 0 2px"}}>{title}</p>
-                        <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0,lineHeight:1.5}}>{body}</p>
+                        <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.5}}>{body}</p>
                       </div>
                     </div>
                   ))}
@@ -2123,13 +2120,13 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
                     });
                     return (
                       <div style={{marginTop:12}}>
-                        <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#74796E",textTransform:"uppercase",letterSpacing:"1.5px",margin:"0 0 8px"}}>Live prices on Wello</p>
+                        <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#54584F",textTransform:"uppercase",letterSpacing:"1.5px",margin:"0 0 8px"}}>Live prices on Wello</p>
                         <div style={{display:"flex",flexDirection:"column",gap:4}}>
                           {Object.entries(cats).map(([cat,crs])=>{
                             const min=Math.min(...crs), max=Math.max(...crs);
                             return (
                               <div key={cat} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid rgba(182,142,92,0.08)"}}>
-                                <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>{cat}</p>
+                                <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0}}>{cat}</p>
                                 <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",margin:0}}>◈{min}{min!==max?`–◈${max}`:""}</p>
                               </div>
                             );
@@ -2137,7 +2134,7 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
                         </div>
                         <div style={{marginTop:8,display:"flex",alignItems:"center",gap:5}}>
                           <span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block",flexShrink:0}}/>
-                          <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>Prices set by venues · updated in real time</p>
+                          <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>Prices set by venues · updated in real time</p>
                         </div>
                       </div>
                     );
@@ -2154,14 +2151,14 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
               <div style={{display:"flex",flexDirection:"column",gap:0}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",paddingBottom:12}}>
                   <div>
-                    <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 4px"}}>Credits</p>
+                    <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 4px"}}>Credits</p>
                     <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#213C18",margin:0}}>{customCr} credits</p>
                   </div>
                   <p style={{fontFamily:F2,fontSize:15,fontWeight:600,color:"#213C18",margin:0}}>€{totalPrice}</p>
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderTop:"1px solid rgba(195,200,188,0.2)"}}>
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:0}}>Service fee</p>
+                    <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:0}}>Service fee</p>
                     <span style={{fontFamily:F2,fontSize:10,color:"#A3B18A",background:"rgba(163,177,138,0.15)",padding:"2px 7px",borderRadius:999}}>10% · max €5</span>
                   </div>
                   <p style={{fontFamily:F2,fontSize:15,fontWeight:600,color:"#213C18",margin:0}}>€{serviceFee}</p>
@@ -2171,7 +2168,7 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
                     <span style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#213C18"}}>Total due</span>
                     <div style={{textAlign:"right"}}>
                       <span style={{fontFamily:F2,fontSize:40,fontWeight:800,color:"#213C18",letterSpacing:"-2px"}}>€{grandTotal}</span>
-                      <p style={{fontFamily:F2,fontSize:10,letterSpacing:"2px",textTransform:"uppercase",color:"#74796E",margin:"4px 0 0"}}>{customCr} credits · no booking fees</p>
+                      <p style={{fontFamily:F2,fontSize:10,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",margin:"4px 0 0"}}>{customCr} credits · no booking fees</p>
                     </div>
                   </div>
                 </div>
@@ -2182,13 +2179,13 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
                     onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
                     <span>Continue to Payment</span><span>→</span>
                   </button>
-                  <p style={{fontFamily:F2,fontSize:12,color:"#74796E",textAlign:"center",margin:"16px 0 0",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",textAlign:"center",margin:"16px 0 0",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
                     <span>🔒</span> Secure encrypted checkout
                   </p>
                 </div>
               </div>
             </div>
-            <p style={{fontFamily:F2,fontSize:12,color:"#74796E",textAlign:"center",marginTop:16}}>Credits expire on <strong style={{color:"#213C18"}}>{expiryDate()}</strong></p>
+            <p style={{fontFamily:F2,fontSize:12,color:"#54584F",textAlign:"center",marginTop:16}}>Credits expire on <strong style={{color:"#213C18"}}>{expiryDate()}</strong></p>
           </div>
         </div>
       )}
@@ -2197,8 +2194,8 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
       {step===2&&(
         <div style={{maxWidth:520,margin:"0 auto",padding:"0 32px"}}>
           <StepBar/>
-          <button onClick={()=>setStep(1)} style={{display:"flex",alignItems:"center",gap:6,background:"transparent",border:"none",color:"#74796E",fontFamily:F2,fontSize:13,cursor:"pointer",marginBottom:24,padding:0}}
-            onMouseEnter={e=>e.currentTarget.style.color="#213C18"} onMouseLeave={e=>e.currentTarget.style.color="#74796E"}>← Back</button>
+          <button onClick={()=>setStep(1)} style={{display:"flex",alignItems:"center",gap:6,background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:13,cursor:"pointer",marginBottom:24,padding:0}}
+            onMouseEnter={e=>e.currentTarget.style.color="#213C18"} onMouseLeave={e=>e.currentTarget.style.color="#54584F"}>← Back</button>
           <div style={{background:"#213C18",borderRadius:16,padding:"20px 24px",marginBottom:24,display:"flex",justifyContent:"space-between",alignItems:"center",position:"relative",overflow:"hidden"}}>
             <div style={{position:"absolute",right:16,top:8,opacity:0.06,fontSize:60,color:"#fff"}}>◈</div>
             <div>
@@ -2212,10 +2209,10 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
             {PAY.map(pm=>(
               <div key={pm.id} onClick={()=>setPay(pm.id)}
                 style={{border:`2px solid ${pay===pm.id?"#213C18":"rgba(195,200,188,0.3)"}`,borderRadius:12,padding:"14px 16px",cursor:"pointer",background:pay===pm.id?"rgba(33,60,24,0.04)":"#fff",display:"flex",alignItems:"center",gap:10,transition:"all .15s"}}>
-                <span style={{fontSize:16,fontWeight:700,color:pay===pm.id?"#213C18":"#74796E"}}>{pm.id==="card"?"▬":pm.id==="apple"?"⌘":pm.id==="google"?"G":"₱"}</span>
+                <span style={{fontSize:16,fontWeight:700,color:pay===pm.id?"#213C18":"#54584F"}}>{pm.id==="card"?"▬":pm.id==="apple"?"⌘":pm.id==="google"?"G":"₱"}</span>
                 <div>
                   <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:pay===pm.id?"#213C18":"#1B1C19",margin:"0 0 2px"}}>{pm.label}</p>
-                  <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>{pm.sub}</p>
+                  <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>{pm.sub}</p>
                 </div>
               </div>
             ))}
@@ -2224,7 +2221,7 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
             <div style={{background:"#fff",borderRadius:12,border:"1px solid rgba(195,200,188,0.3)",padding:"20px",marginBottom:16,display:"flex",flexDirection:"column",gap:14}}>
               {[{l:"Cardholder Name",k:"name",p:"Jane Smith",tf:v=>v},{l:"Card Number",k:"number",p:"4242 4242 4242 4242",tf:fmtCard}].map(f=>(
                 <div key={f.k}>
-                  <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:6}}>{f.l}</label>
+                  <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:6}}>{f.l}</label>
                   <input placeholder={f.p} value={card[f.k]} onChange={e=>setCard(p=>({...p,[f.k]:f.tf(e.target.value)}))}
                     style={{width:"100%",border:"1px solid rgba(195,200,188,0.4)",borderRadius:8,padding:"12px 16px",fontFamily:F2,fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s"}}
                     onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.4)"}/>
@@ -2233,7 +2230,7 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 {[{l:"Expiry",k:"expiry",p:"MM/YY",tf:fmtExp},{l:"CVC",k:"cvc",p:"123",tf:v=>v.replace(/\D/g,"").slice(0,3)}].map(f=>(
                   <div key={f.k}>
-                    <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:6}}>{f.l}</label>
+                    <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:6}}>{f.l}</label>
                     <input placeholder={f.p} value={card[f.k]} onChange={e=>setCard(p=>({...p,[f.k]:f.tf(e.target.value)}))}
                       style={{width:"100%",border:"1px solid rgba(195,200,188,0.4)",borderRadius:8,padding:"12px 16px",fontFamily:F2,fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s"}}
                       onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.4)"}/>
@@ -2256,7 +2253,7 @@ function CreditsPage({ credits, onPurchase, listings=[] }) {
         <div style={{maxWidth:420,margin:"0 auto",padding:"0 32px",textAlign:"center",paddingTop:40}}>
           <div style={{width:64,height:64,background:"#CAECBA",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",fontSize:28}}>✓</div>
           <h1 style={{fontFamily:F2,fontSize:32,fontWeight:800,color:"#213C18",letterSpacing:"-1.5px",margin:"0 0 12px"}}>Credits added!</h1>
-          <p style={{fontFamily:F2,fontSize:15,color:"#74796E",margin:"0 0 4px"}}>◈ {customCr} added to your pass.</p>
+          <p style={{fontFamily:F2,fontSize:15,color:"#54584F",margin:"0 0 4px"}}>◈ {customCr} added to your pass.</p>
           <p style={{fontFamily:F2,fontSize:13,color:"#C3C8BC",margin:"0 0 32px"}}>They expire on {expiryDate()}.</p>
           <button onClick={()=>setStep(1)}
             style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"14px 32px",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>
@@ -2434,7 +2431,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(45%,200px),1fr))",gap:10}}>
               {overviewCards.map(({label,value,sub,color})=>(
                 <div key={label} style={{background:"#fff",borderRadius:12,padding:"18px 20px",borderTop:`3px solid ${color}`,boxShadow:"0 1px 8px rgba(0,0,0,0.04)"}}>
-                  <p style={{fontFamily:F2,fontSize:9,color:"#74796E",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 8px"}}>{label}</p>
+                  <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 8px"}}>{label}</p>
                   <p style={{fontFamily:F2,fontSize:28,fontWeight:800,color:"#213C18",letterSpacing:"-1px",margin:"0 0 4px",lineHeight:1}}>{value}</p>
                   <p style={{fontFamily:F2,fontSize:10,color:"#A3B18A",margin:0}}>{sub}</p>
                 </div>
@@ -2448,7 +2445,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:20}}>
                   <div>
                     <p style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 2px",letterSpacing:"-0.3px"}}>Monthly revenue</p>
-                    <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>Credits redeemed × €1 · less commission</p>
+                    <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0}}>Credits redeemed × €1 · less commission</p>
                   </div>
                   <p style={{fontFamily:F2,fontSize:20,fontWeight:800,color:"#213C18",letterSpacing:"-0.5px",margin:0}}>{isPreview?"€619":payoutAmt}</p>
                 </div>
@@ -2464,7 +2461,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                           <div key={m} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:5}}>
                             <p style={{fontFamily:F2,fontSize:9,color:isLast?"#213C18":"#A3B18A",fontWeight:isLast?700:400,margin:0}}>€{v}</p>
                             <div style={{width:"100%",height:h,background:isLast?"#213C18":"#E4E2DD",borderRadius:"4px 4px 0 0",transition:"height .3s"}}/>
-                            <p style={{fontFamily:F2,fontSize:9,color:isLast?"#213C18":"#74796E",fontWeight:isLast?700:400,margin:0}}>{m}</p>
+                            <p style={{fontFamily:F2,fontSize:9,color:isLast?"#213C18":"#54584F",fontWeight:isLast?700:400,margin:0}}>{m}</p>
                           </div>
                         );
                       })}
@@ -2488,7 +2485,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 </div>
                 {RECENT.length===0 ? (
                   <div style={{padding:"40px 0",textAlign:"center"}}>
-                    <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 4px"}}>No bookings yet.</p>
+                    <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 4px"}}>No bookings yet.</p>
                     <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:0}}>New bookings will show up here in real time.</p>
                   </div>
                 ) : (
@@ -2498,7 +2495,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                       <div style={{width:32,height:32,borderRadius:"50%",background:b.status==="Confirmed"?"#CAECBA":"#FADEC0",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:10,color:b.status==="Confirmed"?"#213C18":"#766149",fontWeight:700,flexShrink:0}}>{b.initials}</div>
                       <div style={{flex:1,minWidth:0}}>
                         <p style={{fontFamily:F2,fontSize:12,color:"#1B1C19",fontWeight:600,margin:"0 0 1px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{b.name}</p>
-                        <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>{b.cls} · {b.when}</p>
+                        <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>{b.cls} · {b.when}</p>
                       </div>
                       <span style={{fontFamily:F2,fontSize:10,color:b.status==="Confirmed"?"#213C18":"#B8925C",fontWeight:700,flexShrink:0,background:b.status==="Confirmed"?"#CAECBA":"#FADEC0",padding:"2px 8px",borderRadius:999}}>{b.status}</span>
                     </div>
@@ -2523,7 +2520,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                       style={{padding:"10px 14px",borderRadius:10,border:"none",cursor:"pointer",textAlign:"center",transition:"all .15s",flexShrink:0,
                         background:selDay===i?"#213C18":"#fff",
                         boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
-                      <p style={{fontFamily:F2,fontSize:10,color:selDay===i?"rgba(255,255,255,0.6)":"#74796E",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.5px"}}>{d}</p>
+                      <p style={{fontFamily:F2,fontSize:10,color:selDay===i?"rgba(255,255,255,0.6)":"#54584F",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.5px"}}>{d}</p>
                       <p style={{fontFamily:F2,fontSize:15,fontWeight:800,color:selDay===i?"#fff":"#213C18",margin:"0 0 2px",letterSpacing:"-0.5px"}}>{WEEK_DATES[i].split(" ")[0]}</p>
                       {count>0&&<div style={{width:4,height:4,borderRadius:"50%",background:selDay===i?"rgba(255,255,255,0.5)":"#213C18",margin:"0 auto"}}/>}
                     </button>
@@ -2540,7 +2537,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {dayCLS.length===0
                 ? <div style={{background:"#fff",borderRadius:12,padding:"40px",textAlign:"center",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
-                    <p style={{fontFamily:F2,fontSize:16,color:"#74796E",margin:"0 0 12px"}}>No classes on {WEEK_DAYS[selDay]}</p>
+                    <p style={{fontFamily:F2,fontSize:16,color:"#54584F",margin:"0 0 12px"}}>No classes on {WEEK_DAYS[selDay]}</p>
                     <button onClick={()=>setShowAddSlot(true)} style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"10px 20px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Add a class</button>
                   </div>
                 : dayCLS.map(cl=>{
@@ -2554,15 +2551,15 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                           {/* Time */}
                           <div style={{textAlign:"center",minWidth:52,flexShrink:0}}>
                             <p style={{fontFamily:F2,fontSize:18,fontWeight:800,color:"#213C18",margin:0,letterSpacing:"-0.5px"}}>{cl.time}</p>
-                            <p style={{fontFamily:F2,fontSize:10,color:"#74796E",margin:0}}>{cl.dur}</p>
+                            <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>{cl.dur}</p>
                           </div>
                           <div style={{width:1,height:40,background:"rgba(195,200,188,0.4)",flexShrink:0,marginTop:4}}/>
                           {/* Details */}
                           <div style={{flex:1}}>
                             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
                               <p style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#1B1C19",margin:0}}>{cl.name}</p>
-                              <span style={{fontFamily:F2,fontSize:10,fontWeight:700,color:cl.live?"#213C18":"#74796E",background:cl.live?"#CAECBA":"#E4E2DD",padding:"2px 8px",borderRadius:999}}>{cl.live?"Live":"Paused"}</span>
-                              <span style={{fontFamily:F2,fontSize:10,color:"#74796E",background:"#F5F3EE",padding:"2px 8px",borderRadius:999}}>◈ {cl.credits} per person</span>
+                              <span style={{fontFamily:F2,fontSize:10,fontWeight:700,color:cl.live?"#213C18":"#54584F",background:cl.live?"#CAECBA":"#E4E2DD",padding:"2px 8px",borderRadius:999}}>{cl.live?"Live":"Paused"}</span>
+                              <span style={{fontFamily:F2,fontSize:10,color:"#54584F",background:"#F5F3EE",padding:"2px 8px",borderRadius:999}}>◈ {cl.credits} per person</span>
                             </div>
                             {/* Capacity */}
                             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
@@ -2575,7 +2572,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                             {slotBookings.length>0&&(
                               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                                 {slotBookings.map(b=>(
-                                  <span key={b.initials} style={{fontFamily:F2,fontSize:10,color:"#74796E",background:"#F5F3EE",padding:"2px 8px",borderRadius:999}}>{b.name}</span>
+                                  <span key={b.initials} style={{fontFamily:F2,fontSize:10,color:"#54584F",background:"#F5F3EE",padding:"2px 8px",borderRadius:999}}>{b.name}</span>
                                 ))}
                                 {cl.booked>slotBookings.length&&<span style={{fontFamily:F2,fontSize:10,color:"#A3B18A",padding:"2px 0"}}>+{cl.booked-slotBookings.length} more</span>}
                               </div>
@@ -2588,7 +2585,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                               {cl.live?"Pause":"Go live"}
                             </button>
                             <button onClick={()=>setCLS(p=>p.filter(c=>c.id!==cl.id))}
-                              style={{padding:"6px 12px",background:"transparent",color:"#74796E",border:"1px solid rgba(195,200,188,0.4)",borderRadius:999,fontFamily:F2,fontSize:11,cursor:"pointer"}}>
+                              style={{padding:"6px 12px",background:"transparent",color:"#54584F",border:"1px solid rgba(195,200,188,0.4)",borderRadius:999,fontFamily:F2,fontSize:11,cursor:"pointer"}}>
                               Remove
                             </button>
                           </div>
@@ -2613,21 +2610,21 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   <div style={{background:"#fff",borderRadius:16,maxWidth:440,width:"100%",padding:"28px",boxShadow:"0 24px 60px rgba(0,0,0,0.2)",maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
                       <h3 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#213C18",margin:0}}>Add a class slot</h3>
-                      <button onClick={()=>setShowAddSlot(false)} style={{background:"transparent",border:"none",fontSize:18,cursor:"pointer",color:"#74796E"}}>×</button>
+                      <button onClick={()=>setShowAddSlot(false)} style={{background:"transparent",border:"none",fontSize:18,cursor:"pointer",color:"#54584F"}}>×</button>
                     </div>
                     <div style={{display:"flex",flexDirection:"column",gap:12}}>
                       {[{l:"Class name",k:"name",p:"e.g. Sunrise Flow"},{l:"Time",k:"time",p:"09:00",t:"time"},{l:"Duration",k:"dur",p:"e.g. 60 min"},{l:"Available spots",k:"spots",p:"10",t:"number"}].map(f=>(
                         <div key={f.k}>
-                          <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:5}}>{f.l}</label>
+                          <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>{f.l}</label>
                           <input type={f.t||"text"} placeholder={f.p} value={newSlot[f.k]} onChange={e=>setNewSlot(p=>({...p,[f.k]:e.target.value}))} style={{...INP}}
                             onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
                         </div>
                       ))}
                       <div style={{background:"#F5F3EE",borderRadius:10,padding:"14px"}}>
-                        <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:4}}>Your normal class price</label>
-<p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:"0 0 10px",lineHeight:1.5}}>1 credit = £1. Enter your normal class price and we'll set the credit price to match.</p>
+                        <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:4}}>Your normal class price</label>
+<p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 10px",lineHeight:1.5}}>1 credit = £1. Enter your normal class price and we'll set the credit price to match.</p>
                         <div style={{position:"relative"}}>
-                          <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontFamily:F2,fontSize:13,fontWeight:600,color:"#74796E",pointerEvents:"none"}}>£</span>
+                          <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontFamily:F2,fontSize:13,fontWeight:600,color:"#54584F",pointerEvents:"none"}}>£</span>
                           <input type="number" min="1" placeholder="e.g. 20" value={newSlot.priceGBP||""}
                             onChange={e=>{
                               const p = +e.target.value;
@@ -2639,7 +2636,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                         </div>
                         {exactCr && !sameRound && (
                           <div style={{marginTop:12}}>
-                            <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:8}}>Choose credit price</label>
+                            <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:8}}>Choose credit price</label>
                             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                               {[
                                 { cr: floorCr, rounded: "Round down", valueNote: `£${floorCr} on Wello` },
@@ -2653,11 +2650,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                     style={{borderRadius:10,border:sel?"2px solid #213C18":"1px solid rgba(195,200,188,0.5)",background:sel?"#213C18":"#fff",cursor:"pointer",padding:"12px 10px",textAlign:"center",transition:"all .15s",position:"relative"}}>
                                     {isLower&&<div style={{position:"absolute",top:-8,left:"50%",transform:"translateX(-50%)",background:"#4ade80",color:"#1B1C19",fontFamily:F2,fontSize:7,fontWeight:700,letterSpacing:"0.5px",padding:"2px 8px",borderRadius:999,whiteSpace:"nowrap"}}>RECOMMENDED</div>}
                                     <p style={{fontFamily:F2,fontSize:20,fontWeight:800,color:sel?"#fff":"#213C18",margin:"4px 0 2px",letterSpacing:"-0.5px"}}>◈ {cr}</p>
-                                    <p style={{fontFamily:F2,fontSize:10,color:sel?"rgba(255,255,255,0.65)":"#74796E",margin:"0 0 8px"}}>{valueNote}</p>
+                                    <p style={{fontFamily:F2,fontSize:10,color:sel?"rgba(255,255,255,0.65)":"#54584F",margin:"0 0 8px"}}>{valueNote}</p>
                                     <div style={{height:3,borderRadius:999,background:sel?"rgba(255,255,255,0.2)":"#E4E2DD",overflow:"hidden",margin:"0 0 5px"}}>
                                       <div style={{width:`${demand}%`,height:"100%",background:sel?"rgba(255,255,255,0.7)":isLower?"#4ade80":"#A3B18A",borderRadius:999}}/>
                                     </div>
-                                    <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:sel?"rgba(255,255,255,0.8)":isLower?"#213C18":"#74796E",margin:0}}>{demand}% fill rate</p>
+                                    <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:sel?"rgba(255,255,255,0.8)":isLower?"#213C18":"#54584F",margin:0}}>{demand}% fill rate</p>
                                     <p style={{fontFamily:F2,fontSize:8,color:sel?"rgba(255,255,255,0.5)":"#A3B18A",margin:"2px 0 0"}}>{rounded} · platform avg</p>
                                   </div>
                                 );
@@ -2688,7 +2685,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                         setNewSlot({name:"",time:"09:00",spots:10,credits:15,dur:"60 min",priceGBP:""});
                       }}
                         disabled={!newSlot.name||!newSlot.time}
-                        style={{marginTop:4,padding:"13px 0",background:newSlot.name&&newSlot.time?"#213C18":"#E4E2DD",color:newSlot.name&&newSlot.time?"#fff":"#74796E",border:"none",borderRadius:999,fontFamily:F2,fontSize:14,fontWeight:700,cursor:newSlot.name&&newSlot.time?"pointer":"not-allowed",transition:"all .15s"}}>
+                        style={{marginTop:4,padding:"13px 0",background:newSlot.name&&newSlot.time?"#213C18":"#E4E2DD",color:newSlot.name&&newSlot.time?"#fff":"#54584F",border:"none",borderRadius:999,fontFamily:F2,fontSize:14,fontWeight:700,cursor:newSlot.name&&newSlot.time?"pointer":"not-allowed",transition:"all .15s"}}>
                         Add slot
                       </button>
                     </div>
@@ -2724,7 +2721,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 <div key={row.date} style={{background:"#fff",borderRadius:12,padding:"16px 20px",display:"flex",alignItems:"center",gap:14,boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
                   <div style={{flex:1}}>
                     <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#1B1C19",margin:"0 0 2px"}}>{row.invNo}</p>
-                    <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>{row.date} · {row.credits} credits · {row.bookings} bookings</p>
+                    <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0}}>{row.date} · {row.credits} credits · {row.bookings} bookings</p>
                   </div>
                   <div style={{textAlign:"right"}}>
                     <p style={{fontFamily:F2,fontSize:16,fontWeight:800,color:"#213C18",margin:"0 0 2px",letterSpacing:"-0.5px"}}>€{net ?? row.gross}</p>
@@ -2738,7 +2735,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             })}
             {!isPreview && (
               <div style={{background:"#fff",borderRadius:12,padding:"32px 20px",textAlign:"center",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
-                <p style={{fontFamily:F2,fontSize:14,color:"#74796E",fontWeight:600,margin:"0 0 4px"}}>No payouts yet</p>
+                <p style={{fontFamily:F2,fontSize:14,color:"#54584F",fontWeight:600,margin:"0 0 4px"}}>No payouts yet</p>
                 <p style={{fontFamily:F2,fontSize:12,color:"#A3B18A",margin:0,lineHeight:1.6}}>Your first payout statement will appear here once bookings have been processed.</p>
               </div>
             )}
@@ -2763,7 +2760,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 </div>
               </div>
               <div style={{padding:"14px 16px"}}>
-                <p style={{fontFamily:F2,fontSize:13,color:"#74796E",margin:"0 0 8px",lineHeight:1.6}}>{listing.desc}</p>
+                <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 8px",lineHeight:1.6}}>{listing.desc}</p>
                 <p style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600,margin:0}}>📍 {listing.loc} · ◈ {listing.credits} per person</p>
               </div>
             </div>
@@ -2773,13 +2770,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 {[{l:"Venue name",k:"name"},{l:"Location",k:"loc"},{l:"Primary category",k:"cat"},{l:"Secondary category",k:"cat2"},{l:"Credits per person",k:"credits",t:"number"},{l:"Tags (comma separated)",k:"tags"}].map(f=>(
                   <div key={f.k}>
-                    <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:5}}>{f.l}</label>
+                    <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>{f.l}</label>
                     <input type={f.t||"text"} value={listing[f.k]||""} onChange={e=>setListing(p=>({...p,[f.k]:e.target.value}))}
                       style={{...INP}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
                   </div>
                 ))}
                 <div>
-                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:5}}>Description</label>
+                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Description</label>
                   <textarea value={listing.desc} onChange={e=>setListing(p=>({...p,desc:e.target.value}))} rows={3}
                     style={{...INP,resize:"vertical"}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
                 </div>
@@ -2806,7 +2803,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   {l:"IBAN",v:bizData.iban || ""},
                 ]).map(f=>(
                   <div key={f.l}>
-                    <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:5}}>{f.l}</label>
+                    <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>{f.l}</label>
                     <input defaultValue={f.v} style={{...INP}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
                   </div>
                 ))}
@@ -2817,13 +2814,16 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             {/* Integrations */}
             <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
               <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Booking system integration</h3>
-              <p style={{fontFamily:F2,fontSize:12,color:"#74796E",margin:"0 0 16px",lineHeight:1.6}}>Connect your existing booking system so your schedule stays in sync automatically.</p>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 16px",lineHeight:1.6}}>Connect your existing booking system so your schedule stays in sync automatically.</p>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {[
-                  {id:"mindbody",name:"Mindbody",desc:"Most yoga & pilates studios",status:"coming_soon",icon:"🧘"},
-                  {id:"fresha",name:"Fresha",desc:"Spas, massage & beauty",status:"available",icon:"💆"},
-                  {id:"google",name:"Google Calendar",desc:"iCal feed · works with anything",status:"available",icon:"📅"},
-                  {id:"manual",name:"Manage manually",desc:"Add & edit slots directly in Wello",status:"active",icon:"✏️"},
+                  {id:"acuity",  name:"Acuity Scheduling",desc:"Auto-sync your classes from Acuity",  status:"available",  icon:"📅"},
+                  {id:"manual",  name:"Manage manually",   desc:"Add & edit slots directly in Wello",  status:"available",  icon:"✏️"},
+                  {id:"mindbody",name:"Mindbody",          desc:"Most yoga & pilates studios",         status:"coming_soon",icon:"🧘"},
+                  {id:"glofox",  name:"Glofox",            desc:"Gym & boutique fitness",              status:"coming_soon",icon:"🏋️"},
+                  {id:"eversports",name:"Eversports",      desc:"Studios across Europe",               status:"coming_soon",icon:"⚡"},
+                  {id:"fresha",  name:"Fresha",            desc:"Spas, massage & beauty",              status:"coming_soon",icon:"💆"},
+                  {id:"momoyoga",name:"Momoyoga",          desc:"Yoga studios",                        status:"coming_soon",icon:"🧘‍♀️"},
                 ].map(item=>(
                   <div key={item.id} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:integration===item.id?"rgba(33,60,24,0.05)":"#F5F3EE",borderRadius:10,border:integration===item.id?"1px solid rgba(33,60,24,0.2)":"1px solid transparent",transition:"all .15s",cursor:item.status==="coming_soon"?"default":"pointer"}}
                     onClick={()=>item.status!=="coming_soon"&&setIntegration(item.id)}>
@@ -2832,9 +2832,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
                         <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:0}}>{item.name}</p>
                         {item.status==="coming_soon"&&<span style={{fontFamily:F2,fontSize:9,fontWeight:700,color:"#B8925C",background:"#FADEC0",padding:"2px 6px",borderRadius:999}}>Coming soon</span>}
-                        {item.status==="active"&&<span style={{fontFamily:F2,fontSize:9,fontWeight:700,color:"#213C18",background:"#CAECBA",padding:"2px 6px",borderRadius:999}}>Active</span>}
                       </div>
-                      <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:0}}>{item.desc}</p>
+                      <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0}}>{item.desc}</p>
                     </div>
                     {item.status!=="coming_soon"&&(
                       <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600}}>{integration===item.id?"✓ Selected":"Select →"}</span>
@@ -2842,26 +2841,16 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   </div>
                 ))}
               </div>
-              {integration==="google"&&(
+              {integration==="acuity"&&(
                 <div style={{marginTop:14,padding:"14px 16px",background:"#F5F3EE",borderRadius:10}}>
-                  <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Connect Google Calendar</p>
-                  <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:"0 0 10px",lineHeight:1.6}}>1. Open Google Calendar → Settings → your calendar → Integrate calendar<br/>2. Copy the iCal URL and paste below</p>
-                  <input placeholder="Paste your iCal URL here..." style={{...INP,marginBottom:8}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
-                  <button style={{padding:"8px 16px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>Connect</button>
-                </div>
-              )}
-              {integration==="fresha"&&(
-                <div style={{marginTop:14,padding:"14px 16px",background:"#F5F3EE",borderRadius:10}}>
-                  <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Connect Fresha</p>
-                  <p style={{fontFamily:F2,fontSize:11,color:"#74796E",margin:"0 0 10px",lineHeight:1.6}}>1. Log into Fresha → Settings → Integrations<br/>2. Copy your API key and paste below</p>
-                  <input placeholder="Paste your Fresha API key here..." style={{...INP,marginBottom:8}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
-                  <button style={{padding:"8px 16px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>Connect</button>
+                  <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Acuity Scheduling</p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 10px",lineHeight:1.6}}>Your Acuity credentials and selected appointment types were saved during onboarding. To change them, head back to the onboarding wizard.</p>
                 </div>
               )}
               {integration==="manual"&&(
-                <div style={{marginTop:14,padding:"14px 16px",background:"#CAECBA",borderRadius:10}}>
-                  <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>✓ Manual mode active</p>
-                  <p style={{fontFamily:F2,fontSize:11,color:"#213C18",margin:0,opacity:0.7}}>Manage your schedule directly in the Schedule tab.</p>
+                <div style={{marginTop:14,padding:"14px 16px",background:"#F5F3EE",borderRadius:10}}>
+                  <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Manual mode</p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.6}}>Add & edit slots directly in the Schedule tab.</p>
                 </div>
               )}
             </div>
@@ -2919,7 +2908,7 @@ function OWrap({ title, sub, children, footer, step, total, doSignOut, onPreview
   return (
     <>
       <OnboardingProgressBar step={step} total={total} doSignOut={doSignOut} onPreview={onPreview}/>
-      <div style={{maxWidth:720,margin:"0 auto",padding:"clamp(32px,5vw,56px) clamp(20px,4vw,40px) 100px"}}>
+      <div style={{maxWidth:960,margin:"0 auto",padding:"clamp(28px,4vw,48px) clamp(20px,4vw,40px) 100px"}}>
         <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:"clamp(24px,3vw,32px)",fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 8px"}}>{title}</h1>
         {sub&&<p style={{fontFamily:F.body,fontSize:"clamp(13px,1.5vw,15px)",color:T.stone,fontWeight:300,margin:"0 0 32px",lineHeight:1.7}}>{sub}</p>}
         {children}
@@ -2943,7 +2932,10 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   const [instagram, setInstagram] = useState(bizData.instagram || "");
   const [img, setImg] = useState(bizData.img || null);
   const [gallery, setGallery] = useState(bizData.gallery || []);
-  const [availType, setAvailType] = useState(bizData.acuity_key ? "acuity" : "manual");
+  // Default to Acuity tab (the primary integration option). Partners with manual
+  // slots already saved (no acuity_key, slots present) will still default to
+  // Acuity — they can click Manual to see their existing slots.
+  const [availType, setAvailType] = useState("acuity");
   const [acuityKey, setAcuityKey] = useState(bizData.acuity_key || "");
   const [acuityUserId, setAcuityUserId] = useState(bizData.acuity_user_id || "");
   const [acuityTypes, setAcuityTypes] = useState(bizData.acuity_appointment_types || []);
@@ -2954,6 +2946,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
     (bizData.acuity_appointment_types || []).length ? "success" : "idle"
   ); // idle | loading | success | error
   const [acuityError, setAcuityError] = useState("");
+  const [icalUrl, setIcalUrl] = useState(bizData.ical_url || "");
 
   async function fetchAcuityTypes() {
     if (!acuityUserId.trim() || !acuityKey.trim()) {
@@ -3001,7 +2994,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
 
   const [slots, setSlots] = useState(bizData.slots || []);
   const [cr, setCr] = useState(bizData.cr ? String(bizData.cr) : "");
-  const [newSlot, setNewSlot] = useState({ name:"", days:[], time:"09:00", dur:"60 min", spots:10 });
+  const [newSlot, setNewSlot] = useState({ name:"", days:[], time:"09:00", dur:"60 min", spots:10, cr:"" });
   const [intgRequest, setIntgRequest] = useState(bizData.integration_request || "");
   const [priceMode, setPriceMode] = useState(bizData.price_mode || "flat");
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -3077,8 +3070,9 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
 
   function addSlot() {
     if (!newSlot.name.trim() || !newSlot.days.length) return;
-    setSlots(s => [...s, { id:`sl${Date.now()}`, ...newSlot }]);
-    setNewSlot({ name:"", days:[], time:"09:00", dur:"60 min", spots:10 });
+    const cr = newSlot.cr === "" ? null : Math.max(1, parseInt(newSlot.cr) || catAvg);
+    setSlots(s => [...s, { id:`sl${Date.now()}`, ...newSlot, cr }]);
+    setNewSlot({ name:"", days:[], time:"09:00", dur:"60 min", spots:10, cr:"" });
   }
 
   if (step===1) return (
@@ -3283,16 +3277,56 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
                      slots: slotsFromAcuity,
                      integration_request: intgRequest,
                    });
+                 } else if (availType === "ical") {
+                   goNext({ ical_url: icalUrl.trim(), integration_request: intgRequest });
                  } else {
                    goNext({ slots, integration_request: intgRequest });
                  }
                }} label="Save & continue →"/>]}>
-      <div style={{display:"flex",background:T.bg2,borderRadius:3,padding:3,marginBottom:20}}>
-        {[["manual","Manual slots"],["acuity","Connect Acuity"]].map(([mode,label])=>(
-          <button key={mode} onClick={()=>setAvailType(mode)} style={{flex:1,padding:"9px 0",background:availType===mode?T.paper:"transparent",color:availType===mode?T.ink:T.stone,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:availType===mode?600:300,cursor:"pointer",transition:"all .15s",boxShadow:availType===mode?"0 1px 3px rgba(0,0,0,0.08)":"none"}}>
-            {label}
-          </button>
-        ))}
+      <label style={FL}>Connect to booking system</label>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
+        {[
+          {id:"acuity",    name:"Acuity Scheduling",desc:"Auto-sync your classes from Acuity",   status:"available",   icon:"📅"},
+          {id:"ical",      name:"iCal Feed",        desc:"One-way sync from any calendar (Google, Apple, Outlook…)", status:"available", icon:"🔗"},
+          {id:"manual",    name:"Manage manually",  desc:"Add & edit slots directly in Wello",   status:"available",   icon:"✏️"},
+          {id:"mindbody",  name:"Mindbody",         desc:"Most yoga & pilates studios",          status:"coming_soon", icon:"🧘"},
+          {id:"glofox",    name:"Glofox",           desc:"Gym & boutique fitness",               status:"coming_soon", icon:"🏋️"},
+          {id:"eversports",name:"Eversports",       desc:"Studios across Europe",                status:"coming_soon", icon:"⚡"},
+          {id:"fresha",    name:"Fresha",           desc:"Spas, massage & beauty",               status:"coming_soon", icon:"💆"},
+          {id:"momoyoga",  name:"Momoyoga",         desc:"Yoga studios",                         status:"coming_soon", icon:"🧘‍♀️"},
+        ].map(item => {
+          const selected = availType === item.id;
+          const disabled = item.status === "coming_soon";
+          return (
+            <div key={item.id}
+              onClick={() => !disabled && setAvailType(item.id)}
+              style={{
+                display:"flex",alignItems:"center",gap:12,padding:"12px 14px",
+                background: selected ? "rgba(33,60,24,0.06)" : T.bg2,
+                border: `1px solid ${selected ? T.sage : T.border}`,
+                borderRadius:8,
+                cursor: disabled ? "default" : "pointer",
+                opacity: disabled ? 0.7 : 1,
+                transition:"all .15s",
+              }}>
+              <span style={{fontSize:20,flexShrink:0}}>{item.icon}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                  <span style={{fontFamily:F.body,fontSize:12,fontWeight:700,color:T.ink}}>{item.name}</span>
+                  {disabled && (
+                    <span style={{fontFamily:F.body,fontSize:9,fontWeight:700,color:T.clay,background:T.ochreXL,padding:"2px 6px",borderRadius:999}}>Coming soon</span>
+                  )}
+                </div>
+                <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"2px 0 0"}}>{item.desc}</p>
+              </div>
+              {!disabled && (
+                <span style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600,flexShrink:0}}>
+                  {selected ? "✓ Selected" : "Select →"}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
       {availType==="acuity" ? (
         <>
@@ -3306,6 +3340,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
               <label style={FL}>Acuity User ID</label>
               <input value={acuityUserId} onChange={e=>{setAcuityUserId(e.target.value);if(acuityStatus==="error")setAcuityStatus("idle");}} placeholder="e.g. 12345678"
                 style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+              <p style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,margin:"4px 0 0"}}>Find this in your Acuity account under Integrations → API</p>
             </div>
             <div>
               <label style={FL}>Acuity API key</label>
@@ -3360,15 +3395,21 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
               <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.5}}>Connected, but no appointment types were returned by Acuity. Create some in your Acuity dashboard then click Refresh.</div>
             </div>
           )}
-
-          <div style={{background:T.bg2,borderRadius:6,padding:"10px 12px",marginTop:14}}>
-            <div style={{fontFamily:F.body,fontSize:10,fontWeight:600,color:T.stone,letterSpacing:"0.5px",textTransform:"uppercase",marginBottom:6}}>More integrations coming soon</div>
-            {["Mindbody","TeamUp","Fresha"].map(n=>(
-              <div key={n} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${T.border}`}}>
-                <span style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600}}>{n}</span>
-                <span style={{fontFamily:F.body,fontSize:9,color:T.stone2,border:`1px solid ${T.border}`,borderRadius:2,padding:"2px 7px"}}>Soon</span>
-              </div>
-            ))}
+        </>
+      ) : availType==="ical" ? (
+        <>
+          <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:6,padding:"10px 12px",marginBottom:16}}>
+            <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600,marginBottom:2}}>One-way sync from any iCal feed</div>
+            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.5}}>Works with Google Calendar, Apple Calendar, Outlook, or any tool that exports an iCal URL. Wello reads your feed periodically to pull availability; bookings made on Wello don't write back to your calendar.</div>
+          </div>
+          <div>
+            <label style={FL}>iCal feed URL</label>
+            <input value={icalUrl} onChange={e=>setIcalUrl(e.target.value)} placeholder="https://calendar.google.com/calendar/ical/.../basic.ics"
+              style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+            <p style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300,margin:"4px 0 0"}}>
+              In Google Calendar: Settings → your calendar → Integrate calendar → "Secret address in iCal format".
+              In Apple Calendar: right-click the calendar → Share Calendar → Public Calendar → copy URL.
+            </p>
           </div>
         </>
       ) : (
@@ -3387,7 +3428,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
                 </button>
               ))}
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:12}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
               <div>
                 <label style={FL}>Start time</label>
                 <input type="time" value={newSlot.time} onChange={e=>setNewSlot(p=>({...p,time:e.target.value}))} style={{...INP}} onFocus={onFi} onBlur={onBl}/>
@@ -3398,9 +3439,15 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
                   {DURS.map(d=><option key={d}>{d}</option>)}
                 </select>
               </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
               <div>
-                <label style={FL}>Max spots</label>
+                <label style={FL}>Max spots (capacity)</label>
                 <input type="number" min="1" value={newSlot.spots} onChange={e=>setNewSlot(p=>({...p,spots:parseInt(e.target.value)||1}))} style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+              </div>
+              <div>
+                <label style={FL}>Credits per booking</label>
+                <input type="number" min="1" value={newSlot.cr} onChange={e=>setNewSlot(p=>({...p,cr:e.target.value}))} placeholder={String(catAvg)} style={{...INP}} onFocus={onFi} onBlur={onBl}/>
               </div>
             </div>
             <button onClick={addSlot} disabled={!newSlot.name.trim()||!newSlot.days.length}
@@ -3414,7 +3461,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
                 <div key={sl.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:T.paper,border:`1px solid ${T.border}`,borderRadius:6}}>
                   <div>
                     <span style={{fontFamily:F.body,fontSize:12,fontWeight:600,color:T.ink}}>{sl.name}</span>
-                    <span style={{fontFamily:F.body,fontSize:10,color:T.stone,marginLeft:8,fontWeight:300}}>{sl.days.join(", ")} · {sl.time} · {sl.dur} · {sl.spots} spots</span>
+                    <span style={{fontFamily:F.body,fontSize:10,color:T.stone,marginLeft:8,fontWeight:300}}>{sl.days.join(", ")} · {sl.time} · {sl.dur} · {sl.spots} spots{sl.cr ? ` · ◈ ${sl.cr}` : ""}</span>
                   </div>
                   <button onClick={()=>setSlots(s=>s.filter(x=>x.id!==sl.id))} style={{background:"none",border:"none",color:T.stone2,cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>×</button>
                 </div>
@@ -3888,38 +3935,45 @@ export default function App() {
   const [profile,setProfile] = useState(null);
   const [authModal,setAuthModal] = useState(null);
   const [bookingsVersion,setBookingsVersion] = useState(0);
+  const [mobileMenuOpen,setMobileMenuOpen] = useState(false);
   const [localCredits,setLocalCredits] = useState(0);
   const [bookings,setBookings] = useState([]);
 
   // Load (or create) the customer profile row whenever the auth session changes.
-  // A user can have BOTH a profiles row (customer) and a businesses row (partner)
-  // — the two are kept separate by which UI surfaces use which row. We always
-  // upsert here so partners signing in via Business also get a profile shell
-  // they can opt into later if they want to book as a member.
+  // Uses upsert so it works atomically whether the row exists or not — no race
+  // between two simultaneous mounts and no "duplicate key" errors. credits and
+  // created_at are intentionally NOT in the payload so an existing row's
+  // balance isn't wiped on every sign-in.
   useEffect(()=>{
     const uid = authSession?.user?.id;
     if (!uid) { setProfile(null); return; }
     let cancelled = false;
     (async () => {
-      const { data: existing } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', uid)
-        .maybeSingle();
-      if (cancelled) return;
-      if (existing) { setProfile(existing); return; }
       const u = authSession.user;
-      const { data: created } = await supabase
+      const payload = {
+        id: uid,
+        email: u.email ?? null,
+        full_name: u.user_metadata?.full_name || (u.email?.split('@')[0] ?? 'Member'),
+      };
+      const { data: row, error: upsertErr } = await supabase
         .from('profiles')
-        .insert({
-          id: uid,
-          email: u.email ?? null,
-          full_name: u.user_metadata?.full_name || (u.email?.split('@')[0] ?? 'Member'),
-          credits: 0,
-        })
+        .upsert(payload, { onConflict: 'id' })
         .select('*')
         .single();
-      if (!cancelled && created) setProfile(created);
+      if (cancelled) return;
+      if (upsertErr) {
+        // Common causes: missing INSERT/UPDATE RLS policy, missing profiles
+        // table, schema mismatch. Log loudly so we can see in DevTools.
+        console.error('profiles upsert failed:', { code: upsertErr.code, message: upsertErr.message, details: upsertErr.details, hint: upsertErr.hint });
+        // Best-effort fallback: maybe the row exists and only the write failed
+        // (e.g. UPDATE blocked by RLS) — try reading what's there.
+        const { data: fallback, error: readErr } = await supabase
+          .from('profiles').select('*').eq('id', uid).maybeSingle();
+        if (readErr) console.error('profiles read fallback failed:', readErr.message);
+        if (fallback) setProfile(fallback);
+        return;
+      }
+      setProfile(row);
     })();
     return () => { cancelled = true; };
   }, [authSession?.user?.id]);
@@ -4105,18 +4159,36 @@ export default function App() {
     setView("credits");
   }
   async function onConfirm({biz,slot,form,cost}){
+    console.log('[onConfirm] start', {
+      listing_id: biz.id,
+      business_id: biz.business_id,
+      biz_name: biz.name,
+      slot_id: slot.id,
+      slot_date: slot.date,
+      slot_time: slot.time,
+      cost,
+      guests: form?.guests,
+    });
+
     // Defensive auth re-check in case the session expired between opening the
     // modal and confirming. Bail before touching any local state so the user
     // doesn't see fake "Booked!" feedback they can't actually have.
-    const { data: sess } = await supabase.auth.getSession();
+    const { data: sess, error: sessErr } = await supabase.auth.getSession();
+    if (sessErr) console.error('[onConfirm] getSession error:', sessErr);
     const uid = sess?.session?.user?.id;
+    console.log('[onConfirm] auth check', { uid, hasSession: !!sess?.session, email: sess?.session?.user?.email });
     if (!uid) {
+      console.warn('[onConfirm] no auth uid — bailing with sign-in prompt');
       showToast("Please sign in to book.","info");
       return;
     }
     if (!biz.business_id) {
-      console.error('onConfirm: listing missing business_id — cannot persist booking', { listing_id: biz.id });
-      showToast("Couldn't complete booking. Please try again.","error");
+      console.error('[onConfirm] listing has NO business_id — booking cannot be saved. Listing may predate the listings.business_id migration or the backfill missed it.', {
+        listing_id: biz.id,
+        listing_name: biz.name,
+        fix_hint: "Run: update listings set business_id = b.id from businesses b where listings.name = b.name and listings.id = '" + biz.id + "';",
+      });
+      showToast("This venue isn't fully set up yet. We've logged it — please try another.","error");
       return;
     }
 
@@ -4128,12 +4200,11 @@ export default function App() {
 
     // 2. Persist to Supabase + fire Acuity sync.
     try {
-
       // Peak window: 07:00–09:00 (inclusive of 07:00, exclusive of 09:00).
       const t = (slot.time || '').slice(0,5);
       const peak_flag = t >= '07:00' && t < '09:00';
 
-      const { data: inserted, error: insErr } = await supabase.from('bookings').insert({
+      const payload = {
         user_id: uid,
         business_id: biz.business_id,
         venue_id: biz.business_id, // placeholder until a venues table exists
@@ -4145,12 +4216,39 @@ export default function App() {
         peak_flag,
         status: 'confirmed',
         notes: form?.note || null,
-      }).select('id').single();
+      };
+      console.log('[onConfirm] inserting bookings row', payload);
+
+      const { data: inserted, error: insErr } = await supabase
+        .from('bookings')
+        .insert(payload)
+        .select('id')
+        .single();
 
       if (insErr) {
-        console.error('Booking insert failed:', insErr.message);
+        console.error('[onConfirm] bookings INSERT FAILED', {
+          code: insErr.code,
+          message: insErr.message,
+          details: insErr.details,
+          hint: insErr.hint,
+          payload,
+        });
+        // Common error codes:
+        //   42501 — RLS denied (insert policy missing or wrong)
+        //   23503 — foreign-key violation (business_id not in businesses, or user_id not in auth.users)
+        //   23514 — check-constraint violation (bookings_status_check)
+        //   23502 — not-null violation (required column was null)
+        const hint = insErr.code === '42501'
+          ? "RLS rejected the insert. Add: create policy \"Users can insert own bookings\" on bookings for insert to authenticated with check (user_id = auth.uid());"
+          : insErr.code === '23503'
+          ? "Foreign-key violation — business_id or user_id doesn't exist. Check listings.business_id is populated for this listing."
+          : null;
+        if (hint) console.error('[onConfirm] hint:', hint);
+        showToast("Couldn't save your booking. Check the console for details.","error");
         return;
       }
+
+      console.log('[onConfirm] bookings INSERT OK', { booking_id: inserted.id });
 
       // Tick the bookings refresh counter so ProfilePage refetches and the
       // new row shows up immediately (it was rendered from a fetched list).
@@ -4165,14 +4263,16 @@ export default function App() {
           acuity_type_id: slot.acuity_type_id ?? null,
         },
       }).then(({ data, error }) => {
-        if (error) console.warn('bookings-sync failed:', error.message);
-        else if (data?.acuity_error) console.warn('Acuity sync issue:', data.acuity_error);
+        if (error) console.warn('[bookings-sync] invoke failed:', error.message);
+        else if (data?.acuity_error) console.warn('[bookings-sync] Acuity issue:', data.acuity_error);
+        else console.log('[bookings-sync] result:', data);
         // Acuity sync writes acuity_appointment_id (or sets acuity_sync_failed
         // status) on the row. Tick again so ProfilePage shows the latest.
         setBookingsVersion(v => v + 1);
       });
     } catch (e) {
-      console.error('onConfirm persist error:', e);
+      console.error('[onConfirm] unexpected exception:', e);
+      showToast("Something went wrong. Please try again.","error");
     }
   }
   function onPurchase(purchase){ setCredits(c=>c+purchase.cr); showToast(`◈ ${purchase.cr} credits added!`,"gold"); }
@@ -4260,10 +4360,20 @@ export default function App() {
             <a href="mailto:hello@wello-wellness.com" style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,fontWeight:700,color:"#CAECBA",textDecoration:"none",whiteSpace:"nowrap"}}>hello@wello-wellness.com</a>
           </div>
         <nav style={{background:"rgba(251,249,244,0.96)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"1px solid rgba(195,200,188,0.2)"}}>
-          <style>{`body{overflow-x:hidden;} @media(max-width:640px){.wello-nav-links{display:none!important}.wello-footer{display:none!important}} .wello-nav-links{display:flex;} .scroll-indicator{display:flex;} @media(max-width:767px){.scroll-indicator{display:none!important}}`}</style>
+          <style>{`body{overflow-x:hidden;} @media(max-width:640px){.wello-nav-links{display:none!important}.wello-footer{display:none!important}} .wello-nav-links{display:flex;} .scroll-indicator{display:flex;} @media(max-width:767px){.scroll-indicator{display:none!important}} .mob-menu-btn{display:none;} @media(max-width:640px){.mob-menu-btn{display:flex!important;}}`}</style>
           <div style={{maxWidth:1200,margin:"0 auto",padding:"0 clamp(16px,4vw,32px)",display:"flex",alignItems:"center",height:60,gap:16}}>
             {/* Wordmark — left */}
             <a onClick={()=>setView("home")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:20,fontWeight:800,color:"#213C18",letterSpacing:"-1px",cursor:"pointer",userSelect:"none",textDecoration:"none",flexShrink:0}}>wello</a>
+            {/* Mobile menu trigger — three-line hamburger */}
+            <button className="mob-menu-btn" aria-label="Menu" aria-expanded={mobileMenuOpen}
+              onClick={()=>setMobileMenuOpen(v=>!v)}
+              style={{background:"transparent",border:"none",padding:8,cursor:"pointer",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+              <svg width="22" height="16" viewBox="0 0 22 16" fill="none" stroke="#213C18" strokeWidth="2" strokeLinecap="round" style={{display:"block"}}>
+                <line x1="2" y1="3"  x2="20" y2="3"/>
+                <line x1="2" y1="8"  x2="20" y2="8"/>
+                <line x1="2" y1="13" x2="20" y2="13"/>
+              </svg>
+            </button>
             {/* Links — centred */}
             <div className="wello-nav-links" style={{flex:1,justifyContent:"center",gap:6,alignItems:"center"}}>
               {[{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"biz-portal",l:"Business"}].map(n=>(
@@ -4293,6 +4403,23 @@ export default function App() {
             </div>
           </div>
         </nav>
+        {/* Mobile dropdown menu — anchored under the nav, opened by the Mallorca trigger */}
+        {mobileMenuOpen && (
+          <>
+            <div onClick={()=>setMobileMenuOpen(false)}
+              style={{position:"fixed",inset:0,top:headerH,background:"rgba(27,28,25,0.35)",zIndex:990}}/>
+            <div style={{position:"absolute",top:"100%",left:0,right:0,background:"rgba(251,249,244,0.98)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"1px solid rgba(195,200,188,0.3)",boxShadow:"0 10px 30px rgba(33,60,24,0.12)",zIndex:1001,padding:"6px 0"}}>
+              {[{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"biz-portal",l:"Business"},{id:"profile",l:"Profile"}].map(n=>(
+                <button key={n.id}
+                  onClick={()=>{handleNavClick(n.id);setMobileMenuOpen(false);}}
+                  style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px clamp(16px,4vw,32px)",background:view===n.id?"rgba(33,60,24,0.06)":"transparent",border:"none",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:15,fontWeight:view===n.id?700:500,color:view===n.id?"#213C18":"#43483F",cursor:"pointer",borderBottom:"1px solid rgba(195,200,188,0.18)",textAlign:"left"}}>
+                  <span>{n.l}</span>
+                  {view===n.id && <span style={{color:"#213C18",fontSize:14}}>•</span>}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
         </div>{/* end banner+nav wrapper */}
 
         {/* PAGES — padded for fixed banner+nav */}
@@ -4336,35 +4463,35 @@ export default function App() {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
               <div>
                 <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:22,fontWeight:700,color:"#213C18",margin:"0 0 4px",letterSpacing:"-0.5px"}}>Get in touch</h2>
-                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,color:"#74796E",margin:0}}>We'd love to hear from you.</p>
+                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,color:"#54584F",margin:0}}>We'd love to hear from you.</p>
               </div>
-              <button onClick={()=>{setShowContact(false);setContactSent(false);setContactForm({name:"",email:"",message:""}); }} style={{background:"transparent",border:"none",fontSize:20,cursor:"pointer",color:"#74796E",padding:4}}>×</button>
+              <button onClick={()=>{setShowContact(false);setContactSent(false);setContactForm({name:"",email:"",message:""}); }} style={{background:"transparent",border:"none",fontSize:20,cursor:"pointer",color:"#54584F",padding:4}}>×</button>
             </div>
             {contactSent?(
               <div style={{textAlign:"center",padding:"20px 0"}}>
                 <div style={{fontSize:40,marginBottom:12}}>✓</div>
                 <h3 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:18,fontWeight:700,color:"#213C18",margin:"0 0 8px"}}>Message sent!</h3>
-                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,color:"#74796E",margin:0}}>We'll get back to you at {contactForm.email}.</p>
+                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,color:"#54584F",margin:0}}>We'll get back to you at {contactForm.email}.</p>
               </div>
             ):(
               <div style={{display:"flex",flexDirection:"column",gap:14}}>
                 {[{l:"Name",k:"name",t:"text",p:"Your name"},{l:"Email",k:"email",t:"email",p:"your@email.com"}].map(f=>(
                   <div key={f.k}>
-                    <label style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:6}}>{f.l}</label>
+                    <label style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:6}}>{f.l}</label>
                     <input type={f.t} placeholder={f.p} value={contactForm[f.k]} onChange={e=>setContactForm(p=>({...p,[f.k]:e.target.value}))}
                       style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s"}}
                       onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
                   </div>
                 ))}
                 <div>
-                  <label style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#74796E",display:"block",marginBottom:6}}>Message</label>
+                  <label style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:6}}>Message</label>
                   <textarea placeholder="How can we help?" value={contactForm.message} onChange={e=>setContactForm(p=>({...p,message:e.target.value}))} rows={4}
                     style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",resize:"vertical",transition:"border-color .15s"}}
                     onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
                 </div>
                 <a href={`mailto:hello@wello-wellness.com?subject=Wello enquiry from ${contactForm.name}&body=${encodeURIComponent(contactForm.message + "%0A%0AFrom: " + contactForm.name + "%0AEmail: " + contactForm.email)}`}
                   onClick={()=>setContactSent(true)}
-                  style={{display:"block",width:"100%",padding:"14px 0",borderRadius:999,background:contactForm.name&&contactForm.email&&contactForm.message?"#213C18":"#E4E2DD",color:contactForm.name&&contactForm.email&&contactForm.message?"#fff":"#74796E",border:"none",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:15,fontWeight:700,cursor:contactForm.name&&contactForm.email&&contactForm.message?"pointer":"not-allowed",textAlign:"center",textDecoration:"none",transition:"all .15s",boxSizing:"border-box"}}>
+                  style={{display:"block",width:"100%",padding:"14px 0",borderRadius:999,background:contactForm.name&&contactForm.email&&contactForm.message?"#213C18":"#E4E2DD",color:contactForm.name&&contactForm.email&&contactForm.message?"#fff":"#54584F",border:"none",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:15,fontWeight:700,cursor:contactForm.name&&contactForm.email&&contactForm.message?"pointer":"not-allowed",textAlign:"center",textDecoration:"none",transition:"all .15s",boxSizing:"border-box"}}>
                   Send message →
                 </a>
                 <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"#A3B18A",textAlign:"center",margin:0}}>Or email us directly: hello@wello-wellness.com</p>
@@ -4380,7 +4507,7 @@ export default function App() {
           <div style={{background:"#fff",borderRadius:20,maxWidth:600,width:"100%",padding:"36px 32px",boxShadow:"0 32px 80px rgba(0,0,0,0.22)",maxHeight:"85vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
               <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:22,fontWeight:700,color:"#213C18",margin:0}}>Privacy Policy</h2>
-              <button onClick={()=>setShowPrivacy(false)} style={{background:"transparent",border:"none",fontSize:20,cursor:"pointer",color:"#74796E"}}>×</button>
+              <button onClick={()=>setShowPrivacy(false)} style={{background:"transparent",border:"none",fontSize:20,cursor:"pointer",color:"#54584F"}}>×</button>
             </div>
             <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"#A3B18A",margin:"0 0 24px"}}>Last updated: April 2026 · Wello (wello-wellness.com)</p>
             {[
@@ -4397,7 +4524,7 @@ export default function App() {
             ].map(([title,body])=>(
               <div key={title} style={{marginBottom:20,paddingBottom:20,borderBottom:"1px solid #F5F3EE"}}>
                 <h3 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,fontWeight:700,color:"#213C18",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.5px"}}>{title}</h3>
-                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#74796E",margin:0,lineHeight:1.75}}>{body}</p>
+                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#54584F",margin:0,lineHeight:1.75}}>{body}</p>
               </div>
             ))}
           </div>
@@ -4410,7 +4537,7 @@ export default function App() {
           <div style={{background:"#fff",borderRadius:20,maxWidth:600,width:"100%",padding:"36px 32px",boxShadow:"0 32px 80px rgba(0,0,0,0.22)",maxHeight:"85vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
               <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:22,fontWeight:700,color:"#213C18",margin:0}}>Terms of Use</h2>
-              <button onClick={()=>setShowTerms(false)} style={{background:"transparent",border:"none",fontSize:20,cursor:"pointer",color:"#74796E"}}>×</button>
+              <button onClick={()=>setShowTerms(false)} style={{background:"transparent",border:"none",fontSize:20,cursor:"pointer",color:"#54584F"}}>×</button>
             </div>
             <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"#A3B18A",margin:"0 0 24px"}}>Last updated: April 2026 · Wello (wello-wellness.com)</p>
             {[
@@ -4428,7 +4555,7 @@ export default function App() {
             ].map(([title,body])=>(
               <div key={title} style={{marginBottom:20,paddingBottom:20,borderBottom:"1px solid #F5F3EE"}}>
                 <h3 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,fontWeight:700,color:"#213C18",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.5px"}}>{title}</h3>
-                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#74796E",margin:0,lineHeight:1.75}}>{body}</p>
+                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#54584F",margin:0,lineHeight:1.75}}>{body}</p>
               </div>
             ))}
           </div>
@@ -4436,7 +4563,7 @@ export default function App() {
       )}
 
       {selBiz   &&<BizPanel biz={selBiz}        onClose={()=>setSelBiz(null)}  onBook={onBook}/>}
-      {bkData   &&<BookingModal biz={bkData.biz} slot={bkData.slot} onClose={()=>setBkData(null)} onConfirm={onConfirm} credits={credits} onBuyCredits={()=>{setBkData(null);setView("credits");}}/>}
+      {bkData   &&<BookingModal biz={bkData.biz} slot={bkData.slot} onClose={()=>setBkData(null)} onConfirm={onConfirm} credits={credits} onBuyCredits={()=>{setBkData(null);setView("credits");}} profile={profile} authSession={authSession} onOpenSignIn={()=>{setBkData(null);setAuthModal({mode:"signin"});}}/>}
       {authModal&&<AuthModal initialMode={authModal.mode} onClose={()=>setAuthModal(null)} onSuccess={()=>setAuthModal(null)}/>}
       <SyncEngine listings={listings} onUpdate={onSyncUpdate}/>
       <Chatbot listings={listings} credits={credits} bookings={bookings} onSelectBiz={onSelect}/>
@@ -4464,17 +4591,6 @@ export default function App() {
       )}
 
 
-      {/* Mobile bottom nav */}
-      <div className="mob-nav" style={{position:"fixed",bottom:0,left:0,right:0,zIndex:999,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderTop:"1px solid rgba(195,200,188,0.25)",padding:"8px 16px calc(8px + env(safe-area-inset-bottom))"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          {[{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"biz-portal",l:"Business"},{id:"profile",l:"Profile"}].map(({id,l})=>(
-            <button key={id} onClick={()=>handleNavClick(id)}
-              style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:"transparent",border:"none",cursor:"pointer",padding:"4px 12px",fontFamily:"'Manrope',system-ui,sans-serif",borderBottom:view===id?"2px solid #213C18":"2px solid transparent"}}>
-              <span style={{fontSize:13,fontWeight:view===id?700:500,color:view===id?"#213C18":"#74796E"}}>{l}</span>
-            </button>
-          ))}
-        </div>
-      </div>
     </>
   );
 }

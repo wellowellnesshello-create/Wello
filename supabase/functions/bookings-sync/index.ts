@@ -34,13 +34,12 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    // 1. Load booking + business (with credentials)
+    // 1. Load booking + business (with credentials). Use the explicit FK hint
+    //    because `bookings` has TWO FKs to `businesses` (business_id and
+    //    venue_id) — without the hint PostgREST throws PGRST201 ambiguity.
     const { data: booking, error: bErr } = await supabase
       .from('bookings')
-      .select(`
-        id, user_id, business_id, slot_id, booking_date, start_time, duration, notes,
-        businesses!inner ( id, name, email, acuity_key, acuity_user_id, acuity_appointment_types )
-      `)
+      .select('*, business:businesses!bookings_business_id_fkey(acuity_key, acuity_user_id, acuity_appointment_types, mindbody_site_id, ical_url, category)')
       .eq('id', booking_id)
       .single()
 
@@ -49,7 +48,7 @@ serve(async (req) => {
       return json({ error: 'Booking not found' }, 404)
     }
 
-    const biz = Array.isArray(booking.businesses) ? booking.businesses[0] : booking.businesses
+    const biz = Array.isArray(booking.business) ? booking.business[0] : booking.business
     if (!biz?.acuity_key || !biz?.acuity_user_id) {
       return json({ skipped: 'Business has no Acuity credentials' })
     }
