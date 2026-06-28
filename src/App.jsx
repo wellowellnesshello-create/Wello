@@ -646,7 +646,7 @@ function BizPanel({ biz, onClose, onBook }) {
   const allDates = dates;
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:900,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px"}} onClick={onClose}>
+    <div style={{position:"fixed",inset:0,zIndex:1100,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px"}} onClick={onClose}>
       <div style={{background:"#fff",borderRadius:16,maxWidth:640,width:"100%",maxHeight:"88vh",overflow:"hidden",overflowY:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.25)",animation:"su .25s ease"}} onClick={e=>e.stopPropagation()}>
 
         {/* Hero image */}
