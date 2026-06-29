@@ -33,6 +33,17 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false }
     })
 
+    // Reverting an approved venue: hide it from the marketplace by marking
+    // the listing(s) inactive. Rows + slots are preserved so the partner can
+    // come back into a clean state on re-approval (handled below).
+    if (old_record?.status === 'approved') {
+      const { error: deactivateErr } = await supabase
+        .from('listings')
+        .update({ status: 'inactive' })
+        .eq('business_id', record.id)
+      if (deactivateErr) console.error('Failed to deactivate listings:', deactivateErr.message)
+    }
+
     const { error: createError } = await supabase.auth.admin.createUser({
       email,
       email_confirm: true,
@@ -63,6 +74,19 @@ serve(async (req) => {
 
   // ── status -> submitted ───────────────────────────────────────
   if (record.status === 'submitted' && old_record?.status !== 'submitted') {
+    // If reverting from approved -> submitted (e.g. partner pulled changes
+    // for re-review), pull the listing off the marketplace until we re-approve.
+    if (old_record?.status === 'approved') {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      })
+      const { error: deactivateErr } = await supabase
+        .from('listings')
+        .update({ status: 'inactive' })
+        .eq('business_id', record.id)
+      if (deactivateErr) console.error('Failed to deactivate listings:', deactivateErr.message)
+    }
+
     const partnerHtml = `<div style="font-family:Arial,sans-serif;max-width:480px;padding:32px;background:#FBF9F4;"><h1 style="color:#213C18;">wello</h1><div style="background:#fff;border-radius:12px;padding:28px;border:1px solid #E4E2DD;"><h2 style="color:#213C18;">We've got your listing, ${firstName}.</h2><p style="color:#74796E;line-height:1.7;">Thanks for submitting ${name} - we'll review your listing and be in touch within 2 working days.</p><p style="color:#74796E;line-height:1.7;">We'll let you know if we have any questions or tweaks before getting you live on the marketplace.</p><p style="color:#1B1C19;font-weight:600;">James<br><span style="font-weight:400;color:#74796E;">Founder, Wello - <a href="mailto:hello@wello-wellness.com" style="color:#213C18;">hello@wello-wellness.com</a></span></p></div></div>`
 
     const adminHtml = `<div style="font-family:Arial,sans-serif;padding:32px;background:#FBF9F4;"><h2 style="color:#213C18;">New listing submitted for review</h2><p><b>Venue:</b> ${name}</p><p><b>Email:</b> ${email}</p><p style="color:#74796E;">Log in to the Supabase dashboard to review and approve this listing.</p></div>`
@@ -89,67 +113,98 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false }
     })
 
-    // ── Create marketplace listing ────────────────────────────
-    const tags = CATEGORY_TAGS[record.category] ?? (record.category ? [record.category] : [])
+    // Prefer the partner's own selected tags; fall back to category defaults.
+    const partnerTags = Array.isArray(record.tags) ? record.tags.filter(Boolean) : []
+    const tags = partnerTags.length > 0
+      ? partnerTags
+      : (CATEGORY_TAGS[record.category] ?? (record.category ? [record.category] : []))
 
-    const { data: listing, error: listingError } = await supabase
+    // Look up an existing listing for this business so we don't insert a
+    // duplicate when an admin re-approves a venue (approved -> setting_up -> approved).
+    const { data: existing, error: existingErr } = await supabase
       .from('listings')
-      .insert({
-        business_id: record.id,
-        name: record.name,
-        cat: record.category ?? null,
-        loc: record.location ?? record.address ?? null,
-        description: record.description ?? null,
-        img: record.img ?? null,
-        rating: 5.0,
-        reviews: 0,
-        cr: record.cr ?? 3,
-        tags,
-        status: 'active',
-      })
       .select('id')
-      .single()
+      .eq('business_id', record.id)
+      .order('id', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    if (existingErr) console.error('Failed to check for existing listing:', existingErr.message)
 
-    if (listingError) {
-      console.error('Failed to create listing:', listingError.message)
+    let listingId: number | string | null = existing?.id ?? null
+    const baseFields = {
+      name: record.name,
+      cat: record.category ?? null,
+      loc: record.location ?? record.address ?? null,
+      description: record.description ?? null,
+      img: record.img ?? null,
+      cr: record.cr ?? 3,
+      tags,
+      status: 'active',
+    }
+
+    if (listingId) {
+      // Re-approval path: flip back to active and refresh the user-editable
+      // fields. Slots are left alone — they were preserved from the first
+      // approval and the partner can edit them via the dashboard.
+      const { error: updErr } = await supabase
+        .from('listings').update(baseFields).eq('id', listingId)
+      if (updErr) console.error('Failed to update listing on re-approval:', updErr.message)
+      else console.log('Listing re-activated for:', record.name, '| id:', listingId)
     } else {
-      console.log('Listing created for:', record.name, '| id:', listing.id)
+      // First-time approval: insert listing + expand recurring slots.
+      const { data: inserted, error: listingError } = await supabase
+        .from('listings')
+        .insert({
+          business_id: record.id,
+          ...baseFields,
+          rating: 5.0,
+          reviews: 0,
+        })
+        .select('id')
+        .single()
 
-      // ── Create slot instances from onboarding slot data ───────
-      // businesses.slots is a JSONB array: [{id, name, days:["Mon","Tue"], time, dur, spots, cr}]
-      // Expand each recurring slot into concrete date instances for the next 4 weeks.
-      const today = new Date()
-      const slotRows: object[] = []
+      if (listingError) {
+        console.error('Failed to create listing:', listingError.message)
+      } else {
+        listingId = inserted.id
+        console.log('Listing created for:', record.name, '| id:', listingId)
 
-      for (const sl of (record.slots ?? [])) {
-        for (const day of (sl.days ?? [])) {
-          const target = DAY_IDX[day] ?? 1
-          const curr = today.getDay()
-          const daysAhead = (target - curr + 7) % 7 || 7
-          for (let week = 0; week < 4; week++) {
-            const d = new Date(today)
-            d.setDate(today.getDate() + daysAhead + week * 7)
-            slotRows.push({
-              listing_id: listing.id,
-              name: sl.name ?? '',
-              date: d.toISOString().slice(0, 10),
-              time: sl.time ?? '09:00',
-              dur: sl.dur ?? '60 min',
-              spots: sl.spots ?? 10,
-              booked: 0,
-              credits: sl.cr ?? record.cr ?? 3,
-              acuity_type_id: sl.acuity_type_id ?? null,
-            })
+        // ── Create slot instances from onboarding slot data ───────
+        // businesses.slots is a JSONB array: [{id, name, days:["Mon","Tue"], time, dur, spots, cr}]
+        // Expand each recurring slot into concrete date instances for the next 4 weeks.
+        const today = new Date()
+        const slotRows: object[] = []
+
+        for (const sl of (record.slots ?? [])) {
+          for (const day of (sl.days ?? [])) {
+            const target = DAY_IDX[day] ?? 1
+            const curr = today.getDay()
+            const daysAhead = (target - curr + 7) % 7 || 7
+            for (let week = 0; week < 4; week++) {
+              const d = new Date(today)
+              d.setDate(today.getDate() + daysAhead + week * 7)
+              slotRows.push({
+                listing_id: listingId,
+                name: sl.name ?? '',
+                date: d.toISOString().slice(0, 10),
+                time: sl.time ?? '09:00',
+                dur: sl.dur ?? '60 min',
+                spots: sl.spots ?? 10,
+                booked: 0,
+                credits: sl.cr ?? record.cr ?? 3,
+                acuity_type_id: sl.acuity_type_id ?? null,
+              })
+            }
           }
         }
-      }
 
-      if (slotRows.length > 0) {
-        const { error: slotsError } = await supabase.from('slots').insert(slotRows)
-        if (slotsError) {
-          console.error('Failed to create slots:', slotsError.message)
-        } else {
-          console.log('Created', slotRows.length, 'slot instances for listing', listing.id)
+        if (slotRows.length > 0) {
+          const { error: slotsError } = await supabase.from('slots').insert(slotRows)
+          if (slotsError) {
+            console.error('Failed to create slots:', slotsError.message)
+          } else {
+            console.log('Created', slotRows.length, 'slot instances for listing', listingId)
+          }
         }
       }
     }

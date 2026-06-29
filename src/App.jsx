@@ -1,23 +1,30 @@
 import { supabase } from './supabase.js'
 import { useState, useEffect, useCallback, useRef } from "react";
 
-function useScrollable() {
-  const [scrollable, setScrollable] = useState(false);
+function useHasMoreBelow() {
+  // True only while the user has meaningful content still below the viewport.
+  // Was previously "is the page scrollable at all" which kept the button stuck
+  // on screen even after the user reached the bottom.
+  const [more, setMore] = useState(false);
   useEffect(() => {
     function check() {
-      setScrollable(document.documentElement.scrollHeight > window.innerHeight + 50);
+      const total = document.documentElement.scrollHeight;
+      const view  = window.innerHeight;
+      const y     = window.scrollY || document.documentElement.scrollTop || 0;
+      const distanceFromBottom = total - (y + view);
+      setMore(distanceFromBottom > 240); // hide once user is within ~one section of the bottom
     }
     check();
     window.addEventListener('resize', check);
-    window.addEventListener('scroll', check);
+    window.addEventListener('scroll', check, { passive: true });
     return () => { window.removeEventListener('resize', check); window.removeEventListener('scroll', check); };
   }, []);
-  return scrollable;
+  return more;
 }
 
-function ScrollDownBtn() {
-  const scrollable = useScrollable();
-  if (!scrollable) return null;
+function ScrollDownBtn({ enabled = true }) {
+  const hasMore = useHasMoreBelow();
+  if (!enabled || !hasMore) return null;
   function handleScroll() {
     const featured = document.getElementById("statement-strip");
     if (featured) {
@@ -250,19 +257,34 @@ function Pill({ label, active, onClick, color }) {
 }
 function Toast({ t }) {
   if (!t) return null;
-  // Welcome variant — longer message, multi-line, Forest Green on Alabaster.
-  // Used by the customer email-confirmation landing.
+  // Welcome variant — full-screen centred celebration overlay. Forest Green on
+  // Alabaster, champagne pop emoji on top. Used by the customer email-confirmation
+  // landing (?confirmed=true).
   if (t.type === "welcome") {
-    return <div style={{
-      position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:4000,
-      background:T.sage,color:T.bg,
-      padding:"14px 22px",borderRadius:10,
-      fontFamily:F.body,fontSize:13,fontWeight:500,lineHeight:1.55,
-      boxShadow:"0 10px 32px rgba(33,60,24,0.28)",
-      animation:"toastIn .28s ease",
-      maxWidth:"min(440px, calc(100vw - 32px))",
-      textAlign:"center",
-    }}>{t.msg}</div>;
+    return (
+      <div style={{
+        position:"fixed",inset:0,zIndex:4000,
+        display:"flex",alignItems:"center",justifyContent:"center",
+        padding:"clamp(16px,4vw,32px)",
+        background:"rgba(27,28,25,0.45)",
+        backdropFilter:"blur(4px)",
+        WebkitBackdropFilter:"blur(4px)",
+        animation:"fi .25s ease",
+      }}>
+        <div style={{
+          background:T.sage,color:T.bg,
+          padding:"clamp(28px,5vw,44px) clamp(24px,5vw,40px)",
+          borderRadius:20,
+          maxWidth:480,width:"100%",
+          textAlign:"center",
+          boxShadow:"0 24px 64px rgba(33,60,24,0.45)",
+          animation:"su .35s ease",
+        }}>
+          <div style={{fontSize:"clamp(48px,9vw,64px)",marginBottom:14,lineHeight:1}}>🍾</div>
+          <p style={{fontFamily:F.body,fontSize:"clamp(15px,2vw,17px)",fontWeight:500,lineHeight:1.55,margin:0,color:T.bg,letterSpacing:"-0.1px"}}>{t.msg}</p>
+        </div>
+      </div>
+    );
   }
   const bg = t.type==="gold"?T.ochre:t.type==="success"?T.sage:T.clay;
   return <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:4000,background:bg,color:"#fff",padding:"9px 20px",borderRadius:3,fontFamily:F.body,fontSize:12,fontWeight:600,boxShadow:"0 6px 22px rgba(0,0,0,.18)",animation:"toastIn .28s ease",whiteSpace:"nowrap"}}>{t.msg}</div>;
@@ -1749,6 +1771,161 @@ function RegCard({ children, title, subtitle }) {
   );
 }
 
+function PartnersPage({ onSetView }) {
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  const [openFaq, setOpenFaq] = useState(0);
+
+  const BENEFITS = [
+    {
+      title: "Reach new customers",
+      body:  "The Airbnb guest staying two weeks. Yacht crew in port for the night. The expat who just arrived. People actively searching for somewhere new to practice, sweat or unwind on the island.",
+      icon:  "✧",
+    },
+    {
+      title: "Fill your quieter sessions",
+      body:  "You control which slots you list. Drop in the mornings you have space, the afternoons that never quite fill. No conflict with your existing regulars and their booking system.",
+      icon:  "⌗",
+    },
+    {
+      title: "On your terms",
+      body:  "You set your own credit price. We agree payout terms with each partner individually so they fit how your venue works. No long contracts and no monthly fee.",
+      icon:  "◈",
+    },
+  ];
+
+  const STEPS = [
+    { n: "01", title: "Register your venue",      body: "Two minutes. Tell us your name, email and what kind of venue you run. We'll be in touch within two working days." },
+    { n: "02", title: "Complete your listing",    body: "We guide you through photos, classes, availability and pricing. Connect Acuity, paste an iCal feed, or manage your slots manually." },
+    { n: "03", title: "Go live and start booking",body: "Once we've reviewed your listing, it appears on the marketplace and members can start booking. Payouts go out every Friday." },
+  ];
+
+  const FAQ = [
+    {
+      q: "How does payment work?",
+      a: "You set your credit price. We agree the payout terms with each partner individually on the call before you go live, based on your category and price point. Members redeem credits at your venue, we settle every Friday.",
+    },
+    {
+      q: "What booking systems do you integrate with?",
+      a: "Today we integrate directly with Acuity Scheduling and any calendar that exports an iCal feed, which includes Google Calendar, Apple Calendar and Outlook. Mindbody, Glofox, Eversports, Fresha and Momoyoga are next on the roadmap. If you're on something else, you can list manually and we'll prioritise integrations based on what partners are using.",
+    },
+    {
+      q: "When do I get paid?",
+      a: "Payouts go out every Friday, direct to the IBAN you set in your dashboard. Each payout covers credits redeemed at your venue in the prior week, net of the agreed payout terms. You can download a statement for each payout from your dashboard.",
+    },
+    {
+      q: "Is there a contract?",
+      a: "No long contracts and no exit fees. You can pause your listing or leave at any time. We're building a marketplace that works for partners over the long term, not locking you in.",
+    },
+  ];
+
+  const card     = { background:"#fff", border:"1px solid rgba(195,200,188,0.3)", borderRadius:16, padding:"clamp(22px,3.5vw,32px)", boxShadow:"0 1px 8px rgba(0,0,0,0.04)" };
+  const sectionH = { fontFamily:F2, fontSize:"clamp(22px,3vw,32px)", fontWeight:800, color:"#213C18", letterSpacing:"-1px", margin:"0 0 12px" };
+  const sectionLead = { fontFamily:F2, fontSize:"clamp(14px,1.6vw,16px)", color:"#43483F", lineHeight:1.65, margin:"0 0 32px", maxWidth:560 };
+
+  const goRegister = () => onSetView("biz-portal");
+
+  return (
+    <div style={{paddingTop:"clamp(24px,4vw,48px)",paddingBottom:"calc(120px + env(safe-area-inset-bottom))",background:"#FBF9F4"}}>
+
+      {/* ── HERO ───────────────────────────────────────── */}
+      <section style={{maxWidth:1100,margin:"0 auto",padding:"clamp(24px,5vw,56px) clamp(16px,4vw,32px)"}}>
+        <div style={{maxWidth:760}}>
+          <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#6F5B44",letterSpacing:"4px",textTransform:"uppercase",display:"block",marginBottom:18}}>For wellness venues</span>
+          <h1 style={{fontFamily:F2,fontSize:"clamp(34px,6vw,56px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:"0 0 18px",lineHeight:1.02}}>Partner with Wello.</h1>
+          <p style={{fontFamily:F2,fontSize:"clamp(15px,1.9vw,19px)",color:"#43483F",lineHeight:1.6,margin:"0 0 32px",maxWidth:620,fontWeight:400}}>Join a growing network of wellness venues and reach visitors and locals who are actively looking for new experiences in Mallorca.</p>
+          <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+            <button onClick={goRegister}
+              style={{padding:"14px 30px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer",letterSpacing:"0.3px",boxShadow:"0 4px 14px rgba(33,60,24,0.2)"}}>
+              Register your venue
+            </button>
+            <button onClick={()=>{ const f = document.getElementById('partners-faq'); if (f) f.scrollIntoView({behavior:"smooth",block:"start"}); }}
+              style={{padding:"14px 24px",background:"transparent",color:"#213C18",border:"1px solid #213C18",borderRadius:999,fontFamily:F2,fontSize:14,fontWeight:600,cursor:"pointer"}}>
+              Read the FAQ
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* ── BENEFITS (3 cards) ─────────────────────────── */}
+      <section style={{maxWidth:1100,margin:"0 auto",padding:"clamp(8px,2vw,16px) clamp(16px,4vw,32px) clamp(40px,6vw,72px)"}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,260px),1fr))",gap:16}}>
+          {BENEFITS.map(b => (
+            <div key={b.title} style={card}>
+              <div style={{width:44,height:44,borderRadius:12,background:"#CAECBA",color:"#213C18",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:20,fontWeight:800,marginBottom:18}}>{b.icon}</div>
+              <h3 style={{fontFamily:F2,fontSize:"clamp(16px,2vw,19px)",fontWeight:700,color:"#213C18",letterSpacing:"-0.4px",margin:"0 0 10px"}}>{b.title}</h3>
+              <p style={{fontFamily:F2,fontSize:14,color:"#43483F",margin:0,lineHeight:1.65}}>{b.body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── HOW IT WORKS (3 steps) ─────────────────────── */}
+      <section style={{background:"#fff",borderTop:"1px solid rgba(195,200,188,0.3)",borderBottom:"1px solid rgba(195,200,188,0.3)",padding:"clamp(48px,7vw,88px) 0"}}>
+        <div style={{maxWidth:1100,margin:"0 auto",padding:"0 clamp(16px,4vw,32px)"}}>
+          <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#6F5B44",letterSpacing:"4px",textTransform:"uppercase",display:"block",marginBottom:14}}>How it works</span>
+          <h2 style={sectionH}>Three steps from sign-up to live.</h2>
+          <p style={sectionLead}>We've kept it deliberately simple. Most partners are listed within a week of registering.</p>
+
+          <ol style={{listStyle:"none",margin:0,padding:0,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,260px),1fr))",gap:16}}>
+            {STEPS.map(s => (
+              <li key={s.n} style={{...card, position:"relative"}}>
+                <span style={{fontFamily:F2,fontSize:32,fontWeight:800,color:"#CAECBA",letterSpacing:"-1px",lineHeight:1,display:"block",marginBottom:14}}>{s.n}</span>
+                <h3 style={{fontFamily:F2,fontSize:"clamp(16px,2vw,19px)",fontWeight:700,color:"#213C18",letterSpacing:"-0.4px",margin:"0 0 10px"}}>{s.title}</h3>
+                <p style={{fontFamily:F2,fontSize:14,color:"#43483F",margin:0,lineHeight:1.65}}>{s.body}</p>
+              </li>
+            ))}
+          </ol>
+
+          <div style={{textAlign:"center",marginTop:36}}>
+            <button onClick={goRegister}
+              style={{padding:"14px 30px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer",letterSpacing:"0.3px",boxShadow:"0 4px 14px rgba(33,60,24,0.2)"}}>
+              Register your venue
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FAQ ───────────────────────────────────────── */}
+      <section id="partners-faq" style={{maxWidth:760,margin:"0 auto",padding:"clamp(48px,7vw,88px) clamp(16px,4vw,32px) 0"}}>
+        <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#6F5B44",letterSpacing:"4px",textTransform:"uppercase",display:"block",marginBottom:14}}>Common questions</span>
+        <h2 style={sectionH}>FAQ.</h2>
+        <p style={sectionLead}>Anything we haven't covered, email us at <a href="mailto:hello@wello-wellness.com" style={{color:"#213C18",fontWeight:600,textDecoration:"underline"}}>hello@wello-wellness.com</a>.</p>
+
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {FAQ.map((item, i) => {
+            const open = openFaq === i;
+            return (
+              <div key={i} style={{background:"#fff",border:"1px solid rgba(195,200,188,0.3)",borderRadius:14,overflow:"hidden",boxShadow:open?"0 4px 14px rgba(33,60,24,0.06)":"0 1px 4px rgba(0,0,0,0.03)",transition:"box-shadow .18s"}}>
+                <button onClick={()=>setOpenFaq(open ? -1 : i)}
+                  style={{width:"100%",textAlign:"left",background:"transparent",border:"none",padding:"18px 20px",fontFamily:F2,fontSize:"clamp(14px,1.7vw,16px)",fontWeight:700,color:"#213C18",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",gap:16,letterSpacing:"-0.2px"}}>
+                  <span>{item.q}</span>
+                  <span style={{flexShrink:0,fontSize:18,color:"#54584F",transform:open?"rotate(180deg)":"none",transition:"transform .2s"}}>⌄</span>
+                </button>
+                {open && (
+                  <div style={{padding:"0 20px 20px"}}>
+                    <p style={{fontFamily:F2,fontSize:14,color:"#43483F",margin:0,lineHeight:1.7}}>{item.a}</p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ── FOOT CTA ──────────────────────────────────── */}
+      <section style={{maxWidth:760,margin:"0 auto",padding:"clamp(36px,6vw,72px) clamp(16px,4vw,32px) 0",textAlign:"center"}}>
+        <h2 style={{fontFamily:F2,fontSize:"clamp(22px,3vw,30px)",fontWeight:800,color:"#213C18",letterSpacing:"-0.8px",margin:"0 0 12px"}}>Ready to list your venue?</h2>
+        <p style={{fontFamily:F2,fontSize:15,color:"#43483F",lineHeight:1.6,margin:"0 0 24px"}}>Two minutes to register. We'll be in touch within two working days.</p>
+        <button onClick={goRegister}
+          style={{padding:"14px 32px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer",letterSpacing:"0.3px",boxShadow:"0 4px 14px rgba(33,60,24,0.2)"}}>
+          Register your venue
+        </button>
+      </section>
+
+    </div>
+  );
+}
+
 function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
   // Registration wizard state
   const [registered, setRegistered] = useState(false);
@@ -1986,293 +2163,505 @@ function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
       <p style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300}}>Questions? Email us at <span style={{color:T.sage}}>hello@wello-wellness.com</span></p>
     </div>
   );
-
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════════
-// PAGE: ADD CREDITS
-// ═══════════════════════════════════════════════════════════════
-function CreditsPage({ credits, onPurchase, listings=[] }) {
-  // Stored as string so the user can clear it / type freely without React clobbering
-  // mid-typing. parseInt'd for display + math via `customCrNum` below.
-  const [customCr, setCustomCr] = useState("10");
-  const customCrNum = Math.max(1, parseInt(customCr) || 0);
-  const CR_MAX = 5000; // Upper bound: avoids a "type 99999999" denial-of-service on the renderer.
-  const [pay, setPay]   = useState("card");
-  const [step, setStep] = useState(1);
-  const [card, setCard] = useState({number:"",expiry:"",cvc:"",name:""});
-  const [showPricing, setShowPricing] = useState(false);
+function CreditsPage({ credits, listings=[] }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  const PRICE_PER_CREDIT = 1; // EUR. 1 credit equals one euro of credit value.
 
-  const fmtCard=v=>v.replace(/\D/g,"").slice(0,16).replace(/(.{4})/g,"$1 ").trim();
-  const fmtExp=v=>{const d=v.replace(/\D/g,"").slice(0,4);return d.length>2?d.slice(0,2)+"/"+d.slice(2):d;};
-  const expiryDate=()=>{const d=new Date();d.setMonth(d.getMonth()+6);return d.toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});};
-  const totalPrice = +(customCrNum * 1).toFixed(2);
-  const serviceFee = +Math.min(totalPrice * 0.10, 5).toFixed(2);
-  const grandTotal = +(totalPrice + serviceFee).toFixed(2);
+  // Phases:
+  //   select     default landing. Clean selector. Concierge link below.
+  //   opener     concierge screen 1.
+  //   followup   concierge screen 2 (Claude has asked a question).
+  //   building   loading screen while Claude builds the itinerary.
+  //   recommend  concierge screen 3 (itinerary shown).
+  const [phase, setPhase]                 = useState("select");
+  const [tripAnswer, setTripAnswer]       = useState("");
+  const [followupQuestion, setFollowupQuestion] = useState("");
+  const [followupAnswer, setFollowupAnswer] = useState("");
+  const [reco, setReco]                   = useState(null);
+  const [loading, setLoading]             = useState(false);
+  const [wizardErr, setWizardErr]         = useState("");
+  // Quantity stored as string so the user can clear it and type freely.
+  const [quantity, setQuantity]           = useState("0");
+  const [buyLoading, setBuyLoading]       = useState(false);
 
-  const StepBar = () => (
-    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:32}}>
-      {[["1","Choose credits"],["2","Payment"],["3","Done"]].map(([n,l],i)=>(
-        <div key={n} style={{display:"flex",alignItems:"center",gap:8}}>
-          <div style={{display:"flex",alignItems:"center",gap:6}}>
-            <div style={{width:24,height:24,borderRadius:"50%",background:step>=i+1?"#213C18":"#E4E2DD",color:step>=i+1?"#fff":"#54584F",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:10,fontWeight:700,transition:"background .2s"}}>{step>i+1?"✓":n}</div>
-            <span style={{fontFamily:F2,fontSize:12,color:step===i+1?"#213C18":"#54584F",fontWeight:step===i+1?700:400}}>{l}</span>
-          </div>
-          {i<2&&<div style={{width:32,height:1,background:step>i+1?"#213C18":"#E4E2DD",transition:"background .2s"}}/>}
-        </div>
-      ))}
-    </div>
-  );
+  const qtyNum          = Math.max(0, parseInt(quantity) || 0);
+  const creditsSubtotal = qtyNum * PRICE_PER_CREDIT;
+  const serviceFee      = Math.min(creditsSubtotal * 0.10, 50);
+  const grandTotal      = creditsSubtotal + serviceFee;
+
+  // Resolve a real Mallorca venue photo for each itinerary card.
+  // Prefers an approved-listing photo whose category matches the activity
+  // keyword. Falls back to a category-appropriate Unsplash placeholder.
+  const ACTIVITY_PLACEHOLDERS = {
+    pilates:   "https://images.unsplash.com/photo-1518611012118-696072aa579a?w=900&q=80",
+    yoga:      "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=900&q=80",
+    meditation:"https://images.unsplash.com/photo-1508672019048-805c876b67e2?w=900&q=80",
+    spa:       "https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=900&q=80",
+    pool:      "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=900&q=80",
+    gym:       "https://images.unsplash.com/photo-1540497077202-7c8a3999166f?w=900&q=80",
+    fitness:   "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=900&q=80",
+    surf:      "https://images.unsplash.com/photo-1515016886654-94c06b8a8c7d?w=900&q=80",
+    paddle:    "https://images.unsplash.com/photo-1517438476312-10d79c077509?w=900&q=80",
+    kayak:     "https://images.unsplash.com/photo-1463694579291-3bb6c1ddd23a?w=900&q=80",
+    sail:      "https://images.unsplash.com/photo-1500627965408-b5f2c8793f8c?w=900&q=80",
+    hike:      "https://images.unsplash.com/photo-1551632811-561732d1e306?w=900&q=80",
+    walk:      "https://images.unsplash.com/photo-1551632811-561732d1e306?w=900&q=80",
+    cycle:     "https://images.unsplash.com/photo-1517649763962-0c623066013b?w=900&q=80",
+    bike:      "https://images.unsplash.com/photo-1517649763962-0c623066013b?w=900&q=80",
+    run:       "https://images.unsplash.com/photo-1486218119243-13883505764c?w=900&q=80",
+    tennis:    "https://images.unsplash.com/photo-1622279457486-62dcc4a431d6?w=900&q=80",
+    padel:     "https://images.unsplash.com/photo-1622279457486-62dcc4a431d6?w=900&q=80",
+    massage:   "https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=900&q=80",
+    breath:    "https://images.unsplash.com/photo-1508672019048-805c876b67e2?w=900&q=80",
+  };
+  const DEFAULT_IMG = "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=900&q=80";
+
+  function imgForActivity(activityName) {
+    const lower = (activityName || '').toLowerCase();
+    if (!lower) return DEFAULT_IMG;
+    const match = listings.find(l => {
+      const cat  = (l.cat  || '').toLowerCase();
+      const name = (l.name || '').toLowerCase();
+      return (cat && (lower.includes(cat) || cat.includes(lower.split(/[\s(,/]/)[0]))) ||
+             (name && lower.includes(name));
+    });
+    if (match?.img) return match.img;
+    for (const [key, url] of Object.entries(ACTIVITY_PLACEHOLDERS)) {
+      if (lower.includes(key)) return url;
+    }
+    return DEFAULT_IMG;
+  }
+
+  // Wizard screen 1 to screen 2: ask Claude for one warm follow-up question.
+  async function sendOpener() {
+    if (!tripAnswer.trim()) return;
+    setLoading(true); setWizardErr("");
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-chat', {
+        body: {
+          system: `You are Wello's wellness concierge for Mallorca, Spain. The user has just told you a bit about their time on the island. Ask ONE warm, specific follow-up question that surfaces either (a) their main wellness goal for the trip (recover, build strength, gain flexibility, clear the head, sleep better, try something new) OR (b) a specific adventure they might want to try (sunrise hike up Cap Formentor, paddleboarding in Pollença bay, sunset yoga in Deià, padel under the lights, a thermal spa morning). Mention Mallorca naturally. Maximum 2 sentences. Just the question, no preamble. No exclamation marks. No em dashes.`,
+          messages: [{ role: 'user', content: tripAnswer.trim() }],
+          max_tokens: 220,
+        },
+      });
+      if (error) throw new Error(error.message);
+      const text = (data?.content || []).map(b => b.text || '').join('').trim();
+      if (!text) throw new Error('Empty follow-up');
+      setFollowupQuestion(text);
+      setPhase("followup");
+    } catch (e) {
+      console.error('opener to followup failed:', e);
+      setWizardErr("Sorry, the concierge is taking a moment. Try again or choose credits manually.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Wizard screen 2 to screen 3: ask Claude for a single personalised itinerary.
+  async function sendFollowup() {
+    if (!followupAnswer.trim()) return;
+    setLoading(true); setWizardErr("");
+    setPhase("building");
+    try {
+      const { data, error } = await supabase.functions.invoke('ai-chat', {
+        body: {
+          system: `You are Wello's wellness concierge for Mallorca, Spain. Wello is a wellness pass that lets people book yoga, pilates, spa, paddleboarding, gym, meditation and other wellness experiences across Mallorca using credits. Each credit costs one euro. Based on the user's two answers, build ONE personalised wellness itinerary for their time in Mallorca.
+
+STRICT OUTPUT RULES (read carefully):
+- Respond with raw JSON only. No prose before or after.
+- No "Perfect", no "Here is your itinerary", no greeting outside the JSON, no markdown code fences.
+- The first character of your response must be a curly brace and the last character must be a curly brace.
+- The warmth lives inside the "greeting" field, not before the JSON.
+- No exclamation marks anywhere. No em dashes anywhere.
+
+JSON shape:
+{
+  "greeting": "one warm, personalised sentence addressing what they told you",
+  "itinerary": [
+    {
+      "day": "e.g. Tuesday morning",
+      "activity": "e.g. Reformer Pilates",
+      "description": "one sentence on why this suits them specifically",
+      "credits": 20
+    }
+  ],
+  "total_credits": 80,
+  "reasoning": "one short sentence on the overall thinking",
+  "membership_nudge": true or false based on whether they seem long-stay or resident
+}
+
+Keep itinerary to 3 to 5 activities. Credit costs (1 credit equals 1 euro): yoga or pilates 15 to 25 credits, spa 50 to 80 credits, hotel pool day 30 to 50 credits, water sports 30 to 40 credits, gym day pass 12 to 18 credits, meditation 10 to 15 credits, private instructor 40 to 60 credits. Be specific to Mallorca: mention the coast, the light, the Tramuntana, the pace of the island naturally.
+
+CRITICAL: every "credits" value and "total_credits" MUST be a single positive integer (for example 20, 80). Never an object, array, or breakdown like {per_week, per_month}. For long stays, pick a sensible weekly or monthly starting pack and set membership_nudge to true. Keep credits as plain integers.`,
+          messages: [
+            { role: 'user',      content: tripAnswer.trim() },
+            { role: 'assistant', content: followupQuestion },
+            { role: 'user',      content: followupAnswer.trim() },
+          ],
+          max_tokens: 900,
+        },
+      });
+      if (error) throw new Error(error.message);
+      const text = (data?.content || []).map(b => b.text || '').join('').trim();
+      // Defensively extract the JSON in case Claude prefaces with prose.
+      const stripped = text.replace(/```json|```/g, '').trim();
+      const start = stripped.indexOf('{');
+      const end   = stripped.lastIndexOf('}');
+      if (start === -1 || end === -1 || end <= start) {
+        console.error('followup: no JSON found in response:', text.slice(0, 300));
+        throw new Error('No JSON in recommender response');
+      }
+      const parsed = JSON.parse(stripped.slice(start, end + 1));
+      if (!parsed?.itinerary || !Array.isArray(parsed.itinerary)) {
+        throw new Error('Bad itinerary shape');
+      }
+      // Defensive coercion so React never tries to render a non-string field.
+      const toInt = (v, fallback = 0) => {
+        if (typeof v === 'number' && Number.isFinite(v)) return Math.max(0, Math.round(v));
+        if (typeof v === 'string') {
+          const n = parseInt(v.replace(/[^0-9]/g, ''), 10);
+          return Number.isFinite(n) ? Math.max(0, n) : fallback;
+        }
+        if (v && typeof v === 'object') {
+          for (const leaf of Object.values(v)) {
+            const n = toInt(leaf, NaN);
+            if (Number.isFinite(n) && n > 0) return n;
+          }
+        }
+        return fallback;
+      };
+      const safeItinerary = parsed.itinerary.map(it => ({
+        day:         typeof it?.day === 'string'         ? it.day         : '',
+        activity:    typeof it?.activity === 'string'    ? it.activity    : 'Wellness session',
+        description: typeof it?.description === 'string' ? it.description : '',
+        credits:     toInt(it?.credits, 0),
+      }));
+      const safeTotal = toInt(parsed.total_credits, safeItinerary.reduce((s, x) => s + x.credits, 0)) || 1;
+      const safeReco = {
+        greeting:         typeof parsed.greeting === 'string' ? parsed.greeting : '',
+        itinerary:        safeItinerary,
+        total_credits:    safeTotal,
+        reasoning:        typeof parsed.reasoning === 'string' ? parsed.reasoning : '',
+        membership_nudge: parsed.membership_nudge === true,
+      };
+      setReco(safeReco);
+      setPhase("recommend");
+    } catch (e) {
+      console.error('followup to recommendation failed:', e);
+      setWizardErr("Sorry, the concierge could not build your plan. Try again or choose credits manually.");
+      setPhase("followup");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function acceptRecommendation() {
+    if (reco?.total_credits) setQuantity(String(reco.total_credits));
+    setPhase("select");
+  }
+
+  function skipToSelector() {
+    setPhase("select");
+  }
+
+  function resetWizard() {
+    setTripAnswer(""); setFollowupQuestion(""); setFollowupAnswer("");
+    setReco(null); setWizardErr(""); setPhase("opener");
+  }
+
+  async function startCheckout() {
+    if (qtyNum < 1) return;
+    setBuyLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('create-checkout-session', {
+        body: { quantity: qtyNum, origin: window.location.origin },
+      });
+      if (error || !data?.url) {
+        console.error('create-checkout-session failed:', error?.message || data?.error);
+        setBuyLoading(false);
+        alert("Sorry, we could not open checkout. Please try again, or sign in if you have not yet.");
+        return;
+      }
+      window.location.href = data.url;
+    } catch (e) {
+      console.error('startCheckout error:', e);
+      setBuyLoading(false);
+      alert("Sorry, we could not open checkout. Please try again.");
+    }
+  }
+
+  // Shared styles
+  const card        = { background:"#fff", border:"1px solid rgba(195,200,188,0.3)", borderRadius:16, padding:"clamp(20px,4vw,32px)", boxShadow:"0 1px 8px rgba(0,0,0,0.04)" };
+  const textareaSt  = { width:"100%", minHeight:120, padding:"14px 16px", borderRadius:12, border:"1px solid rgba(195,200,188,0.5)", fontFamily:F2, fontSize:15, color:"#1B1C19", background:"#FBF9F4", outline:"none", boxSizing:"border-box", lineHeight:1.55, resize:"vertical" };
+  const primaryBtn  = (enabled) => ({ width:"100%", padding:"14px", background:enabled?"#213C18":"#E4E2DD", color:enabled?"#fff":"#54584F", border:"none", borderRadius:999, fontFamily:F2, fontSize:14, fontWeight:700, cursor:enabled?"pointer":"not-allowed", letterSpacing:"0.3px", boxShadow:enabled?"0 4px 14px rgba(33,60,24,0.2)":"none", transition:"all .15s" });
+  const subtleLink  = { width:"100%", marginTop:10, padding:"10px", background:"transparent", border:"none", color:"#54584F", fontFamily:F2, fontSize:12, fontWeight:500, cursor:"pointer", textDecoration:"underline" };
+  const skipLinkSt  = { display:"block", margin:"16px auto 0", padding:"8px 14px", background:"transparent", border:"none", color:"#54584F", fontFamily:F2, fontSize:12, fontWeight:500, cursor:"pointer", textDecoration:"underline", textAlign:"center" };
 
   return (
     <div style={{paddingTop:"clamp(24px,4vw,48px)",paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
-      {step===1&&(
-        <div style={{maxWidth:1100,margin:"0 auto",padding:"0 clamp(16px,4vw,32px)",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,340px),1fr))",gap:"clamp(20px,4vw,40px)",alignItems:"start"}}>
+      <div style={{maxWidth:720,margin:"0 auto",padding:"0 clamp(16px,4vw,32px)"}}>
 
-          {/* Left column */}
+        {/* Header (shown on every phase) */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:24,flexWrap:"wrap",gap:12}}>
           <div>
-            {/* Header */}
-            <div style={{marginBottom:36}}>
-              <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"4px",textTransform:"uppercase",display:"block",marginBottom:12}}>Your Pass</span>
-              <h1 style={{fontFamily:F2,fontSize:"clamp(28px,4vw,48px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:"0 0 12px",lineHeight:1}}>Top Up Your Pass</h1>
-              <p style={{fontFamily:F2,fontSize:16,color:"#54584F",maxWidth:440,lineHeight:1.6,margin:0}}>Load your Wello pass and use it across any studio, gym, spa or outdoor adventure.</p>
-            </div>
+            <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"4px",textTransform:"uppercase",display:"block",marginBottom:8}}>Your Pass</span>
+            <h1 style={{fontFamily:F2,fontSize:"clamp(26px,4vw,38px)",fontWeight:800,color:"#213C18",letterSpacing:"-1.3px",margin:0,lineHeight:1}}>
+              {phase === "select" ? "Choose your credits" : "Plan your time"}
+            </h1>
+          </div>
+          <div style={{background:"#213C18",borderRadius:999,padding:"10px 18px",color:"#fff"}}>
+            <span style={{fontFamily:F2,fontSize:10,letterSpacing:"2px",textTransform:"uppercase",color:"rgba(255,255,255,0.55)",marginRight:8}}>Balance</span>
+            <span style={{fontFamily:F2,fontSize:14,fontWeight:800}}>◈ {credits}</span>
+          </div>
+        </div>
 
-            {/* Balance card */}
-            <div style={{background:"#213C18",borderRadius:16,padding:"24px 28px",marginBottom:24,position:"relative",overflow:"hidden"}}>
-              <div style={{position:"absolute",top:-20,right:-20,width:120,height:120,borderRadius:"50%",background:"rgba(255,255,255,0.05)"}}/>
-              <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",letterSpacing:"3px",textTransform:"uppercase",marginBottom:8,fontWeight:600}}>Your balance</p>
-              <p style={{fontFamily:F2,fontSize:"clamp(28px,8vw,48px)",fontWeight:800,color:"#fff",letterSpacing:"-2px",margin:"0 0 6px",lineHeight:1}}>◈ {credits}</p>
-              <p style={{fontFamily:F2,fontSize:11,color:"rgba(255,255,255,0.4)",margin:0}}>10% fee included at checkout · no charges per booking</p>
-            </div>
+        {/* ════════ ENTRY POINT 1: SELECTOR ════════ */}
+        {phase === "select" && (
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
 
-            {/* Credit counter */}
-            <div style={{background:"#F5F3EE",borderRadius:16,padding:"36px",marginBottom:20,position:"relative",overflow:"hidden",textAlign:"center"}}>
-              <div style={{position:"absolute",top:-30,right:-30,width:180,height:180,borderRadius:"50%",background:"rgba(33,60,24,0.04)",filter:"blur(40px)"}}/>
-              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",fontWeight:500,marginBottom:24,position:"relative"}}>How many credits?</p>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:28,marginBottom:28,position:"relative"}}>
-                <button onClick={()=>setCustomCr(String(Math.max(1, customCrNum - 1)))}
-                  style={{width:"clamp(40px,10vw,52px)",height:"clamp(40px,10vw,52px)",borderRadius:"50%",background:"#fff",border:"1px solid rgba(195,200,188,0.3)",color:"#213C18",fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.06)",transition:"transform .15s"}}
-                  onMouseEnter={e=>e.target.style.transform="scale(1.05)"}
-                  onMouseLeave={e=>e.target.style.transform="scale(1)"}>−</button>
-                <div style={{textAlign:"center"}}>
-                  <input type="number" inputMode="numeric" min="1" max={CR_MAX} value={customCr}
-                    onChange={e=>{
-                      // Allow empty + free typing; cap raw input length so users
-                      // can't paste 9999999999 and bork the renderer.
-                      const raw = e.target.value.replace(/[^0-9]/g, "").slice(0,4);
-                      if (raw === "") { setCustomCr(""); return; }
-                      const v = parseInt(raw);
-                      setCustomCr(String(Math.min(CR_MAX, v)));
-                    }}
-                    onBlur={()=>{ if (customCr === "" || parseInt(customCr) < 1) setCustomCr("1"); }}
-                    style={{fontFamily:F2,fontSize:"clamp(48px,15vw,80px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",lineHeight:1,textAlign:"center",width:"clamp(100px,30vw,160px)",background:"transparent",border:"none",outline:"none"}}/>
-                  <p style={{fontFamily:F2,fontSize:12,color:"rgba(33,60,24,0.5)",fontWeight:600,letterSpacing:"3px",textTransform:"uppercase",margin:0}}>Credits</p>
+            {/* Optional itinerary recap if the user just came out of the concierge */}
+            {reco && (() => {
+              if (!reco.itinerary?.length) return null;
+              return (
+                <div style={card}>
+                  <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:10,gap:8,flexWrap:"wrap"}}>
+                    <span style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#213C18"}}>Wello's suggested plan</span>
+                    <button onClick={resetWizard} style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:12,fontWeight:500,cursor:"pointer",textDecoration:"underline"}}>Re-run the concierge</button>
+                  </div>
+                  {reco.greeting && <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 12px",fontStyle:"italic"}}>{reco.greeting}</p>}
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    {reco.itinerary.map((it, i) => (
+                      <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,padding:"6px 0",borderBottom:i<reco.itinerary.length-1?"1px solid rgba(195,200,188,0.25)":"none"}}>
+                        <div style={{flex:1,minWidth:0}}>
+                          <p style={{fontFamily:F2,fontSize:10,color:"#54584F",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 2px"}}>{it.day}</p>
+                          <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:0}}>{it.activity}</p>
+                        </div>
+                        <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",whiteSpace:"nowrap"}}>◈ {it.credits}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <button onClick={()=>setCustomCr(String(Math.min(CR_MAX, customCrNum + 1)))}
-                  style={{width:"clamp(40px,10vw,52px)",height:"clamp(40px,10vw,52px)",borderRadius:"50%",background:"#213C18",border:"none",color:"#fff",fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 14px rgba(33,60,24,0.3)",transition:"transform .15s"}}
-                  onMouseEnter={e=>e.target.style.transform="scale(1.05)"}
-                  onMouseLeave={e=>e.target.style.transform="scale(1)"}>+</button>
+              );
+            })()}
+
+            {/* Selector card */}
+            <div style={card}>
+              <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:14,textAlign:"center"}}>How many credits?</label>
+
+              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:20,marginBottom:10}}>
+                <button onClick={()=>setQuantity(String(Math.max(1, qtyNum - 1)))}
+                  style={{width:48,height:48,borderRadius:"50%",background:"#fff",border:"1px solid rgba(195,200,188,0.4)",color:"#213C18",fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 6px rgba(0,0,0,0.06)"}}>−</button>
+                <input type="text" inputMode="numeric" value={quantity}
+                  onChange={e => {
+                    const raw = e.target.value.replace(/[^0-9]/g, '').slice(0, 4);
+                    setQuantity(raw);
+                  }}
+                  onBlur={() => {
+                    const n = parseInt(quantity) || 0;
+                    if (n < 1) setQuantity("1");
+                    else if (n > 5000) setQuantity("5000");
+                    else setQuantity(String(n));
+                  }}
+                  style={{fontFamily:F2,fontSize:"clamp(40px,12vw,64px)",fontWeight:800,color:"#213C18",letterSpacing:"-1.5px",lineHeight:1,textAlign:"center",width:"clamp(110px,30vw,170px)",background:"transparent",border:"none",outline:"none"}}/>
+                <button onClick={()=>setQuantity(String(Math.min(5000, qtyNum + 1)))}
+                  style={{width:48,height:48,borderRadius:"50%",background:"#213C18",color:"#fff",border:"none",fontSize:22,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 12px rgba(33,60,24,0.3)"}}>+</button>
               </div>
-              {/* Quick add pills */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:8,position:"relative"}}>
-                {[1,5,10,25].map(n=>(
-                  <button key={n} onClick={()=>setCustomCr(String(Math.min(CR_MAX, customCrNum + n)))}
-                    style={{padding:"12px 8px",borderRadius:12,border:"1px solid rgba(195,200,188,0.3)",background:n===10?"#FADEC0":"#fff",color:n===10?"#766149":"#43483F",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer",transition:"all .15s"}}
-                    onMouseEnter={e=>{if(n!==10){e.target.style.background="#213C18";e.target.style.color="#fff";e.target.style.borderColor="#213C18";}}}
-                    onMouseLeave={e=>{if(n!==10){e.target.style.background="#fff";e.target.style.color="#43483F";e.target.style.borderColor="rgba(195,200,188,0.3)";}}}
-                  >+{n}</button>
+
+              {/* Live equation */}
+              <p style={{fontFamily:F2,fontSize:14,color:"#43483F",fontWeight:500,textAlign:"center",margin:"0 0 18px"}}>
+                {qtyNum} credits = €{creditsSubtotal.toFixed(0)}
+              </p>
+
+              {/* Quick-add pills */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:8,marginBottom:20}}>
+                {[5, 10, 20, 50].map(n => (
+                  <button key={n} onClick={()=>setQuantity(String(Math.min(5000, Math.max(1, qtyNum) + n)))}
+                    style={{padding:"10px 8px",borderRadius:10,border:"1px solid rgba(195,200,188,0.4)",background:"#fff",color:"#43483F",fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                    +{n}
+                  </button>
                 ))}
               </div>
-            </div>
 
-            {/* Info cards */}
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,160px),1fr))",gap:10,marginBottom:16}}>
-              {[{icon:"⏱",title:"6 Month Validity",desc:"Your pass is valid for 6 months from top-up."},{icon:"◈",title:"Use Anywhere",desc:"Use across any venue, class or experience."}].map(({icon,title,desc})=>(
-                <div key={title} style={{background:"rgba(228,226,221,0.5)",borderRadius:12,padding:"20px"}}>
-                  <div style={{fontSize:20,marginBottom:8}}>{icon}</div>
-                  <h4 style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>{title}</h4>
-                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.5}}>{desc}</p>
+              {/* Total breakdown */}
+              <div style={{background:"#F5F3EE",borderRadius:12,padding:"14px 16px",marginBottom:18}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6}}>
+                  <span style={{fontFamily:F2,fontSize:13,color:"#43483F"}}>{qtyNum} credits × €{PRICE_PER_CREDIT}</span>
+                  <span style={{fontFamily:F2,fontSize:13,color:"#43483F",fontWeight:600}}>€{creditsSubtotal.toFixed(2)}</span>
                 </div>
-              ))}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10,paddingBottom:10,borderBottom:"1px solid rgba(195,200,188,0.4)"}}>
+                  <span style={{fontFamily:F2,fontSize:12,color:"#54584F"}}>Service fee (10%, capped at €50)</span>
+                  <span style={{fontFamily:F2,fontSize:13,color:"#43483F",fontWeight:600}}>€{serviceFee.toFixed(2)}</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                  <span style={{fontFamily:F2,fontSize:13,color:"#213C18",fontWeight:700}}>Total</span>
+                  <span style={{fontFamily:F2,fontSize:22,fontWeight:800,color:"#213C18",letterSpacing:"-0.5px"}}>€{grandTotal.toFixed(2)}</span>
+                </div>
+              </div>
+
+              <button onClick={startCheckout} disabled={buyLoading || qtyNum < 1}
+                style={primaryBtn(qtyNum>=1 && !buyLoading)}>
+                {buyLoading ? "Opening checkout" : `Buy credits · €${grandTotal.toFixed(2)}`}
+              </button>
+
+              <p style={{fontFamily:F2,fontSize:11,color:"rgba(33,60,24,0.55)",textAlign:"center",margin:"14px 0 0"}}>Secure card payment. Credits valid 6 months. 1 credit = €{PRICE_PER_CREDIT}.</p>
             </div>
 
-            {/* Pricing toggle */}
-            <div style={{background:"rgba(250,222,192,0.3)",borderRadius:12,padding:"14px 18px"}}>
-              <button onClick={()=>setShowPricing(p=>!p)}
-                style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",background:"transparent",border:"none",cursor:"pointer",fontFamily:F2,fontSize:13,fontWeight:600,color:"#766149",padding:0}}>
-                <span>How credits work</span>
-                <span>{showPricing?"↑":"↓"}</span>
+            {/* Concierge entry link (subtle, below the selector) */}
+            <div style={{textAlign:"center",padding:"4px 0 8px"}}>
+              <button onClick={()=>setPhase("opener")}
+                style={{background:"transparent",border:"none",color:"#213C18",fontFamily:F2,fontSize:13,fontWeight:600,cursor:"pointer",padding:"6px 12px",textDecoration:"underline"}}>
+                Not sure how many? Let Wello plan your week →
               </button>
-              {showPricing&&(
-                <div style={{marginTop:14,paddingTop:14,borderTop:"1px solid rgba(182,142,92,0.2)"}}>
-                  {/* Three key facts */}
-                  {[
-                    ["◈","Credits are used to book sessions","Each listing shows its credit price upfront. No surprises at checkout."],
-                    ["→","10% service fee, max £5","Added once when you purchase credits — never charged again per booking."],
-                    ["◷","Valid for 6 months","Credits don't expire for 6 months from the date of purchase."],
-                  ].map(([icon,title,body])=>(
-                    <div key={title} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid rgba(182,142,92,0.1)"}}>
-                      <span style={{fontSize:16,flexShrink:0,marginTop:1,color:"#213C18"}}>{icon}</span>
-                      <div style={{textAlign:"left"}}>
-                        <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#1B1C19",margin:"0 0 2px"}}>{title}</p>
-                        <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.5}}>{body}</p>
+            </div>
+          </div>
+        )}
+
+        {/* ════════ CONCIERGE SCREEN 1: OPENER ════════ */}
+        {phase === "opener" && (
+          <div style={card}>
+            <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"#FADEC0",color:"#766149",padding:"5px 12px",borderRadius:999,marginBottom:18}}>
+              <span style={{fontSize:11}}>✦</span>
+              <span style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase"}}>Wello Concierge</span>
+            </div>
+            <h2 style={{fontFamily:F2,fontSize:"clamp(20px,3vw,26px)",fontWeight:700,color:"#213C18",letterSpacing:"-0.5px",margin:"0 0 12px",lineHeight:1.25}}>Let's plan your Mallorca wellness.</h2>
+            <p style={{fontFamily:F2,fontSize:15,color:"#43483F",lineHeight:1.55,margin:"0 0 22px"}}>Tell me about your time in Mallorca. Are you here for a few days, a longer stay, or do you live here? And what does wellness mean to you on this trip?</p>
+
+            <textarea value={tripAnswer} onChange={e => setTripAnswer(e.target.value)}
+              placeholder="e.g. five days with my partner. Mostly want to recover from a busy quarter, but would love to feel a bit stronger by the end too. Curious about paddleboarding."
+              style={textareaSt}
+              onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) sendOpener(); }}/>
+
+            {wizardErr && <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:"10px 0 0"}}>{wizardErr}</p>}
+
+            <button onClick={sendOpener} disabled={!tripAnswer.trim() || loading}
+              style={{...primaryBtn(!!tripAnswer.trim() && !loading), marginTop:14}}>
+              {loading ? "Listening" : "Continue"}
+            </button>
+
+            <button onClick={skipToSelector} style={skipLinkSt}>Skip and choose manually</button>
+          </div>
+        )}
+
+        {/* ════════ CONCIERGE SCREEN 2: FOLLOWUP ════════ */}
+        {phase === "followup" && (
+          <div style={card}>
+            <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"#FADEC0",color:"#766149",padding:"5px 12px",borderRadius:999,marginBottom:18}}>
+              <span style={{fontSize:11}}>✦</span>
+              <span style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase"}}>Wello Concierge</span>
+            </div>
+
+            <div style={{background:"#F5F3EE",borderRadius:12,padding:"12px 14px",marginBottom:16,fontFamily:F2,fontSize:13,color:"#43483F",fontStyle:"italic",lineHeight:1.5}}>
+              "{tripAnswer.trim()}"
+            </div>
+
+            <h2 style={{fontFamily:F2,fontSize:"clamp(18px,2.6vw,22px)",fontWeight:700,color:"#213C18",letterSpacing:"-0.4px",margin:"0 0 18px",lineHeight:1.35}}>{followupQuestion}</h2>
+
+            <textarea value={followupAnswer} onChange={e => setFollowupAnswer(e.target.value)}
+              placeholder="Type your answer."
+              style={textareaSt}
+              onKeyDown={e => { if (e.key === 'Enter' && e.metaKey) sendFollowup(); }}/>
+
+            {wizardErr && <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:"10px 0 0"}}>{wizardErr}</p>}
+
+            <button onClick={sendFollowup} disabled={!followupAnswer.trim() || loading}
+              style={{...primaryBtn(!!followupAnswer.trim() && !loading), marginTop:14}}>
+              {loading ? "Building your plan" : "Continue"}
+            </button>
+
+            <button onClick={()=>setPhase("opener")} style={subtleLink}>← Back</button>
+            <button onClick={skipToSelector} style={skipLinkSt}>Skip and choose manually</button>
+          </div>
+        )}
+
+        {/* ════════ LOADING SCREEN ════════ */}
+        {phase === "building" && (
+          <div style={card}>
+            <div style={{textAlign:"center",padding:"clamp(24px,4vw,40px) 12px"}}>
+              <div style={{display:"inline-flex",alignItems:"center",gap:6,padding:"14px 22px",background:"#F5F3EE",borderRadius:999,marginBottom:24}}>
+                {[0,1,2].map(i => (
+                  <span key={i} style={{width:9,height:9,borderRadius:"50%",background:"#213C18",display:"inline-block",animation:`pulse 1.2s ease-in-out infinite ${i*0.2}s`}}/>
+                ))}
+              </div>
+              <h2 style={{fontFamily:F2,fontSize:"clamp(20px,3vw,24px)",fontWeight:700,color:"#213C18",letterSpacing:"-0.4px",margin:"0 0 8px"}}>Building your itinerary</h2>
+              <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 auto",maxWidth:360,lineHeight:1.55}}>The concierge is reading your answers and picking the right mix of activities, venues and pacing for Mallorca. Usually about ten seconds.</p>
+              <div style={{padding:"12px 16px",background:"#FBF9F4",border:"1px solid rgba(195,200,188,0.4)",borderRadius:10,textAlign:"left",maxWidth:440,margin:"24px auto 0"}}>
+                <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>You said</p>
+                <p style={{fontFamily:F2,fontSize:12,color:"#43483F",margin:"0 0 4px",lineHeight:1.5,fontStyle:"italic"}}>"{tripAnswer.trim()}"</p>
+                <p style={{fontFamily:F2,fontSize:12,color:"#43483F",margin:0,lineHeight:1.5,fontStyle:"italic"}}>"{followupAnswer.trim()}"</p>
+              </div>
+              <button onClick={skipToSelector} style={skipLinkSt}>Skip and choose manually</button>
+            </div>
+          </div>
+        )}
+
+        {/* ════════ CONCIERGE SCREEN 3: RECOMMENDATION ════════ */}
+        {phase === "recommend" && reco && (
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
+            <div style={card}>
+              <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"#FADEC0",color:"#766149",padding:"5px 12px",borderRadius:999,marginBottom:14}}>
+                <span style={{fontSize:11}}>✦</span>
+                <span style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase"}}>Your suggested itinerary</span>
+              </div>
+              <p style={{fontFamily:F2,fontSize:15,color:"#213C18",lineHeight:1.55,margin:"0 0 22px",fontWeight:500}}>{reco.greeting}</p>
+
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                {reco.itinerary.map((item, i) => (
+                  <div key={i} style={{background:"#fff",border:"1px solid rgba(195,200,188,0.3)",borderRadius:14,overflow:"hidden",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
+                    <div style={{position:"relative",paddingBottom:"42%",background:"#E4E2DD"}}>
+                      <img src={imgForActivity(item.activity)} alt={item.activity}
+                        loading="lazy"
+                        onError={e => { e.target.src = DEFAULT_IMG; }}
+                        style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
+                      <div style={{position:"absolute",top:10,left:10,background:"rgba(255,255,255,0.92)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",color:"#213C18",borderRadius:999,padding:"4px 10px",border:"1px solid rgba(195,200,188,0.4)"}}>
+                        <span style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.2px",textTransform:"uppercase"}}>{item.day}</span>
+                      </div>
+                      <div style={{position:"absolute",top:10,right:10,background:"rgba(33,60,24,0.95)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",color:"#fff",borderRadius:999,padding:"4px 12px",boxShadow:"0 2px 6px rgba(0,0,0,0.15)"}}>
+                        <span style={{fontFamily:F2,fontSize:13,fontWeight:800,whiteSpace:"nowrap"}}>◈ {item.credits}</span>
                       </div>
                     </div>
-                  ))}
+                    <div style={{padding:"14px 16px"}}>
+                      <p style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#1B1C19",margin:"0 0 4px",letterSpacing:"-0.2px"}}>{item.activity}</p>
+                      <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.55}}>{item.description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
 
-                  {/* Live category price ranges from listings */}
-                  {listings.length > 0 && (()=>{
-                    const cats = {};
-                    listings.forEach(l=>{
-                      if(!cats[l.cat]) cats[l.cat] = [];
-                      cats[l.cat].push(l.cr);
-                    });
-                    return (
-                      <div style={{marginTop:12}}>
-                        <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#54584F",textTransform:"uppercase",letterSpacing:"1.5px",margin:"0 0 8px"}}>Live prices on Wello</p>
-                        <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                          {Object.entries(cats).map(([cat,crs])=>{
-                            const min=Math.min(...crs), max=Math.max(...crs);
-                            return (
-                              <div key={cat} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid rgba(182,142,92,0.08)"}}>
-                                <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0}}>{cat}</p>
-                                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",margin:0}}>◈{min}{min!==max?`–◈${max}`:""}</p>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div style={{marginTop:8,display:"flex",alignItems:"center",gap:5}}>
-                          <span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block",flexShrink:0}}/>
-                          <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>Prices set by venues · updated in real time</p>
-                        </div>
-                      </div>
-                    );
-                  })()}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginTop:18,paddingTop:16,borderTop:"1px solid rgba(195,200,188,0.3)",flexWrap:"wrap",gap:8}}>
+                <span style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F"}}>Suggested total</span>
+                <div style={{textAlign:"right"}}>
+                  <p style={{fontFamily:F2,fontSize:30,fontWeight:800,color:"#213C18",letterSpacing:"-1px",margin:0,lineHeight:1}}>◈ {reco.total_credits}</p>
+                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"4px 0 0"}}>€{(reco.total_credits * PRICE_PER_CREDIT).toFixed(0)}</p>
                 </div>
+              </div>
+
+              {reco.reasoning && (
+                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"14px 0 0",lineHeight:1.55,fontStyle:"italic"}}>{reco.reasoning}</p>
               )}
             </div>
-          </div>
 
-          {/* Right — sticky order summary */}
-          <div style={{position:"sticky",top:80}}>
-            <div style={{background:"#fff",borderRadius:16,padding:"32px",boxShadow:"0 12px 32px rgba(27,28,25,0.06)",border:"1px solid rgba(195,200,188,0.2)"}}>
-              <h3 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:"#213C18",margin:"0 0 24px",letterSpacing:"-0.5px"}}>Order Summary</h3>
-              <div style={{display:"flex",flexDirection:"column",gap:0}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",paddingBottom:12}}>
-                  <div>
-                    <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 4px"}}>Credits</p>
-                    <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#213C18",margin:0}}>{customCrNum} credits</p>
-                  </div>
-                  <p style={{fontFamily:F2,fontSize:15,fontWeight:600,color:"#213C18",margin:0}}>€{totalPrice}</p>
-                </div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderTop:"1px solid rgba(195,200,188,0.2)"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:0}}>Service fee</p>
-                    <span style={{fontFamily:F2,fontSize:10,color:"#A3B18A",background:"rgba(163,177,138,0.15)",padding:"2px 7px",borderRadius:999}}>10% · max €5</span>
-                  </div>
-                  <p style={{fontFamily:F2,fontSize:15,fontWeight:600,color:"#213C18",margin:0}}>€{serviceFee}</p>
-                </div>
-                <div style={{padding:"12px 0 24px",borderTop:"1px solid rgba(195,200,188,0.2)",borderBottom:"2px solid rgba(33,60,24,0.05)"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-                    <span style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#213C18"}}>Total due</span>
-                    <div style={{textAlign:"right"}}>
-                      <span style={{fontFamily:F2,fontSize:40,fontWeight:800,color:"#213C18",letterSpacing:"-2px"}}>€{grandTotal}</span>
-                      <p style={{fontFamily:F2,fontSize:10,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",margin:"4px 0 0"}}>{customCrNum} credits · no booking fees</p>
-                    </div>
-                  </div>
-                </div>
-                <div style={{paddingTop:24}}>
-                  <button onClick={()=>setStep(2)}
-                    style={{width:"100%",padding:"18px 0",borderRadius:999,background:"#213C18",color:"#fff",border:"none",fontFamily:F2,fontSize:16,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:10,boxShadow:"0 4px 14px rgba(33,60,24,0.2)",transition:"transform .15s"}}
-                    onMouseEnter={e=>e.currentTarget.style.transform="scale(1.02)"}
-                    onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
-                    <span>Continue to Payment</span><span>→</span>
-                  </button>
-                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",textAlign:"center",margin:"16px 0 0",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
-                    <span>🔒</span> Secure encrypted checkout
-                  </p>
-                </div>
+            {/* Membership nudge for long-stay folks */}
+            {reco.membership_nudge && (
+              <div style={{background:"#FFF5E6",border:"1px solid #DCC2A6",borderRadius:14,padding:"16px 18px"}}>
+                <p style={{fontFamily:F2,fontSize:14,color:"#766149",margin:"0 0 10px",lineHeight:1.5,fontWeight:600}}>Sounds like you're here for a while. A monthly membership might work out better.</p>
+                <button onClick={()=>{ alert("Membership info coming soon. Drop us a line at hello@wello-wellness.com for now."); }}
+                  style={{background:"transparent",border:"1px solid #6F5B44",color:"#6F5B44",borderRadius:999,padding:"7px 16px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                  Tell me more
+                </button>
               </div>
-            </div>
-            <p style={{fontFamily:F2,fontSize:12,color:"#54584F",textAlign:"center",marginTop:16}}>Credits expire on <strong style={{color:"#213C18"}}>{expiryDate()}</strong></p>
-          </div>
-        </div>
-      )}
+            )}
 
-      {/* Step 2 */}
-      {step===2&&(
-        <div style={{maxWidth:520,margin:"0 auto",padding:"0 32px"}}>
-          {StepBar()}
-          <button onClick={()=>setStep(1)} style={{display:"flex",alignItems:"center",gap:6,background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:13,cursor:"pointer",marginBottom:24,padding:0}}
-            onMouseEnter={e=>e.currentTarget.style.color="#213C18"} onMouseLeave={e=>e.currentTarget.style.color="#54584F"}>← Back</button>
-          <div style={{background:"#213C18",borderRadius:16,padding:"20px 24px",marginBottom:24,display:"flex",justifyContent:"space-between",alignItems:"center",position:"relative",overflow:"hidden"}}>
-            <div style={{position:"absolute",right:16,top:8,opacity:0.06,fontSize:60,color:"#fff"}}>◈</div>
-            <div>
-              <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",letterSpacing:"3px",textTransform:"uppercase",marginBottom:6,fontWeight:600}}>Order summary</p>
-              <p style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#fff",margin:"0 0 2px"}}>◈ {customCrNum} credits · Expires {expiryDate()}</p>
-            </div>
-            <p style={{fontFamily:F2,fontSize:24,fontWeight:800,color:"#fff",letterSpacing:"-1px",margin:0}}>€{totalPrice}</p>
+            <button onClick={acceptRecommendation} style={primaryBtn(true)}>
+              Looks good
+            </button>
+            <button onClick={()=>setPhase("followup")} style={subtleLink}>Adjust my answers</button>
+            <button onClick={skipToSelector} style={skipLinkSt}>Skip and choose manually</button>
           </div>
-          <h2 style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"3px",textTransform:"uppercase",margin:"0 0 14px"}}>Payment method</h2>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,160px),1fr))",gap:8,marginBottom:16}}>
-            {PAY.map(pm=>(
-              <div key={pm.id} onClick={()=>setPay(pm.id)}
-                style={{border:`2px solid ${pay===pm.id?"#213C18":"rgba(195,200,188,0.3)"}`,borderRadius:12,padding:"14px 16px",cursor:"pointer",background:pay===pm.id?"rgba(33,60,24,0.04)":"#fff",display:"flex",alignItems:"center",gap:10,transition:"all .15s"}}>
-                <span style={{fontSize:16,fontWeight:700,color:pay===pm.id?"#213C18":"#54584F"}}>{pm.id==="card"?"▬":pm.id==="apple"?"⌘":pm.id==="google"?"G":"₱"}</span>
-                <div>
-                  <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:pay===pm.id?"#213C18":"#1B1C19",margin:"0 0 2px"}}>{pm.label}</p>
-                  <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>{pm.sub}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-          {pay==="card"&&(
-            <div style={{background:"#fff",borderRadius:12,border:"1px solid rgba(195,200,188,0.3)",padding:"20px",marginBottom:16,display:"flex",flexDirection:"column",gap:14}}>
-              {[{l:"Cardholder Name",k:"name",p:"Jane Smith",tf:v=>v},{l:"Card Number",k:"number",p:"4242 4242 4242 4242",tf:fmtCard}].map(f=>(
-                <div key={f.k}>
-                  <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:6}}>{f.l}</label>
-                  <input placeholder={f.p} value={card[f.k]} onChange={e=>setCard(p=>({...p,[f.k]:f.tf(e.target.value)}))}
-                    style={{width:"100%",border:"1px solid rgba(195,200,188,0.4)",borderRadius:8,padding:"12px 16px",fontFamily:F2,fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s"}}
-                    onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.4)"}/>
-                </div>
-              ))}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                {[{l:"Expiry",k:"expiry",p:"MM/YY",tf:fmtExp},{l:"CVC",k:"cvc",p:"123",tf:v=>v.replace(/\D/g,"").slice(0,3)}].map(f=>(
-                  <div key={f.k}>
-                    <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:6}}>{f.l}</label>
-                    <input placeholder={f.p} value={card[f.k]} onChange={e=>setCard(p=>({...p,[f.k]:f.tf(e.target.value)}))}
-                      style={{width:"100%",border:"1px solid rgba(195,200,188,0.4)",borderRadius:8,padding:"12px 16px",fontFamily:F2,fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s"}}
-                      onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.4)"}/>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          <button onClick={()=>{onPurchase({cr:customCrNum,price:totalPrice});setStep(3);}}
-            style={{width:"100%",padding:"18px 0",borderRadius:999,background:"#213C18",color:"#fff",border:"none",fontFamily:F2,fontSize:16,fontWeight:700,cursor:"pointer",boxShadow:"0 4px 14px rgba(33,60,24,0.2)",transition:"transform .15s"}}
-            onMouseEnter={e=>e.currentTarget.style.transform="scale(1.02)"}
-            onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
-            Pay €{totalPrice} →
-          </button>
-        </div>
-      )}
+        )}
 
-      {/* Step 3 */}
-      {step===3&&(
-        <div style={{maxWidth:420,margin:"0 auto",padding:"0 32px",textAlign:"center",paddingTop:40}}>
-          <div style={{width:64,height:64,background:"#CAECBA",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",fontSize:28}}>✓</div>
-          <h1 style={{fontFamily:F2,fontSize:32,fontWeight:800,color:"#213C18",letterSpacing:"-1.5px",margin:"0 0 12px"}}>Credits added!</h1>
-          <p style={{fontFamily:F2,fontSize:15,color:"#54584F",margin:"0 0 4px"}}>◈ {customCrNum} added to your pass.</p>
-          <p style={{fontFamily:F2,fontSize:13,color:"#C3C8BC",margin:"0 0 32px"}}>They expire on {expiryDate()}.</p>
-          <button onClick={()=>setStep(1)}
-            style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"14px 32px",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>
-            Top up again
-          </button>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -2298,6 +2687,145 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       });
   const [integration, setIntegration] = useState(null);
 
+  // ─── Real-data persistence (non-preview only) ───────────────────────────
+  // Listing edit form: category, location, credit price, price_mode.
+  const [listingForm, setListingForm] = useState({
+    category:   bizData.category || bizData.cat || "",
+    location:   bizData.location || bizData.loc || "",
+    cr:         bizData.cr != null ? String(bizData.cr) : "",
+    price_mode: bizData.price_mode || "flat",
+  });
+  // Settings edit form: profile / contact fields.
+  const [settingsForm, setSettingsForm] = useState({
+    name:        bizData.name || "",
+    description: bizData.description || "",
+    address:     bizData.address || "",
+    website:     bizData.website || "",
+    instagram:   bizData.instagram || "",
+    phone:       bizData.phone || "",
+    email:       bizData.email || "",
+  });
+  const [saving, setSaving]       = useState(false);
+  const [saveMsg, setSaveMsg]     = useState({ kind:"", text:"" }); // { kind:"settings"|"listing"|"golive"|"err", text }
+  const [linkedListingId, setLinkedListingId] = useState(null);
+  const [dbSlots, setDbSlots]     = useState(null); // null = loading | [] = empty | [...] = loaded
+  const [statusLive, setStatusLive] = useState(bizData.status === 'approved' || bizData.status === 'submitted');
+
+  function flashSaveMsg(kind, text) {
+    setSaveMsg({ kind, text });
+    setTimeout(() => setSaveMsg(m => (m.kind === kind ? { kind:"", text:"" } : m)), 3000);
+  }
+
+  // Load the partner's linked listing_id and its slot rows on mount.
+  useEffect(() => {
+    if (isPreview || !bizData?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data: linked } = await supabase
+        .from('listings').select('id').eq('business_id', bizData.id).limit(1).maybeSingle();
+      if (cancelled) return;
+      const lid = linked?.id ?? null;
+      setLinkedListingId(lid);
+      if (lid) {
+        const { data: rows } = await supabase
+          .from('slots').select('*').eq('listing_id', lid).order('date').order('time');
+        if (!cancelled) setDbSlots(rows || []);
+      } else {
+        setDbSlots([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isPreview, bizData?.id]);
+
+  async function saveSettings() {
+    if (isPreview || !bizData?.id) return;
+    setSaving(true);
+    const { error } = await supabase.from('businesses').update({
+      name:        settingsForm.name.trim() || null,
+      description: settingsForm.description || null,
+      address:     settingsForm.address || null,
+      website:     settingsForm.website || null,
+      instagram:   settingsForm.instagram || null,
+      phone:       settingsForm.phone || null,
+      email:       settingsForm.email.trim() || bizData.email, // keep email if cleared
+    }).eq('id', bizData.id);
+    setSaving(false);
+    if (error) flashSaveMsg("err", "Couldn't save. " + error.message);
+    else flashSaveMsg("settings", "Settings saved.");
+  }
+
+  async function saveListing() {
+    if (isPreview || !bizData?.id) return;
+    setSaving(true);
+    const crNum = parseInt(listingForm.cr);
+    const { error } = await supabase.from('businesses').update({
+      category:   listingForm.category || null,
+      location:   listingForm.location || null,
+      cr:         Number.isFinite(crNum) && crNum > 0 ? crNum : null,
+      price_mode: listingForm.price_mode || 'flat',
+    }).eq('id', bizData.id);
+    setSaving(false);
+    if (error) flashSaveMsg("err", "Couldn't save. " + error.message);
+    else flashSaveMsg("listing", "Listing saved.");
+  }
+
+  async function goLive() {
+    if (isPreview || !bizData?.id) return;
+    if (!confirm("Submit your listing for review? The Wello team will email you within 2 working days.")) return;
+    setSaving(true);
+    const { error } = await supabase.from('businesses').update({ status: 'submitted' }).eq('id', bizData.id);
+    setSaving(false);
+    if (error) flashSaveMsg("err", "Couldn't submit. " + error.message);
+    else { setStatusLive(true); flashSaveMsg("golive", "Submitted for review. Watch your inbox."); }
+  }
+
+  // For Add slot: convert a 0-6 weekday index (Mon=0) to an ISO date string for THIS week.
+  function dateForWeekday(dayIdx) {
+    const today  = new Date();
+    const dow    = today.getDay(); // 0=Sun..6=Sat
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1));
+    const target = new Date(monday);
+    target.setDate(monday.getDate() + dayIdx);
+    return target.toISOString().slice(0, 10);
+  }
+
+  async function addSlotDb(slotData) {
+    if (isPreview || !linkedListingId) {
+      flashSaveMsg("err", "Your listing isn't live yet — slot management opens after approval.");
+      return false;
+    }
+    const payload = {
+      listing_id: linkedListingId,
+      name:       slotData.name || "",
+      date:       slotData.date || dateForWeekday(selDay),
+      time:       slotData.time || "09:00",
+      dur:        slotData.dur || "60 min",
+      spots:      +slotData.spots || 10,
+      booked:     0,
+      credits:    +slotData.credits || (parseInt(listingForm.cr) || 3),
+    };
+    const { data, error } = await supabase.from('slots').insert(payload).select().single();
+    if (error) { flashSaveMsg("err", "Couldn't add slot. " + error.message); return false; }
+    setDbSlots(s => [...(s || []), data]);
+    return true;
+  }
+
+  async function togglePausedDb(slotId, isCurrentlyLive) {
+    if (isPreview) return;
+    const { data, error } = await supabase.from('slots').update({ paused: isCurrentlyLive }).eq('id', slotId).select().single();
+    if (error) { flashSaveMsg("err", "Couldn't update slot. " + error.message); return; }
+    setDbSlots(s => (s || []).map(x => (x.id === slotId ? data : x)));
+  }
+
+  async function removeSlotDb(slotId) {
+    if (isPreview) return;
+    if (!confirm("Remove this slot? Bookings on it would need to be cancelled separately.")) return;
+    const { error } = await supabase.from('slots').delete().eq('id', slotId);
+    if (error) { flashSaveMsg("err", "Couldn't remove slot. " + error.message); return; }
+    setDbSlots(s => (s || []).filter(x => x.id !== slotId));
+  }
+
   const TABS = [["overview","Overview"],["schedule","Schedule"],["payouts","Payouts"],["listing","My Listing"],["settings","Settings"]];
 
   const WEEK_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
@@ -2315,37 +2843,44 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     });
   })();
 
-  // Real partners start with their recurring slot template from onboarding, expanded
-  // into one entry per (slot × weekday). Preview gets the curated demo schedule.
-  const [CLS, setCLS] = useState(isPreview
-    ? [
-        {id:1,day:0,time:"07:00",name:"Sunrise Flow",   spots:8, booked:6, credits:3, dur:"60 min", live:true},
-        {id:2,day:0,time:"18:30",name:"Sunset Vinyasa", spots:10,booked:8, credits:15, dur:"75 min", live:true},
-        {id:3,day:1,time:"09:00",name:"Morning Yin",    spots:8, booked:3, credits:2, dur:"60 min", live:true},
-        {id:4,day:2,time:"07:00",name:"Sunrise Flow",   spots:8, booked:8, credits:3, dur:"60 min", live:true},
-        {id:5,day:2,time:"18:30",name:"Sunset Vinyasa", spots:10,booked:5, credits:15, dur:"75 min", live:true},
-        {id:6,day:3,time:"07:00",name:"Sunrise Flow",   spots:8, booked:2, credits:3, dur:"60 min", live:true},
-        {id:7,day:3,time:"12:00",name:"Lunchtime Flow", spots:6, booked:6, credits:12, dur:"45 min", live:false},
-        {id:8,day:4,time:"07:00",name:"Sunrise Flow",   spots:8, booked:7, credits:3, dur:"60 min", live:true},
-        {id:9,day:5,time:"09:00",name:"Weekend Flow",   spots:12,booked:10,credits:15, dur:"90 min", live:true},
-        {id:10,day:6,time:"09:00",name:"Weekend Flow",  spots:12,booked:12,credits:3, dur:"90 min", live:true},
-      ]
-    : (()=>{
-        const dayIdx = { Mon:0, Tue:1, Wed:2, Thu:3, Fri:4, Sat:5, Sun:6 };
-        return (bizData.slots || []).flatMap((sl,sli)=>
-          (sl.days || []).map((dayName,di)=>({
-            id: `${sl.id || sli}-${dayName}-${di}`,
-            day: dayIdx[dayName] ?? 0,
-            time: sl.time || "09:00",
-            name: sl.name || "",
-            spots: +sl.spots || 10,
-            booked: 0,
-            credits: +sl.cr || +sl.credits || bizData.cr || 3,
-            dur: sl.dur || "60 min",
-            live: true,
-          }))
-        );
-      })());
+  // Preview: curated demo schedule. Real partners: derive from dbSlots (the
+  // slots table) so add/pause/remove operate on persisted rows.
+  const PREVIEW_CLS = [
+    {id:1,day:0,time:"07:00",name:"Sunrise Flow",   spots:8, booked:6, credits:3, dur:"60 min", live:true},
+    {id:2,day:0,time:"18:30",name:"Sunset Vinyasa", spots:10,booked:8, credits:15, dur:"75 min", live:true},
+    {id:3,day:1,time:"09:00",name:"Morning Yin",    spots:8, booked:3, credits:2, dur:"60 min", live:true},
+    {id:4,day:2,time:"07:00",name:"Sunrise Flow",   spots:8, booked:8, credits:3, dur:"60 min", live:true},
+    {id:5,day:2,time:"18:30",name:"Sunset Vinyasa", spots:10,booked:5, credits:15, dur:"75 min", live:true},
+    {id:6,day:3,time:"07:00",name:"Sunrise Flow",   spots:8, booked:2, credits:3, dur:"60 min", live:true},
+    {id:7,day:3,time:"12:00",name:"Lunchtime Flow", spots:6, booked:6, credits:12, dur:"45 min", live:false},
+    {id:8,day:4,time:"07:00",name:"Sunrise Flow",   spots:8, booked:7, credits:3, dur:"60 min", live:true},
+    {id:9,day:5,time:"09:00",name:"Weekend Flow",   spots:12,booked:10,credits:15, dur:"90 min", live:true},
+    {id:10,day:6,time:"09:00",name:"Weekend Flow",  spots:12,booked:12,credits:3, dur:"90 min", live:true},
+  ];
+  const [previewCLS, setPreviewCLS] = useState(PREVIEW_CLS);
+  // Map a date string YYYY-MM-DD to a Mon=0..Sun=6 weekday index.
+  function weekdayIdxFromDate(d) {
+    const dow = new Date(d + "T00:00:00").getDay(); // Sun=0..Sat=6
+    return dow === 0 ? 6 : dow - 1; // Mon=0..Sun=6
+  }
+  const CLS = isPreview
+    ? previewCLS
+    : (dbSlots || []).map(s => ({
+        id:      s.id,
+        day:     weekdayIdxFromDate(s.date),
+        time:    s.time,
+        name:    s.name,
+        spots:   s.spots,
+        booked:  s.booked,
+        credits: s.credits,
+        dur:     s.dur,
+        live:    !s.paused,
+      }));
+  // Preview-mode local mutation helpers (no DB writes; demo only).
+  function setCLS(updater) {
+    if (!isPreview) return; // real-partner CRUD goes through DB helpers
+    setPreviewCLS(typeof updater === 'function' ? updater : () => updater);
+  }
 
   const RECENT = isPreview ? [
     {initials:"SM",name:"Sarah M.",  cls:"Sunrise Flow",   when:"Today 07:00",     cr:15,status:"Confirmed"},
@@ -2592,11 +3127,17 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                           </div>
                           {/* Actions */}
                           <div style={{display:"flex",gap:6,flexShrink:0}}>
-                            <button onClick={()=>setCLS(p=>p.map(c=>c.id===cl.id?{...c,live:!c.live}:c))}
+                            <button onClick={()=>{
+                                if (isPreview) setCLS(p=>p.map(c=>c.id===cl.id?{...c,live:!c.live}:c));
+                                else togglePausedDb(cl.id, cl.live);
+                              }}
                               style={{padding:"6px 12px",background:cl.live?"#FADEC0":"#CAECBA",color:cl.live?"#766149":"#213C18",border:"none",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer"}}>
                               {cl.live?"Pause":"Go live"}
                             </button>
-                            <button onClick={()=>setCLS(p=>p.filter(c=>c.id!==cl.id))}
+                            <button onClick={()=>{
+                                if (isPreview) setCLS(p=>p.filter(c=>c.id!==cl.id));
+                                else removeSlotDb(cl.id);
+                              }}
                               style={{padding:"6px 12px",background:"transparent",color:"#54584F",border:"1px solid rgba(195,200,188,0.4)",borderRadius:999,fontFamily:F2,fontSize:11,cursor:"pointer"}}>
                               Remove
                             </button>
@@ -2690,9 +3231,23 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                           </div>
                         )}
                       </div>
-                      <button onClick={()=>{
+                      <button onClick={async ()=>{
                         if(!newSlot.name||!newSlot.time) return;
-                        setCLS(p=>[...p,{id:Date.now(),day:selDay,time:newSlot.time,name:newSlot.name,spots:+newSlot.spots||10,booked:0,credits:+newSlot.credits||3,dur:newSlot.dur||"60 min",live:true}]);
+                        if (isPreview) {
+                          // Demo only — local mutation.
+                          setCLS(p=>[...p,{id:Date.now(),day:selDay,time:newSlot.time,name:newSlot.name,spots:+newSlot.spots||10,booked:0,credits:+newSlot.credits||3,dur:newSlot.dur||"60 min",live:true}]);
+                        } else {
+                          // Live partner — persist to the slots table for this week's selDay.
+                          const ok = await addSlotDb({
+                            name:    newSlot.name,
+                            date:    dateForWeekday(selDay),
+                            time:    newSlot.time,
+                            dur:     newSlot.dur || "60 min",
+                            spots:   +newSlot.spots || 10,
+                            credits: +newSlot.credits || 3,
+                          });
+                          if (!ok) return; // DB failed; keep modal open so the partner can retry
+                        }
                         setShowAddSlot(false);
                         setNewSlot({name:"",time:"09:00",spots:10,credits:15,dur:"60 min",priceGBP:""});
                       }}
@@ -2776,23 +3331,40 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 <p style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600,margin:0}}>📍 {listing.loc} · ◈ {listing.credits} per person</p>
               </div>
             </div>
-            {/* Edit form */}
+            {/* Edit form — Listing-level fields per spec: category, location, credit price, price_mode */}
             <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
-              <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 16px"}}>Edit listing details</h3>
+              <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 16px"}}>Listing details</h3>
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                {[{l:"Venue name",k:"name"},{l:"Location",k:"loc"},{l:"Primary category",k:"cat"},{l:"Secondary category",k:"cat2"},{l:"Credits per person",k:"credits",t:"number"},{l:"Tags (comma separated)",k:"tags"}].map(f=>(
-                  <div key={f.k}>
-                    <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>{f.l}</label>
-                    <input type={f.t||"text"} value={listing[f.k]||""} onChange={e=>setListing(p=>({...p,[f.k]:e.target.value}))}
-                      style={{...INP}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
-                  </div>
-                ))}
                 <div>
-                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Description</label>
-                  <textarea value={listing.desc} onChange={e=>setListing(p=>({...p,desc:e.target.value}))} rows={3}
-                    style={{...INP,resize:"vertical"}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Category</label>
+                  <input type="text" value={listingForm.category} onChange={e=>setListingForm(p=>({...p,category:e.target.value}))}
+                    style={{...INP}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
                 </div>
-                <button style={{padding:"12px 0",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer"}}>Save changes</button>
+                <div>
+                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Location</label>
+                  <input type="text" value={listingForm.location} onChange={e=>setListingForm(p=>({...p,location:e.target.value}))}
+                    style={{...INP}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                </div>
+                <div>
+                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Credit price (default per session)</label>
+                  <input type="text" inputMode="numeric" value={listingForm.cr}
+                    onChange={e=>setListingForm(p=>({...p,cr:e.target.value.replace(/[^0-9]/g,'').slice(0,4)}))}
+                    style={{...INP}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                </div>
+                <div>
+                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Pricing mode</label>
+                  <select value={listingForm.price_mode} onChange={e=>setListingForm(p=>({...p,price_mode:e.target.value}))}
+                    style={{...INP}}>
+                    <option value="flat">Flat price across all sessions</option>
+                    <option value="per_slot">Different price per slot</option>
+                  </select>
+                </div>
+                <button onClick={saveListing} disabled={saving||isPreview}
+                  style={{padding:"12px 0",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer"}}>
+                  {saving ? "Saving" : "Save changes"}
+                </button>
+                {saveMsg.kind === "listing" && <p style={{fontFamily:F2,fontSize:12,color:"#213C18",margin:0,textAlign:"center"}}>{saveMsg.text}</p>}
+                {saveMsg.kind === "err"     && <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:0,textAlign:"center"}}>{saveMsg.text}</p>}
               </div>
             </div>
           </div>
@@ -2801,25 +3373,63 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         {/* ── SETTINGS ── */}
         {tab==="settings"&&(
           <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:560}}>
-            {/* Contact details */}
+            {/* Listing status + Go-live CTA */}
+            {!isPreview && (
+              <div style={{background:statusLive?"#CAECBA":"#FADEC0",border:`1px solid ${statusLive?"#A3B18A":"#DCC2A6"}`,borderRadius:12,padding:"16px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+                <div>
+                  <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#213C18",margin:"0 0 4px"}}>Listing status</p>
+                  <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#213C18",margin:0,lineHeight:1.5}}>
+                    {bizData.status === 'approved' ? "Live on marketplace" :
+                     bizData.status === 'submitted' ? "Submitted for review. We'll be in touch within 2 working days." :
+                     "Draft. Submit when you're ready and we'll review."}
+                  </p>
+                </div>
+                {(bizData.status !== 'approved' && bizData.status !== 'submitted') && (
+                  <button onClick={goLive} disabled={saving}
+                    style={{padding:"10px 20px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:saving?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
+                    {saving ? "Submitting" : "Submit for review"}
+                  </button>
+                )}
+              </div>
+            )}
+            {saveMsg.kind === "golive" && <p style={{fontFamily:F2,fontSize:12,color:"#213C18",margin:0,textAlign:"center"}}>{saveMsg.text}</p>}
+
+            {/* Profile + contact — Settings tab per spec: name, description, address, website, instagram, phone, email */}
             <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
-              <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 14px"}}>Contact & payment</h3>
+              <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 14px"}}>Business profile</h3>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {(isPreview ? [
-                  {l:"Contact email",v:"hello@solyalmayoga.com"},
-                  {l:"Phone",v:"+34 971 234 567"},
-                  {l:"IBAN",v:"ES12 3456 7890 1234 5678"},
-                ] : [
-                  {l:"Contact email",v:bizData.email || ""},
-                  {l:"Phone",v:bizData.phone || ""},
-                  {l:"IBAN",v:bizData.iban || ""},
-                ]).map(f=>(
-                  <div key={f.l}>
+                {[
+                  { k:"name",      l:"Venue name",     ph:"e.g. Sol Yoga Mallorca" },
+                  { k:"address",   l:"Address",        ph:"Street, town, postcode" },
+                  { k:"website",   l:"Website",        ph:"https://" },
+                  { k:"instagram", l:"Instagram",      ph:"@yourhandle" },
+                  { k:"phone",     l:"Phone",          ph:"+34 …" },
+                  { k:"email",     l:"Contact email",  ph:"hello@…" },
+                ].map(f => (
+                  <div key={f.k}>
                     <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>{f.l}</label>
-                    <input defaultValue={f.v} style={{...INP}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                    <input value={isPreview ? (f.k==="email"?"hello@solyalmayoga.com":f.k==="phone"?"+34 971 234 567":"") : (settingsForm[f.k] || "")}
+                      onChange={e=>!isPreview && setSettingsForm(p=>({...p,[f.k]:e.target.value}))}
+                      placeholder={f.ph}
+                      style={{...INP}}
+                      onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
                   </div>
                 ))}
-                <button style={{alignSelf:"flex-start",padding:"10px 20px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",marginTop:4}}>Save changes</button>
+                <div>
+                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Description</label>
+                  <textarea value={isPreview ? "Your venue description here." : (settingsForm.description || "")}
+                    onChange={e=>!isPreview && setSettingsForm(p=>({...p,description:e.target.value}))}
+                    rows={3}
+                    placeholder="What makes your venue special. Two or three sentences."
+                    style={{...INP,resize:"vertical"}}
+                    onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                </div>
+                <button onClick={saveSettings} disabled={saving||isPreview}
+                  style={{alignSelf:"flex-start",padding:"10px 20px",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer",marginTop:4}}>
+                  {saving ? "Saving" : "Save changes"}
+                </button>
+                {saveMsg.kind === "settings" && <p style={{fontFamily:F2,fontSize:12,color:"#213C18",margin:"4px 0 0"}}>{saveMsg.text}</p>}
+                {saveMsg.kind === "err"      && <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:"4px 0 0"}}>{saveMsg.text}</p>}
               </div>
             </div>
 
@@ -2873,19 +3483,162 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   );
 }
 
-function cropToSquare(file) {
-  return new Promise(resolve => {
-    const img = new Image();
-    img.onload = () => {
-      const min = Math.min(img.width, img.height);
+// Interactive 1:1 crop tool. Loads a file, lets the partner pan and zoom
+// inside a fixed square viewport, returns the cropped 800x800 blob.
+function SquareCropModal({ file, onCancel, onConfirm }) {
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  const VIEWPORT = 320; // CSS pixels for the crop viewport
+  const [imgUrl, setImgUrl]           = useState(null);
+  const [naturalSize, setNaturalSize] = useState(null); // { w, h }
+  const [scale, setScale]             = useState(1);
+  const [offset, setOffset]           = useState({ x: 0, y: 0 });
+  const [busy, setBusy]               = useState(false);
+  const [error, setError]             = useState("");
+  const containerRef                  = useRef(null);
+
+  // Load the picked file into an Image, measure it, compute the minimum scale
+  // (cover) so the image always fills the viewport.
+  useEffect(() => {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    setImgUrl(url);
+    const probe = new Image();
+    probe.onload = () => {
+      if (!probe.width || !probe.height) {
+        setError("Couldn't read that image. Try a JPEG or PNG.");
+        return;
+      }
+      setNaturalSize({ w: probe.width, h: probe.height });
+      const init = Math.max(VIEWPORT / probe.width, VIEWPORT / probe.height);
+      setScale(init);
+      setOffset({ x: 0, y: 0 });
+    };
+    probe.onerror = () => setError("Couldn't read that image. Try a JPEG or PNG.");
+    probe.src = url;
+    return () => { URL.revokeObjectURL(url); };
+  }, [file]);
+
+  const minScale = naturalSize ? Math.max(VIEWPORT / naturalSize.w, VIEWPORT / naturalSize.h) : 1;
+  const maxScale = minScale * 4;
+
+  function clampOffset(off, sc) {
+    if (!naturalSize) return off;
+    const dispW = naturalSize.w * sc;
+    const dispH = naturalSize.h * sc;
+    const maxX = (dispW - VIEWPORT) / 2;
+    const maxY = (dispH - VIEWPORT) / 2;
+    return {
+      x: Math.max(-maxX, Math.min(maxX, off.x)),
+      y: Math.max(-maxY, Math.min(maxY, off.y)),
+    };
+  }
+
+  function handlePointerDown(e) {
+    e.preventDefault();
+    const startX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+    const startY = e.clientY ?? e.touches?.[0]?.clientY ?? 0;
+    const startOff = { ...offset };
+    function move(ev) {
+      const cx = ev.clientX ?? ev.touches?.[0]?.clientX ?? 0;
+      const cy = ev.clientY ?? ev.touches?.[0]?.clientY ?? 0;
+      setOffset(clampOffset({ x: startOff.x + (cx - startX), y: startOff.y + (cy - startY) }, scale));
+    }
+    function up() {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('touchend', up);
+    }
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    window.addEventListener('touchmove', move, { passive: false });
+    window.addEventListener('touchend', up);
+  }
+
+  function onScaleChange(e) {
+    const next = +e.target.value;
+    setScale(next);
+    setOffset(o => clampOffset(o, next));
+  }
+
+  async function confirm() {
+    if (!naturalSize || !imgUrl) return;
+    setBusy(true); setError("");
+    try {
+      // Map the viewport (fixed at the centre of the container) back to source
+      // pixel coordinates. The image is rendered at naturalSize × scale and
+      // translated by offset from the container centre.
+      const cropPx = VIEWPORT / scale; // size in source pixels
+      const cropX  = naturalSize.w / 2 - offset.x / scale - cropPx / 2;
+      const cropY  = naturalSize.h / 2 - offset.y / scale - cropPx / 2;
+
       const canvas = document.createElement('canvas');
       canvas.width = canvas.height = 800;
-      canvas.getContext('2d').drawImage(img, (img.width-min)/2, (img.height-min)/2, min, min, 0, 0, 800, 800);
-      URL.revokeObjectURL(img.src);
-      canvas.toBlob(resolve, 'image/jpeg', 0.85);
-    };
-    img.src = URL.createObjectURL(file);
-  });
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = imgUrl;
+      });
+      ctx.drawImage(img, cropX, cropY, cropPx, cropPx, 0, 0, 800, 800);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+      setBusy(false);
+      if (blob) onConfirm(blob);
+      else { setError("Couldn't process that crop. Try again."); }
+    } catch (e) {
+      console.error('SquareCropModal confirm error:', e);
+      setError("Something went wrong while cropping. Try a different image.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:5000,background:"rgba(27,28,25,0.85)",display:"flex",alignItems:"center",justifyContent:"center",padding:"clamp(16px,4vw,24px)"}}>
+      <div style={{background:T.paper,borderRadius:16,padding:"clamp(20px,3vw,28px)",maxWidth:380,width:"100%",boxShadow:"0 24px 60px rgba(0,0,0,0.4)"}}>
+        <h3 style={{fontFamily:F2,fontSize:16,fontWeight:700,color:T.ink,letterSpacing:"-0.3px",margin:"0 0 4px"}}>Position your photo</h3>
+        <p style={{fontFamily:F2,fontSize:12,color:T.stone,margin:"0 0 18px",lineHeight:1.5}}>Drag to reposition, slide to zoom. Photos display as 1:1 squares across Wello.</p>
+
+        <div ref={containerRef}
+          onMouseDown={handlePointerDown}
+          onTouchStart={handlePointerDown}
+          style={{position:"relative",width:VIEWPORT,height:VIEWPORT,margin:"0 auto",overflow:"hidden",borderRadius:8,background:"#000",cursor:"grab",userSelect:"none",touchAction:"none"}}>
+          {imgUrl && naturalSize && (
+            <img src={imgUrl} draggable={false} alt=""
+              style={{
+                position:"absolute", left: "50%", top: "50%",
+                width: naturalSize.w * scale,
+                height: naturalSize.h * scale,
+                transform: `translate(calc(-50% + ${offset.x}px), calc(-50% + ${offset.y}px))`,
+                pointerEvents:"none", maxWidth:"none", maxHeight:"none",
+              }}/>
+          )}
+          {/* subtle inset border to suggest the crop frame */}
+          <div style={{position:"absolute",inset:0,boxShadow:"inset 0 0 0 1px rgba(255,255,255,0.35)",borderRadius:8,pointerEvents:"none"}}/>
+        </div>
+
+        <div style={{margin:"18px 4px 0",display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:13,color:T.stone}}>−</span>
+          <input type="range" min={minScale} max={maxScale} step={0.01} value={scale} onChange={onScaleChange}
+            style={{flex:1,accentColor:T.sage,cursor:"pointer"}}/>
+          <span style={{fontSize:15,color:T.stone}}>＋</span>
+        </div>
+
+        {error && <p style={{fontFamily:F2,fontSize:12,color:T.clay,margin:"12px 0 0"}}>{error}</p>}
+
+        <div style={{display:"flex",gap:10,marginTop:18}}>
+          <button onClick={onCancel} disabled={busy}
+            style={{flex:1,padding:"11px",background:"transparent",border:`1px solid ${T.border}`,color:T.stone,borderRadius:8,fontFamily:F2,fontSize:13,fontWeight:600,cursor:busy?"not-allowed":"pointer"}}>
+            Cancel
+          </button>
+          <button onClick={confirm} disabled={busy || !naturalSize}
+            style={{flex:1,padding:"11px",background:(busy||!naturalSize)?T.border:T.sage,color:(busy||!naturalSize)?T.stone:"#fff",border:"none",borderRadius:8,fontFamily:F2,fontSize:13,fontWeight:700,cursor:(busy||!naturalSize)?"not-allowed":"pointer"}}>
+            {busy ? "Cropping" : "Use this crop"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function OnboardingProgressBar({ step, total, doSignOut, onPreview }) {
@@ -2942,8 +3695,23 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   const [address, setAddress] = useState(bizData.address || "");
   const [website, setWebsite] = useState(bizData.website || "");
   const [instagram, setInstagram] = useState(bizData.instagram || "");
-  const [img, setImg] = useState(bizData.img || null);
-  const [gallery, setGallery] = useState(bizData.gallery || []);
+  // tags = "amenities & offerings" — what the venue advertises. Stored as a
+  // string[] in businesses.tags and surfaced as pills on the listing.
+  const [tags, setTags] = useState(Array.isArray(bizData.tags) ? bizData.tags : []);
+  const [customTag, setCustomTag] = useState("");
+  // Strip any stale blob: URLs that may have leaked into the DB on previous
+  // failed uploads — those only exist in the tab that created them and would
+  // render as broken images for the partner.
+  const isRealUrl = u => typeof u === 'string' && u.length > 0 && !u.startsWith('blob:');
+  const [img, setImg] = useState(isRealUrl(bizData.img) ? bizData.img : null);
+  const [gallery, setGallery] = useState(
+    Array.isArray(bizData.gallery) ? bizData.gallery.filter(isRealUrl) : []
+  );
+  // Crop modal state — { kind: 'primary'|'gallery', file }
+  const [cropTarget, setCropTarget] = useState(null);
+  const [photoErr, setPhotoErr]     = useState("");
+  const [primaryUploading, setPrimaryUploading] = useState(false);
+  const [galleryUploadCount, setGalleryUploadCount] = useState(0);
   // Default to Acuity tab (the primary integration option). Partners with manual
   // slots already saved (no acuity_key, slots present) will still default to
   // Acuity — they can click Manual to see their existing slots.
@@ -3014,6 +3782,26 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   const firstName = bizData.name.split(' ')[0];
   const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   const DURS = ["30 min","45 min","60 min","75 min","90 min","2 hours","Open"];
+  // Common amenities & offerings partners can tick to advertise their venue.
+  // Anything not in this list goes in via the "Add another" custom input below.
+  const AMENITY_OPTIONS = [
+    "Showers","Changing rooms","Lockers","Towels provided","Mats provided","Equipment provided",
+    "Outdoor pool","Indoor pool","Sauna","Steam room","Hot tub","Jacuzzi",
+    "Sea views","Mountain views","Beachfront","Rooftop","Olive groves","Garden",
+    "Cafe","Wifi","Parking","Air conditioning","Wheelchair access","Kids welcome",
+    "Beginner friendly","All levels","Advanced","Small groups","Private sessions",
+    "Multilingual instructors","English spoken","Spanish spoken","German spoken",
+  ];
+  function toggleTag(t) {
+    setTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  }
+  function addCustomTag() {
+    const t = customTag.trim();
+    if (!t) return;
+    if (tags.includes(t)) { setCustomTag(""); return; }
+    setTags(prev => [...prev, t]);
+    setCustomTag("");
+  }
   const catAvg = {Yoga:20,Pilates:20,Surfing:40,"Paddle Boarding":30,Kayaking:30,Cycling:20,"Hotel Gym":25,"Pool Access":25,"Fitness Class":15,HIIT:15,Tennis:25,Padel:25,Pickleball:20,"Massage & Spa":60,Meditation:15,"Sound Healing":20,Breathwork:15,Dance:15,"Martial Arts":20,"Outdoor adventure":30}[bizData.category] ?? 20;
   const INP = {width:"100%",padding:"10px 12px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:12,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",boxSizing:"border-box",transition:"border-color .18s"};
   const FL = {display:"block",fontSize:9,letterSpacing:"1.5px",textTransform:"uppercase",color:T.stone,fontFamily:F.body,marginBottom:4};
@@ -3033,18 +3821,35 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
     setSaving(false);
   }
 
-  async function uploadPhoto(file, slot) {
+  // Pre-cropped blob upload (used after the SquareCropModal returns a blob).
+  // Path layout: <auth-uid>/<bizId>-<slot>-<timestamp>.jpg
+  // The storage RLS policy on venue-photos only allows writes where the first
+  // folder segment matches auth.uid()::text, so the auth-uid prefix is what
+  // makes the write authorized. The business id stays in the filename so we
+  // can still tell at a glance which venue a file belongs to.
+  async function uploadBlob(blob, slot) {
     setUploading(true);
     try {
-      const blob = await cropToSquare(file);
-      const path = `${bizData.id}/${slot}-${Date.now()}.jpg`;
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id;
+      if (!uid) {
+        return { url: null, error: 'Not signed in. Please refresh and log back in.' };
+      }
+      const path = `${uid}/${bizData.id}-${slot}-${Date.now()}.jpg`;
       const { error } = await supabase.storage.from('venue-photos').upload(path, blob, { contentType:'image/jpeg', upsert:true });
-      if (error) { console.error('Photo upload error:', error.message); return null; }
-      return supabase.storage.from('venue-photos').getPublicUrl(path).data.publicUrl;
-    } catch(e) { console.error('Upload failed:', e); return null; }
-    finally { setUploading(false); }
+      if (error) {
+        console.error('Photo upload error:', error.message);
+        return { url: null, error: error.message };
+      }
+      const url = supabase.storage.from('venue-photos').getPublicUrl(path).data.publicUrl;
+      return { url, error: null };
+    } catch (e) {
+      console.error('Upload exception:', e);
+      return { url: null, error: e.message || 'Upload failed.' };
+    } finally {
+      setUploading(false);
+    }
   }
-
   async function goNext(updates={}) {
     await saveProgress({ ...updates, onboarding_step: step + 1 });
     setStep(s => s + 1);
@@ -3115,7 +3920,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   const previewBiz = {
     id:bizData.id, name:venueName||bizData.name, cat:venueCategory||bizData.category,
     loc:address||venueLocation||bizData.location, img:img||'', desc:desc||'Your description will appear here.',
-    cr:parseInt(cr)||catAvg, rating:0, reviews:0, tags:[], slots:previewSlots,
+    cr:parseInt(cr)||catAvg, rating:0, reviews:0, tags, slots:previewSlots,
   };
 
   if (previewOpen) return (
@@ -3132,8 +3937,13 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
           <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(27,28,25,0.85) 0%,transparent 55%)"}}/>
           <button onClick={()=>setPreviewOpen(false)} style={{position:"absolute",top:12,right:12,background:"rgba(255,255,255,0.15)",backdropFilter:"blur(8px)",border:"none",color:"#fff",width:30,height:30,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
           <div style={{position:"absolute",bottom:14,left:16,right:16}}>
-            <span style={{fontFamily:F.body,fontSize:10,fontWeight:700,color:"#fff",background:T.sage,padding:"3px 10px",borderRadius:999}}>{venueCategory||bizData.category}</span>
-            <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:"#fff",margin:"6px 0 0",letterSpacing:"-0.3px"}}>{venueName||bizData.name}</h2>
+            <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
+              <span style={{fontFamily:F.body,fontSize:10,fontWeight:700,color:"#fff",background:T.sage,padding:"3px 10px",borderRadius:999}}>{venueCategory||bizData.category}</span>
+              {tags.slice(0,3).map(t=>(
+                <span key={t} style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,0.9)",background:"rgba(255,255,255,0.18)",backdropFilter:"blur(4px)",padding:"3px 10px",borderRadius:999}}>{t}</span>
+              ))}
+            </div>
+            <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.3px"}}>{venueName||bizData.name}</h2>
           </div>
         </div>
         {/* Body */}
@@ -3143,6 +3953,17 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
             <span style={{fontFamily:F.body,fontSize:13,color:T.ochre,fontWeight:700}}>◈ {parseInt(cr)||catAvg} <span style={{fontSize:10,color:T.stone2,fontWeight:300}}>per booking</span></span>
           </div>
           {desc&&<p style={{fontFamily:F.body,fontSize:12,color:T.stone,lineHeight:1.7,margin:"0 0 16px",fontWeight:300}}>{desc}</p>}
+          {/* Amenities pills */}
+          {tags.length>0&&(
+            <>
+              <div style={{fontFamily:F.body,fontSize:9,fontWeight:700,color:T.sage,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:8}}>Amenities & offerings</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:16}}>
+                {tags.map(t=>(
+                  <span key={t} style={{fontFamily:F.body,fontSize:10,color:T.ink,background:T.bg2,border:`1px solid ${T.border}`,padding:"4px 10px",borderRadius:999,fontWeight:500}}>{t}</span>
+                ))}
+              </div>
+            </>
+          )}
           {previewSlots.length>0&&(
             <>
               <div style={{fontFamily:F.body,fontSize:9,fontWeight:700,color:T.sage,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:10}}>Available slots</div>
@@ -3175,7 +3996,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   if (step===2) return (
     <OWrap title="Your venue details" sub="Confirm and complete your listing details — this is what guests will see on Wello." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
       footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(1)} label="← Back" variant="secondary"/>,
-               <OBtn key="n" saving={saving} onClick={()=>goNext({name:venueName,category:venueCategory,location:venueLocation,description:desc,address,website,instagram})} label="Save & continue →" disabled={!desc.trim()}/>]}>
+               <OBtn key="n" saving={saving} onClick={()=>goNext({name:venueName,category:venueCategory,location:venueLocation,description:desc,address,website,instagram,tags})} label="Save & continue →" disabled={!desc.trim()}/>]}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div style={{gridColumn:"1/-1"}}>
           <label style={FL}>Venue name</label>
@@ -3204,61 +4025,201 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
         style={{...INP,marginBottom:16}} onFocus={onFi} onBlur={onBl}/>
       <label style={FL}>Instagram (optional)</label>
       <input value={instagram} onChange={e=>setInstagram(e.target.value)} placeholder="@yourhandle"
-        style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+        style={{...INP,marginBottom:24}} onFocus={onFi} onBlur={onBl}/>
+
+      {/* ── Amenities & offerings ──────────────────────────────── */}
+      <div style={{borderTop:`1px solid ${T.border}`,paddingTop:20,marginTop:4}}>
+        <label style={{...FL,marginBottom:6}}>Amenities & offerings</label>
+        <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"0 0 12px",lineHeight:1.6}}>
+          Pick what you offer. These show as pills on your listing so guests know what to expect.
+        </p>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+          {AMENITY_OPTIONS.map(opt => {
+            const on = tags.includes(opt);
+            return (
+              <button key={opt} type="button" onClick={()=>toggleTag(opt)}
+                style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${on?T.sage:T.border}`,background:on?T.sage:T.paper,color:on?"#fff":T.ink,fontFamily:F.body,fontSize:11,fontWeight:on?600:400,cursor:"pointer",transition:"all .12s"}}>
+                {on?"✓ ":""}{opt}
+              </button>
+            );
+          })}
+        </div>
+        {/* Custom tag input */}
+        <label style={{...FL,marginBottom:6}}>Add another</label>
+        <div style={{display:"flex",gap:8,marginBottom:12}}>
+          <input value={customTag} onChange={e=>setCustomTag(e.target.value)} placeholder="e.g. Heated pool, Cold plunge"
+            onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); addCustomTag(); } }}
+            style={{...INP,flex:1,marginBottom:0}} onFocus={onFi} onBlur={onBl}/>
+          <button type="button" onClick={addCustomTag} disabled={!customTag.trim()}
+            style={{padding:"10px 16px",background:customTag.trim()?T.sage:T.bg2,color:customTag.trim()?"#fff":T.stone2,border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,fontWeight:600,cursor:customTag.trim()?"pointer":"not-allowed",whiteSpace:"nowrap"}}>
+            Add
+          </button>
+        </div>
+        {/* Custom-added tags (those not in the preset list) shown removable */}
+        {tags.filter(t=>!AMENITY_OPTIONS.includes(t)).length>0 && (
+          <>
+            <label style={{...FL,marginBottom:6}}>Your custom tags</label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {tags.filter(t=>!AMENITY_OPTIONS.includes(t)).map(t=>(
+                <span key={t} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 8px 6px 12px",borderRadius:999,background:T.sageXL,border:`1px solid ${T.sageL}`,fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600}}>
+                  {t}
+                  <button type="button" onClick={()=>toggleTag(t)} aria-label={`Remove ${t}`}
+                    style={{background:"transparent",border:"none",cursor:"pointer",color:T.sage,fontSize:14,lineHeight:1,padding:0,marginLeft:2}}>×</button>
+                </span>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
     </OWrap>
   );
 
   if (step===3) {
-    async function handlePrimary(e) {
-      const file=e.target.files?.[0]; if(!file) return;
-      const localUrl=URL.createObjectURL(file);
-      setImg(localUrl);
-      const remoteUrl=await uploadPhoto(file,'primary');
-      if(remoteUrl) setImg(remoteUrl);
+    // Open crop modal for whichever slot the partner just picked a file for.
+    function pickPrimary(e) {
+      const file = e.target.files?.[0];
+      e.target.value = ""; // allow re-picking the same file later
+      if (!file) return;
+      if (!/^image\//.test(file.type)) { setPhotoErr("That doesn't look like an image. Pick a JPEG or PNG."); return; }
+      setPhotoErr("");
+      setCropTarget({ kind: 'primary', file });
     }
-    async function handleGallery(e) {
-      const files=Array.from(e.target.files||[]).slice(0,4-gallery.length);
-      const localUrls=files.map(f=>URL.createObjectURL(f));
-      setGallery(prev=>[...prev,...localUrls]);
-      const remoteUrls=await Promise.all(files.map((f,i)=>uploadPhoto(f,`gallery-${gallery.length+i}`)));
-      setGallery(prev=>prev.map(u=>{const i=localUrls.indexOf(u);return i!==-1&&remoteUrls[i]?remoteUrls[i]:u;}));
+    function pickGallery(e) {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+      if (gallery.length >= 4) { setPhotoErr("Up to 4 gallery photos."); return; }
+      if (!/^image\//.test(file.type)) { setPhotoErr("That doesn't look like an image. Pick a JPEG or PNG."); return; }
+      setPhotoErr("");
+      setCropTarget({ kind: 'gallery', file });
     }
+
+    async function onCropConfirmed(blob) {
+      const target = cropTarget;
+      setCropTarget(null);
+      if (!target) return;
+      const localUrl = URL.createObjectURL(blob);
+
+      if (target.kind === 'primary') {
+        setImg(localUrl);
+        setPrimaryUploading(true);
+        const { url, error } = await uploadBlob(blob, 'primary');
+        setPrimaryUploading(false);
+        if (error) {
+          setPhotoErr("Couldn't upload your primary photo. " + error);
+          setImg(null);
+        } else if (url) {
+          setImg(url);
+          // Save img to DB immediately so it's not lost if the partner closes.
+          await saveProgress({ img: url });
+        }
+      } else {
+        // Gallery — append the local preview, swap to remote URL once uploaded.
+        const tempIdx = gallery.length;
+        setGallery(g => [...g, localUrl]);
+        setGalleryUploadCount(c => c + 1);
+        const { url, error } = await uploadBlob(blob, `gallery-${tempIdx}-${Date.now()}`);
+        setGalleryUploadCount(c => c - 1);
+        if (error) {
+          setPhotoErr("Couldn't upload that gallery photo. " + error);
+          setGallery(g => g.filter(u => u !== localUrl));
+        } else if (url) {
+          setGallery(g => {
+            const next = g.map(u => (u === localUrl ? url : u));
+            saveProgress({ gallery: next });
+            return next;
+          });
+        }
+      }
+    }
+
+    function removePrimary() { setImg(null); }
+    function removeGalleryAt(i) {
+      setGallery(g => {
+        const next = g.filter((_, gi) => gi !== i);
+        saveProgress({ gallery: next });
+        return next;
+      });
+    }
+
+    const totalUploading = primaryUploading || galleryUploadCount > 0;
+
     return (
-      <OWrap title="Add photos" sub="Square (1:1) photos work best — we crop automatically. A great primary photo makes a real difference." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+      <OWrap title="Add photos" sub="A square primary photo is required. Drag and zoom to set the crop. Up to four extras for your gallery." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
         footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(2)} label="← Back" variant="secondary"/>,
-                 <OBtn key="n" saving={saving} onClick={()=>goNext({img,gallery})} label="Save & continue →" disabled={!img||uploading}/>]}>
-        <label style={FL}>Primary photo</label>
-        <div onClick={()=>!uploading&&document.getElementById('wph-primary').click()}
-          style={{width:"100%",maxWidth:240,aspectRatio:"1",background:img?"transparent":T.bg2,border:img?"none":`2px dashed ${T.border}`,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",cursor:uploading?"wait":"pointer",marginBottom:24,overflow:"hidden",position:"relative"}}>
+                 <OBtn key="n" saving={saving} onClick={()=>goNext({img,gallery})} label="Save & continue →" disabled={!img||totalUploading}/>]}>
+        <label style={FL}>Primary photo <span style={{color:T.clay,fontWeight:600}}>*</span></label>
+        <div onClick={()=>!totalUploading&&document.getElementById('wph-primary').click()}
+          style={{width:"100%",maxWidth:240,aspectRatio:"1",background:img?"transparent":T.bg2,border:img?"none":`2px dashed ${T.border}`,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",cursor:totalUploading?"wait":"pointer",marginBottom:8,overflow:"hidden",position:"relative"}}>
           {img ? <>
             <img src={img} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-            <div onClick={e=>{e.stopPropagation();setImg(null);}} style={{position:"absolute",top:6,right:6,background:"rgba(0,0,0,0.55)",borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
-              <span style={{color:"#fff",fontSize:11,lineHeight:1}}>×</span>
-            </div>
+            {primaryUploading && (
+              <div style={{position:"absolute",inset:0,background:"rgba(27,28,25,0.5)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                <div style={{display:"inline-flex",alignItems:"center",gap:5,padding:"8px 14px",background:"rgba(255,255,255,0.95)",borderRadius:999}}>
+                  {[0,1,2].map(i=>(<span key={i} style={{width:6,height:6,borderRadius:"50%",background:T.sage,animation:`pulse 1.2s ease-in-out infinite ${i*0.2}s`}}/>))}
+                  <span style={{fontFamily:F.body,fontSize:10,fontWeight:700,color:T.sage,letterSpacing:"0.5px"}}>Uploading</span>
+                </div>
+              </div>
+            )}
+            {!primaryUploading && (
+              <div onClick={e=>{e.stopPropagation();removePrimary();}} style={{position:"absolute",top:6,right:6,background:"rgba(0,0,0,0.55)",borderRadius:"50%",width:22,height:22,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                <span style={{color:"#fff",fontSize:11,lineHeight:1}}>×</span>
+              </div>
+            )}
           </> : <div style={{textAlign:"center",padding:16}}>
             <div style={{fontSize:24,marginBottom:4}}>📷</div>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>{uploading?"Uploading…":"Click to upload"}</div>
+            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>Click to pick a photo</div>
           </div>}
         </div>
-        <input id="wph-primary" type="file" accept="image/*" style={{display:"none"}} onChange={handlePrimary}/>
+        {!img && <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"0 0 18px"}}>A square primary photo is required to continue.</p>}
+        {img && <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"0 0 18px"}}>Want a different crop or photo? Tap × and pick again.</p>}
+        <input id="wph-primary" type="file" accept="image/*" style={{display:"none"}} onChange={pickPrimary}/>
+
         <label style={FL}>Gallery photos (up to 4)</label>
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:8}}>
-          {gallery.map((url,i)=>(
-            <div key={i} style={{aspectRatio:"1",borderRadius:6,overflow:"hidden",position:"relative"}}>
-              <img src={url} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-              <div onClick={()=>setGallery(g=>g.filter((_,gi)=>gi!==i))} style={{position:"absolute",top:3,right:3,background:"rgba(0,0,0,0.55)",borderRadius:"50%",width:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
-                <span style={{color:"#fff",fontSize:10,lineHeight:1}}>×</span>
+          {gallery.map((url,i)=>{
+            const isLocal = url.startsWith('blob:');
+            return (
+              <div key={i} style={{aspectRatio:"1",borderRadius:6,overflow:"hidden",position:"relative",background:T.bg2}}>
+                <img src={url} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                {isLocal && (
+                  <div style={{position:"absolute",inset:0,background:"rgba(27,28,25,0.5)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                    <div style={{display:"inline-flex",alignItems:"center",gap:3,padding:"4px 8px",background:"rgba(255,255,255,0.95)",borderRadius:999}}>
+                      {[0,1,2].map(i=>(<span key={i} style={{width:4,height:4,borderRadius:"50%",background:T.sage,animation:`pulse 1.2s ease-in-out infinite ${i*0.2}s`}}/>))}
+                    </div>
+                  </div>
+                )}
+                {!isLocal && (
+                  <div onClick={()=>removeGalleryAt(i)} style={{position:"absolute",top:3,right:3,background:"rgba(0,0,0,0.55)",borderRadius:"50%",width:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                    <span style={{color:"#fff",fontSize:10,lineHeight:1}}>×</span>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
           {gallery.length<4&&(
-            <div onClick={()=>!uploading&&document.getElementById('wph-gallery').click()} style={{aspectRatio:"1",background:T.bg2,border:`2px dashed ${T.border}`,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",cursor:uploading?"wait":"pointer"}}>
+            <div onClick={()=>!totalUploading&&document.getElementById('wph-gallery').click()} style={{aspectRatio:"1",background:T.bg2,border:`2px dashed ${T.border}`,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",cursor:totalUploading?"wait":"pointer"}}>
               <span style={{fontSize:20,color:T.stone2}}>+</span>
             </div>
           )}
         </div>
-        <input id="wph-gallery" type="file" accept="image/*" multiple style={{display:"none"}} onChange={handleGallery}/>
-        {uploading&&<p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"8px 0 0"}}>Uploading…</p>}
+        <input id="wph-gallery" type="file" accept="image/*" style={{display:"none"}} onChange={pickGallery}/>
+
+        {photoErr && (
+          <div style={{background:"#FFF5F5",border:`1px solid ${T.clay}`,borderRadius:6,padding:"10px 12px",marginTop:14}}>
+            <p style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:600,margin:"0 0 2px"}}>Couldn't add that photo</p>
+            <p style={{fontFamily:F.body,fontSize:11,color:T.stone,margin:0,lineHeight:1.5}}>{photoErr}</p>
+          </div>
+        )}
+
+        {/* Crop modal — opens whenever a file is picked */}
+        {cropTarget && (
+          <SquareCropModal
+            file={cropTarget.file}
+            onCancel={()=>setCropTarget(null)}
+            onConfirm={onCropConfirmed}
+          />
+        )}
       </OWrap>
     );
   }
@@ -3561,7 +4522,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
 
   if (step===7) return (
     <>
-      <OWrap title="Review your listing" sub="This is how you'll appear on Wello. Tap 'Preview' above to see the full member view." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+      <OWrap title="Review your listing" sub="Here's how you'll appear on Wello. Tap 'Preview' above for the full member view." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
         footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(6)} label="← Back" variant="secondary"/>,
                  <button key="s" onClick={handleSubmit} disabled={saving}
                    style={{padding:"11px 28px",background:saving?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:saving?"not-allowed":"pointer"}}
@@ -3569,12 +4530,75 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
                    onMouseLeave={e=>{if(!saving)e.target.style.background=T.sage;}}>
                    {saving?"Submitting…":"Submit for review →"}
                  </button>]}>
+        {/* Inline preview card — same look as the full preview overlay, scaled down */}
+        <div style={{border:`1px solid ${T.border}`,borderRadius:12,overflow:"hidden",marginBottom:22,background:T.paper,boxShadow:"0 4px 20px rgba(27,28,25,0.06)"}}>
+          {/* Hero with photo, category, tags, name */}
+          <div style={{position:"relative",height:170,background:T.bg2}}>
+            {img
+              ? <img src={img} alt="" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>
+              : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:6}}>
+                  <span style={{fontSize:24}}>📷</span>
+                  <span style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300}}>No photo added yet</span>
+                </div>}
+            <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(27,28,25,0.85) 0%,transparent 55%)"}}/>
+            <div style={{position:"absolute",bottom:12,left:14,right:14}}>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
+                <span style={{fontFamily:F.body,fontSize:10,fontWeight:700,color:"#fff",background:T.sage,padding:"3px 10px",borderRadius:999}}>{venueCategory||bizData.category}</span>
+                {tags.slice(0,3).map(t=>(
+                  <span key={t} style={{fontFamily:F.body,fontSize:10,color:"rgba(255,255,255,0.9)",background:"rgba(255,255,255,0.18)",backdropFilter:"blur(4px)",padding:"3px 10px",borderRadius:999}}>{t}</span>
+                ))}
+              </div>
+              <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:18,fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.3px"}}>{venueName||bizData.name}</h2>
+            </div>
+          </div>
+          {/* Body */}
+          <div style={{padding:"14px 16px"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:6}}>
+              <span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300}}>📍 {address||venueLocation||bizData.location||"Mallorca"}</span>
+              <span style={{fontFamily:F.body,fontSize:12,color:T.ochre,fontWeight:700}}>◈ {parseInt(cr)||catAvg} <span style={{fontSize:9,color:T.stone2,fontWeight:300}}>per booking</span></span>
+            </div>
+            <p style={{fontFamily:F.body,fontSize:11,color:T.stone,lineHeight:1.7,margin:"0 0 12px",fontWeight:300}}>{desc||"Your description will appear here."}</p>
+            {tags.length>0&&(
+              <>
+                <div style={{fontFamily:F.body,fontSize:9,fontWeight:700,color:T.sage,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:6}}>Amenities & offerings</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:14}}>
+                  {tags.map(t=>(
+                    <span key={t} style={{fontFamily:F.body,fontSize:10,color:T.ink,background:T.bg2,border:`1px solid ${T.border}`,padding:"3px 9px",borderRadius:999,fontWeight:500}}>{t}</span>
+                  ))}
+                </div>
+              </>
+            )}
+            {previewSlots.length>0&&(
+              <>
+                <div style={{fontFamily:F.body,fontSize:9,fontWeight:700,color:T.sage,letterSpacing:"1.5px",textTransform:"uppercase",marginBottom:8}}>Upcoming sessions</div>
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {[...new Map(previewSlots.map(s=>[s.date,s])).values()].slice(0,2).map(sl=>(
+                    <div key={sl.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:T.bg,border:`1px solid ${T.border}`,borderRadius:6}}>
+                      <div style={{textAlign:"center",minWidth:36}}>
+                        <div style={{fontFamily:F.body,fontSize:12,fontWeight:700,color:T.sage}}>{sl.time}</div>
+                        <div style={{fontFamily:F.body,fontSize:9,color:T.stone,fontWeight:300}}>{sl.dur}</div>
+                      </div>
+                      <div style={{width:1,height:24,background:T.border}}/>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontFamily:F.body,fontSize:11,fontWeight:600,color:T.ink,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sl.name||"Session"}</div>
+                        <div style={{fontFamily:F.body,fontSize:9,color:T.stone,fontWeight:300}}>{new Date(sl.date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</div>
+                      </div>
+                      <span style={{fontFamily:F.body,fontSize:10,color:T.ochre,fontWeight:700}}>◈ {sl.cr||parseInt(cr)||catAvg}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
         {/* Summary rows */}
         {[
           {l:"Venue",v:venueName||bizData.name},
           {l:"Category",v:venueCategory||bizData.category},
           {l:"Location",v:address||venueLocation||bizData.location||"—"},
           {l:"Description",v:desc?desc.slice(0,80)+(desc.length>80?"…":""):"—"},
+          {l:"Amenities",v:tags.length?`${tags.length} selected`:"None added"},
           {l:"Website",v:website||"—"},
           {l:"Instagram",v:instagram||"—"},
           {l:"Photo",v:img?"Added ✓":"Not added"},
@@ -3611,23 +4635,49 @@ function BusinessPortal({ onSetView }) {
   const [regDone, setRegDone]   = useState(false);
   const [regDuplicate, setRegDuplicate] = useState(false);
 
-  // Declared before the useEffect so the linter sees it; the useEffect callback
-  // only runs after mount so this would also work via hoisting at runtime.
+  // Case-insensitive email match (so 'James@x.com' matches 'james@x.com' in the
+  // businesses table). If multiple rows exist for the same email, prefer one
+  // that's mid-flow (setting_up > submitted > approved > anything else) rather
+  // than just "newest by created_at" — because admins re-enter setting_up by
+  // editing a specific row, and the newest row might be a stale duplicate.
+  function pickBizRow(rows) {
+    if (!rows || rows.length === 0) return null;
+    const priority = (s) =>
+      s === 'setting_up' ? 0 :
+      s === 'submitted'  ? 1 :
+      s === 'approved'   ? 2 :
+      3; // pending / null / anything else
+    const sorted = [...rows].sort((a, b) => {
+      const pa = priority(a.status), pb = priority(b.status);
+      if (pa !== pb) return pa - pb;
+      // tie-break on newest
+      return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+    });
+    return sorted[0];
+  }
+
   async function loadBizData(userEmail) {
     setScreen("loading");
-    const {data: rows, error} = await supabase.from("businesses").select("*").eq("email", userEmail).order("created_at", {ascending: false}).limit(1);
+    const {data: rows, error} = await supabase
+      .from("businesses").select("*")
+      .ilike("email", userEmail)
+      .order("created_at", {ascending: false});
     if(error) {
       console.error("loadBizData error:", error.message, "| code:", error.code, "| email:", userEmail);
       setScreen("pending");
       return;
     }
-    const data = rows?.[0] ?? null;
-    if(!data) {
+    if (!rows || rows.length === 0) {
       console.warn("loadBizData: no row found for", userEmail);
       setScreen("pending");
       return;
     }
-    console.log("loadBizData: status =", data.status);
+    if (rows.length > 1) {
+      console.warn(`loadBizData: ${rows.length} businesses rows for ${userEmail}:`,
+        rows.map(r => ({ id: r.id, status: r.status, name: r.name, created_at: r.created_at })));
+    }
+    const data = pickBizRow(rows);
+    console.log("loadBizData: picked row", { id: data.id, status: data.status, name: data.name, onboarding_step: data.onboarding_step });
     setBizData(data);
     if(data.status==="approved")        setScreen("dashboard");
     else if(data.status==="setting_up") setScreen("onboarding");
@@ -4013,6 +5063,7 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const portalParam = params.get("portal") === "business";
     const customerConfirmed = params.get("confirmed") === "true";
+    const creditsAdded      = params.get("credits") === "added";
 
     // Partner-specific signals: explicit ?portal=business, or Supabase invite
     // / recovery URL hashes (used only by the partner setting-up + reset flow).
@@ -4035,6 +5086,23 @@ export default function App() {
         "welcome",
         5000,
       ), 200);
+    }
+
+    // Stripe success landing: clear the flag, toast, and re-fetch profile to
+    // pick up the webhook-incremented credits balance.
+    if (creditsAdded) {
+      try { window.history.replaceState({}, "", window.location.pathname); } catch { /* non-critical: ignore */ }
+      setTimeout(() => showToast("Credits added to your account.", "success", 4000), 200);
+      // Re-fetch profile after a short delay (gives the Stripe webhook time
+      // to land — typically <2s). Retries once if the balance hasn't changed
+      // yet, which can happen if the webhook is still processing.
+      setTimeout(async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        const uid = session?.user?.id;
+        if (!uid) return;
+        const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
+        if (data) setProfile(data);
+      }, 1500);
     }
 
     const {data:{subscription}} = supabase.auth.onAuthStateChange((event, session)=>{
@@ -4291,7 +5359,13 @@ export default function App() {
   }
   function onPurchase(purchase){ setCredits(c=>c+purchase.cr); showToast(`◈ ${purchase.cr} credits added!`,"gold"); }
   function toggleSave(id){ setSaved(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]); showToast(saved.includes(id)?"Removed from saved":"Saved!","success"); }
-  function handleNavClick(id){ setView(id); }
+  function handleNavClick(id){
+    // Unauthenticated visitors clicking Business see the /partners landing,
+    // not the biz-portal sign-in form. Authenticated partners go straight
+    // to their portal (BusinessPortal handles dashboard / onboarding / etc).
+    if (id === "biz-portal" && !authSession) { setView("partners"); return; }
+    setView(id);
+  }
 
   const NAV=[{id:"home",l:"Home"},{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"profile",l:"Profile"},{id:"biz-portal",l:"Business"}];
 
@@ -4374,7 +5448,7 @@ export default function App() {
             <a href="mailto:hello@wello-wellness.com" style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,fontWeight:700,color:"#CAECBA",textDecoration:"none",whiteSpace:"nowrap"}}>hello@wello-wellness.com</a>
           </div>
         <nav style={{background:"rgba(251,249,244,0.96)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"1px solid rgba(195,200,188,0.2)"}}>
-          <style>{`body{overflow-x:hidden;} @media(max-width:640px){.wello-nav-links{display:none!important}.wello-footer{display:none!important}} .wello-nav-links{display:flex;} .scroll-indicator{display:flex;} @media(max-width:767px){.scroll-indicator{display:none!important}} .mob-menu-btn{display:none;} @media(max-width:640px){.mob-menu-btn{display:flex!important;}}`}</style>
+          <style>{`body{overflow-x:hidden;} @media(max-width:640px){.wello-nav-links{display:none!important}} .wello-nav-links{display:flex;} .scroll-indicator{display:flex;} @media(max-width:767px){.scroll-indicator{display:none!important}} .mob-menu-btn{display:none;} @media(max-width:640px){.mob-menu-btn{display:flex!important;}}`}</style>
           <div style={{maxWidth:1200,margin:"0 auto",padding:"0 clamp(16px,4vw,32px)",display:"flex",alignItems:"center",height:60,gap:16}}>
             {/* Wordmark — left */}
             <a onClick={()=>setView("home")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:20,fontWeight:800,color:"#213C18",letterSpacing:"-1px",cursor:"pointer",userSelect:"none",textDecoration:"none",flexShrink:0}}>wello</a>
@@ -4423,7 +5497,7 @@ export default function App() {
             <div onClick={()=>setMobileMenuOpen(false)}
               style={{position:"fixed",inset:0,top:headerH,background:"rgba(27,28,25,0.35)",zIndex:990}}/>
             <div style={{position:"absolute",top:"100%",left:0,right:0,background:"rgba(251,249,244,0.98)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"1px solid rgba(195,200,188,0.3)",boxShadow:"0 10px 30px rgba(33,60,24,0.12)",zIndex:1001,padding:"6px 0"}}>
-              {[{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"biz-portal",l:"Business"},{id:"profile",l:"Profile"}].map(n=>(
+              {[{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"biz-portal",l:"Business"},{id:"profile",l:"Profile"},{id:"partners",l:"For partners"}].map(n=>(
                 <button key={n.id}
                   onClick={()=>{handleNavClick(n.id);setMobileMenuOpen(false);}}
                   style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px clamp(16px,4vw,32px)",background:view===n.id?"rgba(33,60,24,0.06)":"transparent",border:"none",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:15,fontWeight:view===n.id?700:500,color:view===n.id?"#213C18":"#43483F",cursor:"pointer",borderBottom:"1px solid rgba(195,200,188,0.18)",textAlign:"left"}}>
@@ -4443,8 +5517,9 @@ export default function App() {
           {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion}/>}
           {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
           {view==="business"   &&<BusinessPage isBiz={true} onSetView={setView} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
-          {view==="credits"    &&<CreditsPage credits={credits} onPurchase={onPurchase} listings={listings}/>}
+          {view==="credits"    &&<CreditsPage credits={credits} listings={listings}/>}
           {view==="about"      &&<AboutPage onSetView={setView}/>}
+          {view==="partners"   &&<PartnersPage onSetView={setView}/>}
         </div>
 
         {/* FOOTER — Stitch linen style */}
@@ -4456,6 +5531,7 @@ export default function App() {
             </div>
             <div style={{display:"flex",gap:32,flexWrap:"wrap"}}>
               <a onClick={()=>setView("about")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>About</a>
+              <a onClick={()=>setView("partners")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>For partners</a>
               <a onClick={()=>setShowPrivacy(true)} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Privacy</a>
               <a onClick={()=>setShowTerms(true)} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Terms</a>
               <a onClick={()=>setShowContact(true)} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Contact</a>
@@ -4468,7 +5544,7 @@ export default function App() {
         </footer>
       </div>
 
-      <ScrollDownBtn/>
+      <ScrollDownBtn enabled={view==="home"}/>
 
       {/* CONTACT MODAL */}
       {showContact&&(

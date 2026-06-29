@@ -2,9 +2,13 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')!
 
+// supabase-js sends Authorization (anon JWT) + apikey + x-client-info on every
+// invoke() call. The browser's CORS preflight will reject the actual POST
+// unless every requested header is whitelisted here.
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
 serve(async (req) => {
