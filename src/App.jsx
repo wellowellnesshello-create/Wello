@@ -169,7 +169,14 @@ const INTEGRATIONS = [
   { id:"ical",       name:"iCal Feed",   desc:"Any calendar, 15-min sync",    auth:"Feed URL",    col:T.ochre },
   { id:"custom",     name:"Custom API",  desc:"Your own booking system",      auth:"Bearer Token",col:T.stone },
 ];
-const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","Meditation","Padel","Tennis","Pickleball"];
+const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","Meditation","Padel","Tennis","Pickleball","Private Instructor"];
+// Customer-facing label override. Most chips render their category name as-is,
+// but "Private Instructor" reads more naturally as "Private Classes" on the
+// explore filter. The underlying DB value stays "Private Instructor".
+const CAT_LABELS = { "Private Instructor": "Private Classes" };
+function catLabel(c) { return CAT_LABELS[c] || c; }
+const PRIVATE_CAT = "Private Instructor";
+const isPrivateInstructorCat = (c) => c === PRIVATE_CAT;
 const LOCS = ["All Mallorca","Palma","Sóller","Deià","Pollença","Alcúdia","Santanyí","Valldemossa"];
 
 // Themed groups for the Explore-page carousels. Each section is hidden if it has
@@ -488,11 +495,16 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
   const [myEmail, setMyEmail] = useState(profileEmail);
   const [guests, setGuests] = useState([]); // [{type:"new", id, name, email}]
   const [newEmail, setNewEmail] = useState("");
-  const avail = slot.spots - slot.booked;
-  const totalPeople = 1 + guests.length;
+  // Private-instructor only: collected at booking, saved to bookings.notes
+  // so the instructor knows where to travel to.
+  const [myLocation, setMyLocation] = useState("");
+  const isPrivateBooking = biz.cat === "Private Instructor";
+  const avail = isPrivateBooking ? 1 : slot.spots - slot.booked;
+  const totalPeople = isPrivateBooking ? 1 : (1 + guests.length);
   const cost = biz.cr * totalPeople;
   const canAfford = credits >= cost;
-  const canAddMore = totalPeople < avail;
+  const canAddMore = !isPrivateBooking && totalPeople < avail;
+  const locationOk = !isPrivateBooking || !!myLocation.trim();
 
   // If the profile loads after the modal opens (rare race), pull the prefilled
   // values in. Won't clobber user edits because anon flow doesn't have a profile.
@@ -583,18 +595,38 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                 </>
               )}
 
-              {/* Bring friends — invite by email only (real friends list not built yet) */}
-              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Bring friends <span style={{fontFamily:F2,fontSize:10,color:"#54584F",fontWeight:400,letterSpacing:0,textTransform:"none"}}>— optional</span></p>
-              <div style={{display:"flex",gap:8,marginBottom:20}}>
-                <input type="email" placeholder="Friend's email address" value={newEmail} onChange={e=>setNewEmail(e.target.value)}
-                  onKeyDown={e=>e.key==="Enter"&&addNewGuest()}
-                  style={{flex:1,border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:13,color:"#1B1C19",outline:"none",background:"#FBF9F4",transition:"border-color .15s"}}
-                  onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
-                <button onClick={addNewGuest} disabled={!newEmail.trim()||!canAddMore}
-                  style={{padding:"10px 16px",background:newEmail.trim()&&canAddMore?"#213C18":"#E4E2DD",color:newEmail.trim()&&canAddMore?"#fff":"#54584F",border:"none",borderRadius:8,fontFamily:F2,fontSize:13,fontWeight:700,cursor:newEmail.trim()&&canAddMore?"pointer":"not-allowed",transition:"all .15s",whiteSpace:"nowrap"}}>
-                  + Add
-                </button>
-              </div>
+              {/* Private-instructor only: where are you based? Saved into bookings.notes */}
+              {isPrivateBooking && (
+                <>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Where are you based? <span style={{color:"#C46A4D"}}>*</span></p>
+                  <input type="text" placeholder="e.g. Palma old town, near Plaça d'Espanya" value={myLocation} onChange={e=>setMyLocation(e.target.value)}
+                    style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:13,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",marginBottom:6,transition:"border-color .15s"}}
+                    onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 18px"}}>So your instructor knows where to travel to.</p>
+
+                  <div style={{background:"#FFF7EA",border:"1px solid #E8C9A4",borderRadius:10,padding:"10px 14px",marginBottom:20}}>
+                    <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#7A5C32",margin:"0 0 2px",letterSpacing:"0.3px"}}>This is a booking request</p>
+                    <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.55}}>Your instructor has 48 hours to confirm. Credits are reserved but only deducted on confirmation. If declined or unanswered, we'll suggest alternative instructors and return your credits.</p>
+                  </div>
+                </>
+              )}
+
+              {/* Bring friends — group classes only; private sessions are 1-to-1 */}
+              {!isPrivateBooking && (
+                <>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Bring friends <span style={{fontFamily:F2,fontSize:10,color:"#54584F",fontWeight:400,letterSpacing:0,textTransform:"none"}}>— optional</span></p>
+                  <div style={{display:"flex",gap:8,marginBottom:20}}>
+                    <input type="email" placeholder="Friend's email address" value={newEmail} onChange={e=>setNewEmail(e.target.value)}
+                      onKeyDown={e=>e.key==="Enter"&&addNewGuest()}
+                      style={{flex:1,border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:13,color:"#1B1C19",outline:"none",background:"#FBF9F4",transition:"border-color .15s"}}
+                      onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                    <button onClick={addNewGuest} disabled={!newEmail.trim()||!canAddMore}
+                      style={{padding:"10px 16px",background:newEmail.trim()&&canAddMore?"#213C18":"#E4E2DD",color:newEmail.trim()&&canAddMore?"#fff":"#54584F",border:"none",borderRadius:8,fontFamily:F2,fontSize:13,fontWeight:700,cursor:newEmail.trim()&&newEmail.trim()&&canAddMore?"pointer":"not-allowed",transition:"all .15s",whiteSpace:"nowrap"}}>
+                      + Add
+                    </button>
+                  </div>
+                </>
+              )}
 
               {/* Added guests list */}
               {guests.length>0&&(
@@ -621,10 +653,14 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                 </div>
               </div>
 
-              <button onClick={()=>{if(myName&&myEmail&&canAfford){onConfirm({biz,slot,form:{name:myName,email:myEmail,guests:totalPeople},cost});setSt(2);}}}
-                disabled={!myName||!myEmail||!canAfford}
-                style={{width:"100%",padding:"16px 0",borderRadius:999,background:myName&&myEmail&&canAfford?"#213C18":"#E4E2DD",color:myName&&myEmail&&canAfford?"#fff":"#54584F",border:"none",fontFamily:F2,fontSize:15,fontWeight:700,cursor:myName&&myEmail&&canAfford?"pointer":"not-allowed",transition:"all .15s",boxShadow:myName&&myEmail&&canAfford?"0 4px 14px rgba(33,60,24,0.2)":"none"}}>
-                {!canAfford?"Insufficient Credits":`Confirm · ◈ ${cost} credits`}
+              <button onClick={()=>{
+                if(myName&&myEmail&&canAfford&&locationOk){
+                  onConfirm({biz,slot,form:{name:myName,email:myEmail,guests:totalPeople,location:isPrivateBooking?myLocation.trim():undefined},cost});
+                  setSt(2);
+                }}}
+                disabled={!myName||!myEmail||!canAfford||!locationOk}
+                style={{width:"100%",padding:"16px 0",borderRadius:999,background:myName&&myEmail&&canAfford&&locationOk?"#213C18":"#E4E2DD",color:myName&&myEmail&&canAfford&&locationOk?"#fff":"#54584F",border:"none",fontFamily:F2,fontSize:15,fontWeight:700,cursor:myName&&myEmail&&canAfford&&locationOk?"pointer":"not-allowed",transition:"all .15s",boxShadow:myName&&myEmail&&canAfford&&locationOk?"0 4px 14px rgba(33,60,24,0.2)":"none"}}>
+                {!canAfford?"Insufficient Credits":!locationOk?"Add your location to continue":isPrivateBooking?`Request booking · ◈ ${cost} held`:`Confirm · ◈ ${cost} credits`}
               </button>
             </div>
           </>
@@ -632,10 +668,13 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
 
         {step===2&&(
           <div style={{padding:"48px 32px",textAlign:"center"}}>
-            <div style={{width:64,height:64,background:"#CAECBA",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>✓</div>
-            <h2 style={{fontFamily:F2,fontSize:22,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.5px"}}>Booking confirmed!</h2>
+            <div style={{width:64,height:64,background:isPrivateBooking?"#FFE6C7":"#CAECBA",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>{isPrivateBooking?"⏳":"✓"}</div>
+            <h2 style={{fontFamily:F2,fontSize:22,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.5px"}}>{isPrivateBooking?"Booking requested":"Booking confirmed!"}</h2>
             <p style={{fontFamily:F2,fontSize:14,color:"#54584F",margin:"0 0 4px"}}>{slot.name} · {biz.name}</p>
             <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 20px"}}>{fd(slot.date)} · {slot.time}</p>
+            {isPrivateBooking && (
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 20px",lineHeight:1.6}}>Your instructor has been notified by SMS. They have 48 hours to confirm. We'll email you the moment they do — credits stay on your account until then.</p>
+            )}
             {guests.filter(g=>g.type==="new").length>0&&(
               <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 16px",marginBottom:20,textAlign:"left"}}>
                 <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#213C18",margin:"0 0 6px"}}>📧 Invite emails sent to:</p>
@@ -843,6 +882,9 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave, compact = false }) 
         </p>
         <div style={{display:"flex",gap:s.pillGap,flexWrap:"wrap",marginBottom:s.pillMargin}}>
           <span style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:600,color:"#766149",background:"rgba(250,222,192,0.5)",padding:s.pillPad,borderRadius:999}}>{biz.cat}</span>
+          {biz.cat === "Private Instructor" && (
+            <span style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:700,color:"#fff",background:"#213C18",padding:s.pillPad,borderRadius:999}}>Private</span>
+          )}
           {biz.tags?.slice(0,s.tagsToShow).map(t=>(
             <span key={t} style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:500,color:"#54584F",background:"rgba(228,226,221,0.6)",padding:s.pillPad,borderRadius:999}}>{t}</span>
           ))}
@@ -1271,7 +1313,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
                 style={{padding:"8px 18px",borderRadius:999,border:"none",fontFamily:F2,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",transition:"all .15s",flexShrink:0,
                   background:activeCat===c?"#213C18":"#EAE8E3",
                   color:activeCat===c?"#fff":"#43483F"}}>
-                {c}
+                {catLabel(c)}
               </button>
             ))}
             <div style={{marginLeft:"auto",flexShrink:0,display:"flex",alignItems:"center",gap:8,background:"#F0EEE9",borderRadius:999,padding:"8px 16px"}}>
@@ -2710,6 +2752,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const [linkedListingId, setLinkedListingId] = useState(null);
   const [dbSlots, setDbSlots]     = useState(null); // null = loading | [] = empty | [...] = loaded
   const [statusLive, setStatusLive] = useState(bizData.status === 'approved' || bizData.status === 'submitted');
+  // Private-instructor: pending booking requests awaiting confirm/decline.
+  // null = loading | [] = empty | [...] = loaded. Each item is the booking
+  // row joined with a minimal customer-profile blob for display.
+  const [pendingRequests, setPendingRequests] = useState(null);
+  const [requestsTick, setRequestsTick] = useState(0);
+  const [respondingId, setRespondingId] = useState(null); // booking id currently being confirmed/declined
 
   function flashSaveMsg(kind, text) {
     setSaveMsg({ kind, text });
@@ -2736,6 +2784,59 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     })();
     return () => { cancelled = true; };
   }, [isPreview, bizData?.id]);
+
+  // Private-instructor only: load pending booking requests for this venue so
+  // the Requests tab has something to render. Re-runs whenever requestsTick
+  // bumps (after a confirm/decline).
+  useEffect(() => {
+    if (isPreview || !bizData?.id || !dashIsPrivate) { setPendingRequests([]); return; }
+    let cancelled = false;
+    (async () => {
+      const { data: rows, error } = await supabase
+        .from('bookings')
+        .select('id, user_id, slot_id, booking_date, start_time, duration, credits_used, notes, status, created_at')
+        .eq('business_id', bizData.id)
+        .eq('status', 'pending_instructor')
+        .order('created_at', { ascending: true });
+      if (error) {
+        console.error('pendingRequests query error:', error.message);
+        if (!cancelled) setPendingRequests([]);
+        return;
+      }
+      // Fetch the customer profile names for display in one batch.
+      const uids = [...new Set((rows || []).map(r => r.user_id).filter(Boolean))];
+      let profileMap = {};
+      if (uids.length > 0) {
+        const { data: profs } = await supabase
+          .from('profiles').select('id, full_name, email').in('id', uids);
+        for (const p of (profs || [])) profileMap[p.id] = p;
+      }
+      const enriched = (rows || []).map(r => ({ ...r, _customer: profileMap[r.user_id] || null }));
+      if (!cancelled) setPendingRequests(enriched);
+    })();
+    return () => { cancelled = true; };
+  }, [isPreview, bizData?.id, dashIsPrivate, requestsTick]);
+
+  async function respondToRequest(bookingId, action) {
+    if (!bookingId || respondingId) return;
+    setRespondingId(bookingId);
+    const { data, error } = await supabase.functions.invoke('instructor-booking-response', {
+      body: { booking_id: bookingId, action },
+    });
+    setRespondingId(null);
+    if (error) {
+      console.error('instructor-booking-response error:', error.message);
+      flashSaveMsg('err', "Couldn't send your response. " + error.message);
+      return;
+    }
+    if (data?.error) {
+      console.error('instructor-booking-response server error:', data.error);
+      flashSaveMsg('err', data.error);
+      return;
+    }
+    flashSaveMsg(action === 'confirm' ? 'golive' : 'settings', action === 'confirm' ? 'Booking confirmed.' : 'Booking declined.');
+    setRequestsTick(t => t + 1);
+  }
 
   async function saveSettings() {
     if (isPreview || !bizData?.id) return;
@@ -2826,7 +2927,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     setDbSlots(s => (s || []).filter(x => x.id !== slotId));
   }
 
-  const TABS = [["overview","Overview"],["schedule","Schedule"],["payouts","Payouts"],["listing","My Listing"],["settings","Settings"]];
+  // Private-instructor dashboards get an extra "Requests" tab for pending
+  // booking requests (where they have 48 hours to confirm or decline).
+  const dashIsPrivate = bizData?.category === 'Private Instructor';
+  const TABS = dashIsPrivate
+    ? [["overview","Overview"],["requests","Requests"],["schedule","Schedule"],["payouts","Payouts"],["listing","My Listing"],["settings","Settings"]]
+    : [["overview","Overview"],["schedule","Schedule"],["payouts","Payouts"],["listing","My Listing"],["settings","Settings"]];
 
   const WEEK_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   // Compute the current Mon→Sun week as "14 Apr"-style labels — always live so dates never go stale.
@@ -3082,6 +3188,78 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ── REQUESTS (private instructors only) ── */}
+        {tab==="requests"&&(
+          <div>
+            <div style={{marginBottom:18}}>
+              <h2 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#1B1C19",margin:"0 0 4px"}}>Pending requests</h2>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0}}>Bookings waiting for your response. You have 48 hours to confirm or decline before the system declines on your behalf.</p>
+            </div>
+            {pendingRequests === null && (
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",fontWeight:300}}>Loading…</p>
+            )}
+            {pendingRequests && pendingRequests.length === 0 && (
+              <div style={{padding:"40px 24px",background:"#fff",border:"1px solid #E4E2DD",borderRadius:8,textAlign:"center"}}>
+                <p style={{fontFamily:F2,fontSize:13,color:"#54584F",fontWeight:300,margin:0}}>No pending requests right now. New booking requests will appear here.</p>
+              </div>
+            )}
+            {pendingRequests && pendingRequests.length > 0 && (
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                {pendingRequests.map(req => {
+                  const expiresAt = new Date(new Date(req.created_at).getTime() + 48*60*60*1000);
+                  const hoursLeft = Math.max(0, Math.round((expiresAt - new Date()) / 3600000));
+                  const expired = hoursLeft <= 0;
+                  const customerName = req._customer?.full_name || req._customer?.email || 'Customer';
+                  const customerEmail = req._customer?.email || '';
+                  const customerLocationRaw = req.notes || '';
+                  const customerLocation = customerLocationRaw.replace(/^Customer location:\s*/i, '') || 'Not provided';
+                  return (
+                    <div key={req.id} style={{padding:"16px 18px",background:"#fff",border:"1px solid #E4E2DD",borderRadius:8}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:10,flexWrap:"wrap"}}>
+                        <div>
+                          <p style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#1B1C19",margin:"0 0 3px"}}>{customerName}</p>
+                          {customerEmail && <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0}}>{customerEmail}</p>}
+                        </div>
+                        <span style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"0.3px",padding:"4px 10px",borderRadius:999,background:expired?"#FFE1D6":"#FFF7EA",color:expired?"#C46A4D":"#7A5C32"}}>
+                          {expired ? 'Expiring now' : `${hoursLeft}h to respond`}
+                        </span>
+                      </div>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:14,padding:"10px 12px",background:"#F5F3EE",borderRadius:6}}>
+                        <div>
+                          <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>Date</p>
+                          <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#1B1C19",margin:0}}>{new Date(req.booking_date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</p>
+                        </div>
+                        <div>
+                          <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>Time</p>
+                          <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#1B1C19",margin:0}}>{(req.start_time||'').slice(0,5)} · {req.duration||'-'}</p>
+                        </div>
+                        <div>
+                          <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>Credits</p>
+                          <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#766149",margin:0}}>◈ {req.credits_used||'-'}</p>
+                        </div>
+                      </div>
+                      <div style={{marginBottom:14}}>
+                        <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 3px"}}>Customer location</p>
+                        <p style={{fontFamily:F2,fontSize:12,color:"#1B1C19",margin:0}}>{customerLocation}</p>
+                      </div>
+                      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                        <button onClick={()=>respondToRequest(req.id,'confirm')} disabled={!!respondingId}
+                          style={{flex:"1 1 140px",padding:"10px 14px",background:respondingId===req.id?"#A3A89E":"#213C18",color:"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:12,fontWeight:700,cursor:respondingId?"wait":"pointer"}}>
+                          {respondingId===req.id ? 'Sending…' : '✓ Confirm booking'}
+                        </button>
+                        <button onClick={()=>respondToRequest(req.id,'decline')} disabled={!!respondingId}
+                          style={{flex:"1 1 140px",padding:"10px 14px",background:"transparent",color:"#C46A4D",border:"1px solid #C46A4D",borderRadius:6,fontFamily:F2,fontSize:12,fontWeight:600,cursor:respondingId?"wait":"pointer"}}>
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -3729,10 +3907,17 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard 
   const [address, setAddress] = useState(bizData.address || "");
   const [website, setWebsite] = useState(bizData.website || "");
   const [instagram, setInstagram] = useState(bizData.instagram || "");
+  // Private-instructor only: short personal bio + required phone number for
+  // SMS booking-request notifications. bio reuses businesses.description's
+  // intent but keeps the wording personal; phone is required so the
+  // notify-instructor-sms function can reach them.
+  const [bio, setBio]   = useState(bizData.bio || "");
+  const [phone, setPhone] = useState(bizData.phone || "");
   // tags = "amenities & offerings" — what the venue advertises. Stored as a
   // string[] in businesses.tags and surfaced as pills on the listing.
   const [tags, setTags] = useState(Array.isArray(bizData.tags) ? bizData.tags : []);
   const [customTag, setCustomTag] = useState("");
+  const isPrivateInstructor = isPrivateInstructorCat(venueCategory);
   // Strip any stale blob: URLs that may have leaked into the DB on previous
   // failed uploads — those only exist in the tab that created them and would
   // render as broken images for the partner.
@@ -3749,7 +3934,9 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard 
   // Default to Acuity tab (the primary integration option). Partners with manual
   // slots already saved (no acuity_key, slots present) will still default to
   // Acuity — they can click Manual to see their existing slots.
-  const [availType, setAvailType] = useState("acuity");
+  // Private instructors are solo and don't sync external schedules — we lock
+  // them to the manual tab via the effect below.
+  const [availType, setAvailType] = useState(isPrivateInstructorCat(bizData.category) ? "manual" : "acuity");
   const [acuityKey, setAcuityKey] = useState(bizData.acuity_key || "");
   const [acuityUserId, setAcuityUserId] = useState(bizData.acuity_user_id || "");
   const [acuityTypes, setAcuityTypes] = useState(bizData.acuity_appointment_types || []);
@@ -3836,7 +4023,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard 
     setTags(prev => [...prev, t]);
     setCustomTag("");
   }
-  const catAvg = {Yoga:20,Pilates:20,Surfing:40,"Paddle Boarding":30,Kayaking:30,Cycling:20,"Hotel Gym":25,"Pool Access":25,"Fitness Class":15,HIIT:15,Tennis:25,Padel:25,Pickleball:20,"Massage & Spa":60,Meditation:15,"Sound Healing":20,Breathwork:15,Dance:15,"Martial Arts":20,"Outdoor adventure":30}[bizData.category] ?? 20;
+  const catAvg = {Yoga:20,Pilates:20,Surfing:40,"Paddle Boarding":30,Kayaking:30,Cycling:20,"Hotel Gym":25,"Pool Access":25,"Fitness Class":15,HIIT:15,Tennis:25,Padel:25,Pickleball:20,"Massage & Spa":60,Meditation:15,"Sound Healing":20,Breathwork:15,Dance:15,"Martial Arts":20,"Outdoor adventure":30,"Private Instructor":60}[bizData.category] ?? 20;
   const INP = {width:"100%",padding:"10px 12px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:12,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",boxSizing:"border-box",transition:"border-color .18s"};
   const FL = {display:"block",fontSize:9,letterSpacing:"1.5px",textTransform:"uppercase",color:T.stone,fontFamily:F.body,marginBottom:4};
   const onFi = e => e.target.style.borderColor = T.sage;
@@ -3922,8 +4109,11 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard 
   function addSlot() {
     if (!newSlot.name.trim() || !newSlot.days.length) return;
     const cr = newSlot.cr === "" ? null : Math.max(1, parseInt(newSlot.cr) || catAvg);
-    setSlots(s => [...s, { id:`sl${Date.now()}`, ...newSlot, cr }]);
-    setNewSlot({ name:"", days:[], time:"09:00", dur:"60 min", spots:10, cr:"" });
+    // Private instructors are always 1-to-1 — force spots to 1 regardless of
+    // whatever was in the (disabled) input.
+    const spots = isPrivateInstructor ? 1 : newSlot.spots;
+    setSlots(s => [...s, { id:`sl${Date.now()}`, ...newSlot, spots, cr }]);
+    setNewSlot({ name:"", days:[], time:"09:00", dur:"60 min", spots: isPrivateInstructor ? 1 : 10, cr:"" });
   }
 
   if (step===1) return (
@@ -4027,14 +4217,20 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard 
     </div>
   );
 
-  if (step===2) return (
-    <OWrap title="Your venue details" sub="Confirm and complete your listing details — this is what guests will see on Wello." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onPreview={()=>setPreviewOpen(true)}
+  if (step===2) {
+    // Private instructors must provide phone (for SMS booking requests).
+    // address is repurposed as "coverage area" — they travel to clients.
+    const step2CanContinue = isPrivateInstructor
+      ? !!desc.trim() && !!phone.trim() && !!address.trim() && !!bio.trim()
+      : !!desc.trim();
+    return (
+    <OWrap title={isPrivateInstructor ? "Your instructor profile" : "Your venue details"} sub={isPrivateInstructor ? "Tell guests who you are and where you travel. Your phone number stays private — we use it to text you booking requests." : "Confirm and complete your listing details — this is what guests will see on Wello."} step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onPreview={()=>setPreviewOpen(true)}
       footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(1)} label="← Back" variant="secondary"/>,
-               <OBtn key="n" saving={saving} onClick={()=>goNext({name:venueName,category:venueCategory,location:venueLocation,description:desc,address,website,instagram,tags})} label="Save & continue →" disabled={!desc.trim()}/>]}>
+               <OBtn key="n" saving={saving} onClick={()=>goNext({name:venueName,category:venueCategory,location:venueLocation,description:desc,address,website,instagram,tags,bio,phone})} label="Save & continue →" disabled={!step2CanContinue}/>]}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div style={{gridColumn:"1/-1"}}>
-          <label style={FL}>Venue name</label>
-          <input value={venueName} onChange={e=>setVenueName(e.target.value)} placeholder="Your venue name"
+          <label style={FL}>{isPrivateInstructor ? "Your name" : "Venue name"}</label>
+          <input value={venueName} onChange={e=>setVenueName(e.target.value)} placeholder={isPrivateInstructor ? "e.g. Maria López" : "Your venue name"}
             style={{...INP}} onFocus={onFi} onBlur={onBl}/>
         </div>
         <div>
@@ -4043,17 +4239,39 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard 
             style={{...INP}} onFocus={onFi} onBlur={onBl}/>
         </div>
         <div>
-          <label style={FL}>Location</label>
+          <label style={FL}>{isPrivateInstructor ? "Town / area" : "Location"}</label>
           <input value={venueLocation} onChange={e=>setVenueLocation(e.target.value)} placeholder="e.g. Palma"
             style={{...INP}} onFocus={onFi} onBlur={onBl}/>
         </div>
       </div>
-      <label style={FL}>Description</label>
-      <textarea value={desc} onChange={e=>setDesc(e.target.value)} rows={4} placeholder="Describe your venue, what makes it special, and what guests can expect…"
+      <label style={FL}>{isPrivateInstructor ? "About your sessions" : "Description"}</label>
+      <textarea value={desc} onChange={e=>setDesc(e.target.value)} rows={4} placeholder={isPrivateInstructor ? "What kind of sessions you offer, who they're for, what guests bring or wear…" : "Describe your venue, what makes it special, and what guests can expect…"}
         style={{...INP,resize:"vertical",lineHeight:1.6,marginBottom:16}} onFocus={onFi} onBlur={onBl}/>
-      <label style={FL}>Address</label>
-      <input value={address} onChange={e=>setAddress(e.target.value)} placeholder="Street address, Mallorca"
-        style={{...INP,marginBottom:16}} onFocus={onFi} onBlur={onBl}/>
+
+      {isPrivateInstructor && (
+        <>
+          <label style={FL}>Short bio <span style={{color:T.clay,fontWeight:600}}>*</span></label>
+          <textarea value={bio} onChange={e=>setBio(e.target.value)} rows={3} placeholder="Your training, qualifications, why you teach. Keep it brief — 2-3 sentences works well."
+            style={{...INP,resize:"vertical",lineHeight:1.6,marginBottom:16}} onFocus={onFi} onBlur={onBl}/>
+        </>
+      )}
+
+      <label style={FL}>{isPrivateInstructor ? "Coverage area" : "Address"} {isPrivateInstructor && <span style={{color:T.clay,fontWeight:600}}>*</span>}</label>
+      <input value={address} onChange={e=>setAddress(e.target.value)} placeholder={isPrivateInstructor ? "Where you'll travel to e.g. Palma, Sóller, west coast" : "Street address, Mallorca"}
+        style={{...INP,marginBottom:isPrivateInstructor?6:16}} onFocus={onFi} onBlur={onBl}/>
+      {isPrivateInstructor && (
+        <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"0 0 16px",lineHeight:1.6}}>Guests will see this on your listing instead of a fixed address.</p>
+      )}
+
+      {isPrivateInstructor && (
+        <>
+          <label style={FL}>Phone number (for booking requests) <span style={{color:T.clay,fontWeight:600}}>*</span></label>
+          <input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+34 600 000 000"
+            style={{...INP,marginBottom:6}} onFocus={onFi} onBlur={onBl}/>
+          <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"0 0 16px",lineHeight:1.6}}>We text you when someone books. You have 48 hours to confirm or decline. Guests never see your number.</p>
+        </>
+      )}
+
       <label style={FL}>Website (optional)</label>
       <input value={website} onChange={e=>setWebsite(e.target.value)} placeholder="https://yourwebsite.com"
         style={{...INP,marginBottom:16}} onFocus={onFi} onBlur={onBl}/>
@@ -4107,6 +4325,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard 
       </div>
     </OWrap>
   );
+  }
 
   if (step===3) {
     // Open crop modal for whichever slot the partner just picked a file for.
@@ -4259,7 +4478,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard 
   }
 
   if (step===4) return (
-    <OWrap title="List your availabilities" sub="Connect Acuity Scheduling to sync your classes automatically, or add slots manually — you can always update this later." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onPreview={()=>setPreviewOpen(true)}
+    <OWrap title={isPrivateInstructor ? "Your availability" : "List your availabilities"} sub={isPrivateInstructor ? "Set when you're available for 1-to-1 sessions. Each booking is a single private session." : "Connect Acuity Scheduling to sync your classes automatically, or add slots manually — you can always update this later."} step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onPreview={()=>setPreviewOpen(true)}
       footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(3)} label="← Back" variant="secondary"/>,
                <OBtn key="n" saving={saving} onClick={()=>{
                  if (availType === "acuity") {
@@ -4290,8 +4509,14 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard 
                    goNext({ slots, integration_request: intgRequest });
                  }
                }} label="Save & continue →"/>]}>
-      <label style={FL}>Connect to booking system</label>
-      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
+      {isPrivateInstructor && (
+        <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:6,padding:"12px 14px",marginBottom:20}}>
+          <div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:700,marginBottom:3,letterSpacing:"0.3px"}}>Each slot is a 1-to-1 private session</div>
+          <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.55}}>Bookings request your time — you have 48 hours to confirm or decline by SMS or in your dashboard. Slots must be at least 4 days out.</div>
+        </div>
+      )}
+      {!isPrivateInstructor && <label style={FL}>Connect to booking system</label>}
+      {!isPrivateInstructor && <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
         {[
           {id:"acuity",    name:"Acuity Scheduling",desc:"Auto-sync your classes from Acuity",   status:"available",   icon:"📅"},
           {id:"ical",      name:"iCal Feed",        desc:"One-way sync from any calendar (Google, Apple, Outlook…)", status:"available", icon:"🔗"},
@@ -4334,7 +4559,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard 
             </div>
           );
         })}
-      </div>
+      </div>}
       {availType==="acuity" ? (
         <>
           <div style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:6,padding:"10px 12px",marginBottom:16}}>
@@ -4450,7 +4675,12 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard 
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
               <div>
                 <label style={FL}>Max spots (capacity)</label>
-                <input type="number" min="1" value={newSlot.spots} onChange={e=>setNewSlot(p=>({...p,spots:parseInt(e.target.value)||1}))} style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+                {isPrivateInstructor ? (
+                  <input type="text" value="1 (private)" disabled
+                    style={{...INP,background:T.bg2,color:T.stone2,cursor:"not-allowed"}}/>
+                ) : (
+                  <input type="number" min="1" value={newSlot.spots} onChange={e=>setNewSlot(p=>({...p,spots:parseInt(e.target.value)||1}))} style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+                )}
               </div>
               <div>
                 <label style={FL}>Credits per booking</label>
@@ -4628,10 +4858,11 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard 
 
         {/* Summary rows */}
         {[
-          {l:"Venue",v:venueName||bizData.name},
+          {l:isPrivateInstructor?"Instructor":"Venue",v:venueName||bizData.name},
           {l:"Category",v:venueCategory||bizData.category},
-          {l:"Location",v:address||venueLocation||bizData.location||"—"},
-          {l:"Description",v:desc?desc.slice(0,80)+(desc.length>80?"…":""):"—"},
+          {l:isPrivateInstructor?"Coverage area":"Location",v:address||venueLocation||bizData.location||"—"},
+          ...(isPrivateInstructor ? [{l:"Bio",v:bio?bio.slice(0,80)+(bio.length>80?"…":""):"—"},{l:"Phone",v:phone||"—"}] : []),
+          {l:isPrivateInstructor?"About sessions":"Description",v:desc?desc.slice(0,80)+(desc.length>80?"…":""):"—"},
           {l:"Amenities",v:tags.length?`${tags.length} selected`:"None added"},
           {l:"Website",v:website||"—"},
           {l:"Instagram",v:instagram||"—"},
@@ -5504,17 +5735,36 @@ export default function App() {
       return;
     }
 
-    // 1. Instant UI: credit + local bookings + slot capacity.
-    setCredits(c=>c-cost);
-    setBookings(p=>[{id:Date.now(),biz,slot,form,cost},...p]);
-    setListings(p=>p.map(b=>b.id!==biz.id?b:{...b,slots:b.slots.map(s=>s.id!==slot.id?s:{...s,booked:s.booked+form.guests})}));
-    showToast(`Booked! ◈ ${cost} credits used.`,"success");
+    // Private-instructor bookings are requests, not immediate confirmations.
+    // We hold the slot visually but DO NOT deduct credits until the instructor
+    // confirms (or auto-confirm hits at the 48h deadline).
+    const isPrivateBooking = biz.cat === "Private Instructor";
 
-    // 2. Persist to Supabase + fire Acuity sync.
+    // 1. Instant UI:
+    // - regular bookings: deduct credits immediately, mark slot booked
+    // - private requests: leave credits alone, leave slot capacity alone (the
+    //   slot row will be confirmed/declined later)
+    if (!isPrivateBooking) {
+      setCredits(c=>c-cost);
+      setListings(p=>p.map(b=>b.id!==biz.id?b:{...b,slots:b.slots.map(s=>s.id!==slot.id?s:{...s,booked:s.booked+form.guests})}));
+    }
+    setBookings(p=>[{id:Date.now(),biz,slot,form,cost,status:isPrivateBooking?'pending_instructor':'confirmed'},...p]);
+    showToast(
+      isPrivateBooking ? "Request sent. Instructor has 48 hours to confirm." : `Booked! ◈ ${cost} credits used.`,
+      "success"
+    );
+
+    // 2. Persist to Supabase + fire Acuity sync (Acuity only for non-private).
     try {
       // Peak window: 07:00–09:00 (inclusive of 07:00, exclusive of 09:00).
       const t = (slot.time || '').slice(0,5);
       const peak_flag = t >= '07:00' && t < '09:00';
+
+      // For private bookings the customer's location is required and saved to
+      // bookings.notes so the instructor sees it on their dashboard + in the SMS.
+      const notes = isPrivateBooking
+        ? (form?.location ? `Customer location: ${form.location}` : null)
+        : (form?.note || null);
 
       const payload = {
         user_id: uid,
@@ -5526,8 +5776,8 @@ export default function App() {
         duration: slot.dur,
         credits_used: cost,
         peak_flag,
-        status: 'confirmed',
-        notes: form?.note || null,
+        status: isPrivateBooking ? 'pending_instructor' : 'confirmed',
+        notes,
       };
       console.log('[onConfirm] inserting bookings row', payload);
 
@@ -5566,22 +5816,31 @@ export default function App() {
       // new row shows up immediately (it was rendered from a fetched list).
       setBookingsVersion(v => v + 1);
 
-      // 3. Fire-and-forget server-side Acuity sync. The edge function uses
-      //    service-role to look up the partner's credentials (never exposed to
-      //    this browser), POSTs to Acuity, writes acuity_appointment_id back.
-      supabase.functions.invoke('bookings-sync', {
-        body: {
-          booking_id: inserted.id,
-          acuity_type_id: slot.acuity_type_id ?? null,
-        },
-      }).then(({ data, error }) => {
-        if (error) console.warn('[bookings-sync] invoke failed:', error.message);
-        else if (data?.acuity_error) console.warn('[bookings-sync] Acuity issue:', data.acuity_error);
-        else console.log('[bookings-sync] result:', data);
-        // Acuity sync writes acuity_appointment_id (or sets acuity_sync_failed
-        // status) on the row. Tick again so ProfilePage shows the latest.
-        setBookingsVersion(v => v + 1);
-      });
+      // 3. Fire-and-forget downstream signals:
+      // - Private instructor bookings → SMS the instructor via Twilio.
+      // - Everything else → Acuity sync (writes appointment_id back).
+      if (isPrivateBooking) {
+        supabase.functions.invoke('notify-instructor-sms', {
+          body: { booking_id: inserted.id },
+        }).then(({ data, error }) => {
+          if (error) console.warn('[notify-instructor-sms] invoke failed:', error.message);
+          else console.log('[notify-instructor-sms] result:', data);
+        });
+      } else {
+        supabase.functions.invoke('bookings-sync', {
+          body: {
+            booking_id: inserted.id,
+            acuity_type_id: slot.acuity_type_id ?? null,
+          },
+        }).then(({ data, error }) => {
+          if (error) console.warn('[bookings-sync] invoke failed:', error.message);
+          else if (data?.acuity_error) console.warn('[bookings-sync] Acuity issue:', data.acuity_error);
+          else console.log('[bookings-sync] result:', data);
+          // Acuity sync writes acuity_appointment_id (or sets acuity_sync_failed
+          // status) on the row. Tick again so ProfilePage shows the latest.
+          setBookingsVersion(v => v + 1);
+        });
+      }
     } catch (e) {
       console.error('[onConfirm] unexpected exception:', e);
       showToast("Something went wrong. Please try again.","error");

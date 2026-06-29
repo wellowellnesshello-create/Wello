@@ -138,11 +138,18 @@ serve(async (req) => {
       .maybeSingle()
     if (existingErr) console.error('Failed to check for existing listing:', existingErr.message)
 
+    // Private instructors travel to their clients, so their listing's "loc"
+    // should display their coverage area (address) rather than a fixed town.
+    const isPrivate = record.category === 'Private Instructor'
+    const displayLoc = isPrivate
+      ? (record.address ?? record.location ?? null)
+      : (record.location ?? record.address ?? null)
+
     let listingId: number | string | null = existing?.id ?? null
     const baseFields = {
       name: record.name,
       cat: record.category ?? null,
-      loc: record.location ?? record.address ?? null,
+      loc: displayLoc,
       description: record.description ?? null,
       img: record.img ?? null,
       cr: record.cr ?? 3,
