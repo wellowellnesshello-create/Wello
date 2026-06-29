@@ -138,11 +138,17 @@ serve(async (req) => {
       .maybeSingle()
     if (existingErr) console.error('Failed to check for existing listing:', existingErr.message)
 
-    // Private instructors travel to their clients, so their listing's "loc"
-    // should display their coverage area (address) rather than a fixed town.
+    // Private instructors travel to their clients. The listing's "loc" should
+    // surface the areas they cover rather than a single town. We also persist
+    // the structured coverage_areas array on the listing so the explore page
+    // can filter against it.
     const isPrivate = record.category === 'Private Instructor'
+    const coverageAreas: string[] = Array.isArray(record.coverage_areas)
+      ? record.coverage_areas.filter(Boolean) : []
     const displayLoc = isPrivate
-      ? (record.address ?? record.location ?? null)
+      ? (coverageAreas.length > 0
+          ? (coverageAreas.length <= 3 ? coverageAreas.join(', ') : `${coverageAreas.slice(0,3).join(', ')} +${coverageAreas.length - 3}`)
+          : (record.address ?? record.location ?? null))
       : (record.location ?? record.address ?? null)
 
     let listingId: number | string | null = existing?.id ?? null
@@ -154,6 +160,7 @@ serve(async (req) => {
       img: record.img ?? null,
       cr: record.cr ?? 3,
       tags,
+      coverage_areas: isPrivate ? coverageAreas : [],
       status: 'active',
     }
 
@@ -184,31 +191,81 @@ serve(async (req) => {
         listingId = inserted.id
         console.log('Listing created for:', record.name, '| id:', listingId)
 
-        // ── Create slot instances from onboarding slot data ───────
-        // businesses.slots is a JSONB array: [{id, name, days:["Mon","Tue"], time, dur, spots, cr}]
-        // Expand each recurring slot into concrete date instances for the next 4 weeks.
+        // ── Create slot instances ─────────────────────────────────
+        // Two models live side by side:
+        // - Venues (default): businesses.slots is [{id, name, days, time, dur, spots, cr}]
+        //   and each entry expands into one concrete row per (day × 4 weeks).
+        // - Private instructors: businesses.availability_windows is
+        //   [{day, start, end}] plus session_duration_min. We slice each
+        //   window into back-to-back request slots of that length, again over
+        //   the next 4 weeks, skipping anything inside a 4-day lead-time
+        //   buffer so customers can't request something too imminent.
         const today = new Date()
         const slotRows: object[] = []
 
-        for (const sl of (record.slots ?? [])) {
-          for (const day of (sl.days ?? [])) {
-            const target = DAY_IDX[day] ?? 1
+        if (isPrivate) {
+          const windows = Array.isArray(record.availability_windows) ? record.availability_windows : []
+          const durMin = Number.isFinite(record.session_duration_min) && record.session_duration_min > 0
+            ? record.session_duration_min : 60
+          const LEAD_MS = 4 * 24 * 60 * 60 * 1000
+          const minBookable = new Date(Date.now() + LEAD_MS)
+
+          for (const w of windows) {
+            const dayIdx = DAY_IDX[w?.day]
+            if (dayIdx === undefined) continue
+            const [sH, sM] = String(w.start || '09:00').split(':').map((x: string) => parseInt(x, 10))
+            const [eH, eM] = String(w.end   || '18:00').split(':').map((x: string) => parseInt(x, 10))
+            const windowStartMin = sH * 60 + sM
+            const windowEndMin   = eH * 60 + eM
+            if (windowEndMin <= windowStartMin) continue // ignore inverted
+
             const curr = today.getDay()
-            const daysAhead = (target - curr + 7) % 7 || 7
+            const daysAhead = (dayIdx - curr + 7) % 7 || 7
             for (let week = 0; week < 4; week++) {
               const d = new Date(today)
               d.setDate(today.getDate() + daysAhead + week * 7)
-              slotRows.push({
-                listing_id: listingId,
-                name: sl.name ?? '',
-                date: d.toISOString().slice(0, 10),
-                time: sl.time ?? '09:00',
-                dur: sl.dur ?? '60 min',
-                spots: sl.spots ?? 10,
-                booked: 0,
-                credits: sl.cr ?? record.cr ?? 3,
-                acuity_type_id: sl.acuity_type_id ?? null,
-              })
+              d.setHours(0, 0, 0, 0)
+              for (let mins = windowStartMin; mins + durMin <= windowEndMin; mins += durMin) {
+                const slotDateTime = new Date(d)
+                slotDateTime.setHours(Math.floor(mins / 60), mins % 60, 0, 0)
+                if (slotDateTime < minBookable) continue
+                const hh = String(Math.floor(mins / 60)).padStart(2, '0')
+                const mm = String(mins % 60).padStart(2, '0')
+                slotRows.push({
+                  listing_id: listingId,
+                  name: `${durMin}-min private session`,
+                  date: d.toISOString().slice(0, 10),
+                  time: `${hh}:${mm}`,
+                  dur: `${durMin} min`,
+                  spots: 1,
+                  booked: 0,
+                  credits: record.cr ?? 3,
+                  acuity_type_id: null,
+                })
+              }
+            }
+          }
+        } else {
+          for (const sl of (record.slots ?? [])) {
+            for (const day of (sl.days ?? [])) {
+              const target = DAY_IDX[day] ?? 1
+              const curr = today.getDay()
+              const daysAhead = (target - curr + 7) % 7 || 7
+              for (let week = 0; week < 4; week++) {
+                const d = new Date(today)
+                d.setDate(today.getDate() + daysAhead + week * 7)
+                slotRows.push({
+                  listing_id: listingId,
+                  name: sl.name ?? '',
+                  date: d.toISOString().slice(0, 10),
+                  time: sl.time ?? '09:00',
+                  dur: sl.dur ?? '60 min',
+                  spots: sl.spots ?? 10,
+                  booked: 0,
+                  credits: sl.cr ?? record.cr ?? 3,
+                  acuity_type_id: sl.acuity_type_id ?? null,
+                })
+              }
             }
           }
         }
