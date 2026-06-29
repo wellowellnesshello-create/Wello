@@ -2666,7 +2666,7 @@ CRITICAL: every "credits" value and "total_credits" MUST be a single positive in
   );
 }
 
-function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = true }) {
+function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = true, venues = [], activeVenueId = null, onSwitchVenue, onAddVenue }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   const bizData = bizDataProp || { name:"Demo Studio", cat:"Yoga", loc:"Sóller", monthlyBookings:24, monthlyCredits:86 };
   const [tab, setTab] = useState("overview");
@@ -2929,6 +2929,37 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       {/* Header */}
       <div style={{background:"#213C18",padding:"clamp(16px,3vw,28px) clamp(16px,3vw,32px) 0"}}>
         <div style={{maxWidth:1100,margin:"0 auto"}}>
+          {/* Venue selector strip — only shown when a partner owns more than one
+              venue, or when the "Add another venue" affordance is available. */}
+          {!isPreview && (venues.length > 1 || onAddVenue) && (
+            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:14}}>
+              <span style={{fontFamily:F2,fontSize:9,color:"rgba(255,255,255,0.4)",letterSpacing:"1.5px",textTransform:"uppercase",marginRight:4}}>Venues</span>
+              {venues.map(v => {
+                const active = v.id === activeVenueId;
+                const dot = v.status === 'approved' ? '#4ade80'
+                          : v.status === 'submitted' ? '#D6B47C'
+                          : v.status === 'setting_up' ? '#FFB07A'
+                          : 'rgba(255,255,255,0.4)';
+                return (
+                  <button key={v.id} onClick={() => !active && onSwitchVenue && onSwitchVenue(v.id)}
+                    title={v.status === 'approved' ? 'Live' : v.status === 'submitted' ? 'Pending review' : v.status === 'setting_up' ? 'Setting up' : v.status}
+                    style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:999,border:`1px solid ${active?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.12)"}`,background:active?"rgba(255,255,255,0.18)":"rgba(255,255,255,0.04)",color:"#fff",fontFamily:F2,fontSize:11,fontWeight:active?700:400,cursor:active?"default":"pointer",transition:"all .12s",whiteSpace:"nowrap"}}>
+                    <span style={{width:6,height:6,borderRadius:"50%",background:dot,display:"inline-block",flexShrink:0}}/>
+                    {v.name || 'Untitled venue'}
+                  </button>
+                );
+              })}
+              {onAddVenue && (
+                <button onClick={onAddVenue}
+                  style={{padding:"6px 12px",borderRadius:999,border:"1px dashed rgba(255,255,255,0.3)",background:"transparent",color:"rgba(255,255,255,0.7)",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer",whiteSpace:"nowrap"}}
+                  onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.08)";e.currentTarget.style.color="#fff";}}
+                  onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.7)";}}>
+                  + Add another venue
+                </button>
+              )}
+            </div>
+          )}
+
           <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:12,marginBottom:24}}>
             <div>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
@@ -3641,7 +3672,7 @@ function SquareCropModal({ file, onCancel, onConfirm }) {
   );
 }
 
-function OnboardingProgressBar({ step, total, doSignOut, onPreview }) {
+function OnboardingProgressBar({ step, total, doSignOut, onPreview, onBackToDashboard }) {
   return (
     <div style={{position:"sticky",top:0,zIndex:3100,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"14px 28px"}}>
       <div style={{maxWidth:640,margin:"0 auto",display:"flex",alignItems:"center",gap:12}}>
@@ -3651,6 +3682,9 @@ function OnboardingProgressBar({ step, total, doSignOut, onPreview }) {
         </div>
         {step>1&&onPreview&&(
           <button onClick={onPreview} style={{background:"none",border:`1px solid ${T.border}`,borderRadius:2,color:T.stone,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:300,padding:"3px 10px",whiteSpace:"nowrap"}}>Preview</button>
+        )}
+        {onBackToDashboard&&(
+          <button onClick={onBackToDashboard} style={{background:"none",border:"none",color:T.sage,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:600,padding:0,whiteSpace:"nowrap"}}>← Dashboard</button>
         )}
         <button onClick={doSignOut} style={{background:"none",border:"none",color:T.stone,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:300,padding:0}}>Sign out</button>
       </div>
@@ -3669,10 +3703,10 @@ function OBtn({ onClick, label, disabled, variant="primary", saving }) {
   );
 }
 
-function OWrap({ title, sub, children, footer, step, total, doSignOut, onPreview }) {
+function OWrap({ title, sub, children, footer, step, total, doSignOut, onPreview, onBackToDashboard }) {
   return (
     <>
-      <OnboardingProgressBar step={step} total={total} doSignOut={doSignOut} onPreview={onPreview}/>
+      <OnboardingProgressBar step={step} total={total} doSignOut={doSignOut} onPreview={onPreview} onBackToDashboard={onBackToDashboard}/>
       <div style={{maxWidth:960,margin:"0 auto",padding:"clamp(28px,4vw,48px) clamp(20px,4vw,40px) 100px"}}>
         <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:"clamp(24px,3vw,32px)",fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 8px"}}>{title}</h1>
         {sub&&<p style={{fontFamily:F.body,fontSize:"clamp(13px,1.5vw,15px)",color:T.stone,fontWeight:300,margin:"0 0 32px",lineHeight:1.7}}>{sub}</p>}
@@ -3683,7 +3717,7 @@ function OWrap({ title, sub, children, footer, step, total, doSignOut, onPreview
   );
 }
 
-function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
+function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard }) {
   const TOTAL = 7;
   const [step, setStep] = useState(bizData.onboarding_step > 0 ? Math.min(bizData.onboarding_step, TOTAL) : 1);
   const [saving, setSaving] = useState(false);
@@ -3893,7 +3927,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   }
 
   if (step===1) return (
-    <><OnboardingProgressBar step={step} total={TOTAL} doSignOut={doSignOut}/>
+    <><OnboardingProgressBar step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard}/>
       <div style={{maxWidth:520,margin:"0 auto",padding:"80px 28px",textAlign:"center"}}>
         <div style={{width:64,height:64,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",fontSize:28}}>👋</div>
         <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:26,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 12px"}}>Welcome to Wello, {firstName}.</h1>
@@ -3994,7 +4028,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   );
 
   if (step===2) return (
-    <OWrap title="Your venue details" sub="Confirm and complete your listing details — this is what guests will see on Wello." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+    <OWrap title="Your venue details" sub="Confirm and complete your listing details — this is what guests will see on Wello." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onPreview={()=>setPreviewOpen(true)}
       footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(1)} label="← Back" variant="secondary"/>,
                <OBtn key="n" saving={saving} onClick={()=>goNext({name:venueName,category:venueCategory,location:venueLocation,description:desc,address,website,instagram,tags})} label="Save & continue →" disabled={!desc.trim()}/>]}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
@@ -4145,7 +4179,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
     const totalUploading = primaryUploading || galleryUploadCount > 0;
 
     return (
-      <OWrap title="Add photos" sub="A square primary photo is required. Drag and zoom to set the crop. Up to four extras for your gallery." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+      <OWrap title="Add photos" sub="A square primary photo is required. Drag and zoom to set the crop. Up to four extras for your gallery." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onPreview={()=>setPreviewOpen(true)}
         footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(2)} label="← Back" variant="secondary"/>,
                  <OBtn key="n" saving={saving} onClick={()=>goNext({img,gallery})} label="Save & continue →" disabled={!img||totalUploading}/>]}>
         <label style={FL}>Primary photo <span style={{color:T.clay,fontWeight:600}}>*</span></label>
@@ -4225,7 +4259,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   }
 
   if (step===4) return (
-    <OWrap title="List your availabilities" sub="Connect Acuity Scheduling to sync your classes automatically, or add slots manually — you can always update this later." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+    <OWrap title="List your availabilities" sub="Connect Acuity Scheduling to sync your classes automatically, or add slots manually — you can always update this later." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onPreview={()=>setPreviewOpen(true)}
       footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(3)} label="← Back" variant="secondary"/>,
                <OBtn key="n" saving={saving} onClick={()=>{
                  if (availType === "acuity") {
@@ -4455,7 +4489,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   if (step===5) {
     const canAdvance = priceMode==="flat" ? !!cr : slots.every(sl=>sl.cr);
     return (
-      <OWrap title="Set your credit price" sub="Guests pay using Wello credits. 1 credit = €1." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+      <OWrap title="Set your credit price" sub="Guests pay using Wello credits. 1 credit = €1." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onPreview={()=>setPreviewOpen(true)}
         footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(4)} label="← Back" variant="secondary"/>,
                  <OBtn key="n" saving={saving} onClick={()=>goNext(priceMode==="flat"?{cr:parseInt(cr)||catAvg,price_mode:"flat"}:{price_mode:"per_slot",slots,cr:null})} label="Save & continue →" disabled={!canAdvance}/>]}>
         {/* Toggle */}
@@ -4502,7 +4536,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
   }
 
   if (step===6) return (
-    <OWrap title="Payout details" sub="Enter your bank details so we can pay you for bookings made through Wello." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+    <OWrap title="Payout details" sub="Enter your bank details so we can pay you for bookings made through Wello." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onPreview={()=>setPreviewOpen(true)}
       footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
                <OBtn key="n" saving={saving} onClick={()=>goNext({})} label="Save & continue →"/>]}>
       <div style={{pointerEvents:"none",opacity:1}}>
@@ -4522,7 +4556,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut }) {
 
   if (step===7) return (
     <>
-      <OWrap title="Review your listing" sub="Here's how you'll appear on Wello. Tap 'Preview' above for the full member view." step={step} total={TOTAL} doSignOut={doSignOut} onPreview={()=>setPreviewOpen(true)}
+      <OWrap title="Review your listing" sub="Here's how you'll appear on Wello. Tap 'Preview' above for the full member view." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onPreview={()=>setPreviewOpen(true)}
         footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(6)} label="← Back" variant="secondary"/>,
                  <button key="s" onClick={handleSubmit} disabled={saving}
                    style={{padding:"11px 28px",background:saving?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:saving?"not-allowed":"pointer"}}
@@ -4628,18 +4662,24 @@ function BusinessPortal({ onSetView }) {
   const [loginErr, setLoginErr] = useState("");
   const [loading, setLoading]   = useState(false);
   const [resetSent, setResetSent] = useState(false);
-  const [bizData, setBizData]   = useState(null);
+  // Multi-venue state: a partner can own more than one businesses row, linked
+  // via auth user_id. activeVenueId is which one the dashboard / wizard is
+  // currently looking at. bizData below is computed from venues + activeVenueId.
+  const [venues, setVenues]     = useState([]);
+  const [activeVenueId, setActiveVenueId] = useState(null);
+  const [authUser, setAuthUser] = useState(null);
   const didLoad = useRef(false);
   const [regForm, setRegForm]   = useState({name:"",category:"Yoga",location:"",email:"",phone:"",notes:""});
   const [regLoading, setRegLoading] = useState(false);
   const [regDone, setRegDone]   = useState(false);
   const [regDuplicate, setRegDuplicate] = useState(false);
 
-  // Case-insensitive email match (so 'James@x.com' matches 'james@x.com' in the
-  // businesses table). If multiple rows exist for the same email, prefer one
-  // that's mid-flow (setting_up > submitted > approved > anything else) rather
-  // than just "newest by created_at" — because admins re-enter setting_up by
-  // editing a specific row, and the newest row might be a stale duplicate.
+  // Currently active venue row. Used by every downstream screen (onboarding,
+  // dashboard, submitted, pending) so they can read fields like name / status.
+  const bizData = venues.find(v => v.id === activeVenueId) ?? null;
+
+  // Order a list of venues by lifecycle stage so the most useful one floats
+  // to the top of the venue selector and is picked as default.
   function pickBizRow(rows) {
     if (!rows || rows.length === 0) return null;
     const priority = (s) =>
@@ -4650,39 +4690,123 @@ function BusinessPortal({ onSetView }) {
     const sorted = [...rows].sort((a, b) => {
       const pa = priority(a.status), pb = priority(b.status);
       if (pa !== pb) return pa - pb;
-      // tie-break on newest
       return new Date(b.created_at || 0) - new Date(a.created_at || 0);
     });
     return sorted[0];
   }
 
-  async function loadBizData(userEmail) {
+  // Status → screen mapping. Reused on initial load and whenever the active
+  // venue switches, so all routing decisions stay consistent.
+  function screenForStatus(status) {
+    if (status === 'approved')   return 'dashboard';
+    if (status === 'setting_up') return 'onboarding';
+    if (status === 'submitted')  return 'submitted';
+    return 'pending';
+  }
+
+  // Returns a sorted venue list for display (priority by stage, name fallback).
+  function sortedVenues(list) {
+    return pickBizRow(list) ? [...list].sort((a, b) => {
+      const pri = s => s === 'setting_up' ? 0 : s === 'submitted' ? 1 : s === 'approved' ? 2 : 3;
+      const d = pri(a.status) - pri(b.status);
+      if (d !== 0) return d;
+      return (a.name || '').localeCompare(b.name || '');
+    }) : list;
+  }
+
+  // Fetch every businesses row the signed-in partner owns. Backfills user_id
+  // on any historical row that matches by email so older venues (created
+  // before the user_id column existed) join the same multi-venue group.
+  async function loadVenues(session, opts = {}) {
     setScreen("loading");
-    const {data: rows, error} = await supabase
-      .from("businesses").select("*")
-      .ilike("email", userEmail)
-      .order("created_at", {ascending: false});
-    if(error) {
-      console.error("loadBizData error:", error.message, "| code:", error.code, "| email:", userEmail);
-      setScreen("pending");
+    const uid = session.user.id;
+    const userEmail = session.user.email;
+
+    // 1. Rows already linked to this user.
+    const { data: ownedRows, error: ownedErr } = await supabase
+      .from('businesses').select('*')
+      .eq('user_id', uid)
+      .order('created_at', { ascending: false });
+    if (ownedErr) {
+      console.error('loadVenues (by user_id) error:', ownedErr.message);
+    }
+
+    // 2. Rows that match by email but have no user_id yet — these are
+    // legacy rows that need backfilling.
+    const { data: orphanRows, error: orphanErr } = await supabase
+      .from('businesses').select('*')
+      .is('user_id', null)
+      .ilike('email', userEmail)
+      .order('created_at', { ascending: false });
+    if (orphanErr) {
+      console.error('loadVenues (orphan backfill query) error:', orphanErr.message);
+    }
+
+    let backfilled = [];
+    if (orphanRows && orphanRows.length > 0) {
+      const ids = orphanRows.map(r => r.id);
+      const { data: updated, error: updErr } = await supabase
+        .from('businesses').update({ user_id: uid })
+        .in('id', ids)
+        .select('*');
+      if (updErr) {
+        console.error('loadVenues backfill update error:', updErr.message);
+      } else {
+        backfilled = updated || [];
+        console.log(`loadVenues: backfilled user_id on ${backfilled.length} legacy row(s)`);
+      }
+    }
+
+    const all = [...(ownedRows || []), ...backfilled];
+    if (all.length === 0) {
+      console.warn('loadVenues: no businesses for', userEmail);
+      setVenues([]); setActiveVenueId(null);
+      setScreen('pending');
       return;
     }
-    if (!rows || rows.length === 0) {
-      console.warn("loadBizData: no row found for", userEmail);
-      setScreen("pending");
+
+    const ordered = sortedVenues(all);
+    setVenues(ordered);
+
+    // Pick active venue: keep the caller's preference if they pinned one,
+    // else keep the previously active venue if it's still in the list,
+    // else fall back to highest-priority via pickBizRow.
+    const preferredId = opts.activate ?? activeVenueId;
+    const next = ordered.find(v => v.id === preferredId) ?? pickBizRow(ordered);
+    setActiveVenueId(next.id);
+    setScreen(screenForStatus(next.status));
+    console.log('loadVenues:', ordered.length, 'venue(s) | active:', { id: next.id, status: next.status, name: next.name });
+  }
+
+  // Switch the dashboard / wizard to a different venue the partner owns.
+  function switchVenue(id) {
+    const v = venues.find(x => x.id === id);
+    if (!v) return;
+    setActiveVenueId(id);
+    setScreen(screenForStatus(v.status));
+  }
+
+  // Start a fresh onboarding flow for a brand-new venue under the same user.
+  // Edge function notify-partner-status skips the auth-creation + welcome
+  // email when user_id is already set, so the insert doesn't try to re-invite.
+  async function addVenue() {
+    if (!authUser) return;
+    const { data, error } = await supabase.from('businesses').insert({
+      user_id: authUser.id,
+      email:   authUser.email,
+      status:  'setting_up',
+      onboarding_step: 1,
+      name:    'New venue',
+    }).select('*').single();
+    if (error) {
+      console.error('addVenue error:', error.message);
+      alert("Couldn't create a new venue. " + error.message);
       return;
     }
-    if (rows.length > 1) {
-      console.warn(`loadBizData: ${rows.length} businesses rows for ${userEmail}:`,
-        rows.map(r => ({ id: r.id, status: r.status, name: r.name, created_at: r.created_at })));
-    }
-    const data = pickBizRow(rows);
-    console.log("loadBizData: picked row", { id: data.id, status: data.status, name: data.name, onboarding_step: data.onboarding_step });
-    setBizData(data);
-    if(data.status==="approved")        setScreen("dashboard");
-    else if(data.status==="setting_up") setScreen("onboarding");
-    else if(data.status==="submitted")  setScreen("submitted");
-    else                                setScreen("pending");
+    const next = [data, ...venues];
+    setVenues(sortedVenues(next));
+    setActiveVenueId(data.id);
+    setScreen('onboarding');
   }
 
   useEffect(()=>{
@@ -4691,7 +4815,8 @@ function BusinessPortal({ onSetView }) {
     supabase.auth.getSession().then(({data:{session}})=>{
       if(session && !didLoad.current) {
         didLoad.current = true;
-        loadBizData(session.user.email);
+        setAuthUser(session.user);
+        loadVenues(session);
       } else if(!session) {
         setScreen("landing");
       }
@@ -4701,11 +4826,12 @@ function BusinessPortal({ onSetView }) {
       if(event==="SIGNED_IN" && session) {
         if(!didLoad.current) {
           didLoad.current = true;
-          loadBizData(session.user.email);
+          setAuthUser(session.user);
+          loadVenues(session);
         }
       } else if(event==="SIGNED_OUT") {
         didLoad.current = false;
-        setScreen("landing"); setBizData(null); setEmail(""); setPw("");
+        setScreen("landing"); setVenues([]); setActiveVenueId(null); setAuthUser(null); setEmail(""); setPw("");
       }
     });
     return ()=>subscription.unsubscribe();
@@ -4720,7 +4846,7 @@ function BusinessPortal({ onSetView }) {
 
   async function doSignOut() {
     await supabase.auth.signOut();
-    setScreen("landing"); setBizData(null); setEmail(""); setPw("");
+    setScreen("landing"); setVenues([]); setActiveVenueId(null); setAuthUser(null); setEmail(""); setPw("");
   }
 
   async function doPasswordReset() {
@@ -4919,9 +5045,34 @@ function BusinessPortal({ onSetView }) {
   );
 
   // ── Onboarding wizard ─────────────────────────────────────────
-  if (screen==="onboarding") return (
-    <PartnerOnboarding bizData={bizData} onSubmitted={()=>setScreen("submitted")} doSignOut={doSignOut}/>
-  );
+  if (screen==="onboarding") {
+    // If the partner already has at least one approved venue, offer a "Back
+    // to dashboard" escape from the wizard. Used after they hit "+ Add
+    // another venue" but want to bail out before finishing.
+    const hasApproved = venues.some(v => v.status === 'approved');
+    const backToDashboard = hasApproved
+      ? () => {
+          const approved = venues.find(v => v.status === 'approved');
+          setActiveVenueId(approved.id);
+          setScreen('dashboard');
+        }
+      : null;
+    return (
+      <PartnerOnboarding
+        key={activeVenueId}
+        bizData={bizData}
+        onSubmitted={async ()=>{
+          // Refresh venues so the just-submitted row reflects status='submitted'
+          // and any approved sibling stays visible in the selector.
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) await loadVenues(session, { activate: activeVenueId });
+          else setScreen("submitted");
+        }}
+        doSignOut={doSignOut}
+        onBackToDashboard={backToDashboard}
+      />
+    );
+  }
 
   // ── Submitted ─────────────────────────────────────────────────
   if (screen==="submitted") return (
@@ -4955,7 +5106,16 @@ function BusinessPortal({ onSetView }) {
 
   // ── Approved dashboard ────────────────────────────────────────
   if (screen==="dashboard") return (
-    <BusinessPortalDashboard onExit={doSignOut} bizData={bizData} isPreview={false}/>
+    <BusinessPortalDashboard
+      key={activeVenueId}
+      onExit={doSignOut}
+      bizData={bizData}
+      isPreview={false}
+      venues={venues}
+      activeVenueId={activeVenueId}
+      onSwitchVenue={switchVenue}
+      onAddVenue={addVenue}
+    />
   );
 
   return null;

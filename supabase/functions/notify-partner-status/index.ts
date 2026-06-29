@@ -44,6 +44,14 @@ serve(async (req) => {
       if (deactivateErr) console.error('Failed to deactivate listings:', deactivateErr.message)
     }
 
+    // Multi-venue: when an already-logged-in partner adds a new venue from
+    // the dashboard, the row already has user_id set. They don't need a
+    // welcome email or a new auth user — they're already in the portal.
+    if (record.user_id) {
+      console.log('setting_up with user_id already set — skipping welcome email for', email)
+      return new Response(JSON.stringify({ skipped: 'existing partner adding venue' }), { headers: { 'Content-Type': 'application/json' } })
+    }
+
     const { error: createError } = await supabase.auth.admin.createUser({
       email,
       email_confirm: true,
