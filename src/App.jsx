@@ -2666,7 +2666,7 @@ CRITICAL: every "credits" value and "total_credits" MUST be a single positive in
   );
 }
 
-function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = true, venues = [], activeVenueId = null, onSwitchVenue, onAddVenue }) {
+function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = true, venues = [], activeVenueId = null, onSwitchVenue, onAddVenue, addingVenue = false }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   const bizData = bizDataProp || { name:"Demo Studio", cat:"Yoga", loc:"Sóller", monthlyBookings:24, monthlyCredits:86 };
   const [tab, setTab] = useState("overview");
@@ -2950,11 +2950,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 );
               })}
               {onAddVenue && (
-                <button onClick={onAddVenue}
-                  style={{padding:"6px 12px",borderRadius:999,border:"1px dashed rgba(255,255,255,0.3)",background:"transparent",color:"rgba(255,255,255,0.7)",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer",whiteSpace:"nowrap"}}
-                  onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.08)";e.currentTarget.style.color="#fff";}}
-                  onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.7)";}}>
-                  + Add another venue
+                <button onClick={onAddVenue} disabled={addingVenue}
+                  style={{padding:"6px 12px",borderRadius:999,border:"1px dashed rgba(255,255,255,0.3)",background:"transparent",color:addingVenue?"rgba(255,255,255,0.35)":"rgba(255,255,255,0.7)",fontFamily:F2,fontSize:11,fontWeight:500,cursor:addingVenue?"wait":"pointer",whiteSpace:"nowrap"}}
+                  onMouseEnter={e=>{if(!addingVenue){e.currentTarget.style.background="rgba(255,255,255,0.08)";e.currentTarget.style.color="#fff";}}}
+                  onMouseLeave={e=>{if(!addingVenue){e.currentTarget.style.background="transparent";e.currentTarget.style.color="rgba(255,255,255,0.7)";}}}>
+                  {addingVenue ? 'Adding…' : '+ Add another venue'}
                 </button>
               )}
             </div>
@@ -4668,6 +4668,9 @@ function BusinessPortal({ onSetView }) {
   const [venues, setVenues]     = useState([]);
   const [activeVenueId, setActiveVenueId] = useState(null);
   const [authUser, setAuthUser] = useState(null);
+  // Guards double-fires on the "+ Add another venue" button so a fast double-
+  // click can't insert two rows.
+  const [addingVenue, setAddingVenue] = useState(false);
   const didLoad = useRef(false);
   const [regForm, setRegForm]   = useState({name:"",category:"Yoga",location:"",email:"",phone:"",notes:""});
   const [regLoading, setRegLoading] = useState(false);
@@ -4678,14 +4681,16 @@ function BusinessPortal({ onSetView }) {
   // dashboard, submitted, pending) so they can read fields like name / status.
   const bizData = venues.find(v => v.id === activeVenueId) ?? null;
 
-  // Order a list of venues by lifecycle stage so the most useful one floats
-  // to the top of the venue selector and is picked as default.
+  // Order a list of venues by lifecycle stage. Approved wins so a partner who
+  // already has a live venue lands on its dashboard even if they have another
+  // venue mid-setup or pending review. setting_up beats submitted because a
+  // half-finished wizard is still actionable; submitted is a wait-state.
   function pickBizRow(rows) {
     if (!rows || rows.length === 0) return null;
     const priority = (s) =>
-      s === 'setting_up' ? 0 :
-      s === 'submitted'  ? 1 :
-      s === 'approved'   ? 2 :
+      s === 'approved'   ? 0 :
+      s === 'setting_up' ? 1 :
+      s === 'submitted'  ? 2 :
       3; // pending / null / anything else
     const sorted = [...rows].sort((a, b) => {
       const pa = priority(a.status), pb = priority(b.status);
@@ -4707,7 +4712,7 @@ function BusinessPortal({ onSetView }) {
   // Returns a sorted venue list for display (priority by stage, name fallback).
   function sortedVenues(list) {
     return pickBizRow(list) ? [...list].sort((a, b) => {
-      const pri = s => s === 'setting_up' ? 0 : s === 'submitted' ? 1 : s === 'approved' ? 2 : 3;
+      const pri = s => s === 'approved' ? 0 : s === 'setting_up' ? 1 : s === 'submitted' ? 2 : 3;
       const d = pri(a.status) - pri(b.status);
       if (d !== 0) return d;
       return (a.name || '').localeCompare(b.name || '');
@@ -4789,24 +4794,30 @@ function BusinessPortal({ onSetView }) {
   // Start a fresh onboarding flow for a brand-new venue under the same user.
   // Edge function notify-partner-status skips the auth-creation + welcome
   // email when user_id is already set, so the insert doesn't try to re-invite.
+  // addingVenue guard prevents double-clicks from creating duplicate rows.
   async function addVenue() {
-    if (!authUser) return;
-    const { data, error } = await supabase.from('businesses').insert({
-      user_id: authUser.id,
-      email:   authUser.email,
-      status:  'setting_up',
-      onboarding_step: 1,
-      name:    'New venue',
-    }).select('*').single();
-    if (error) {
-      console.error('addVenue error:', error.message);
-      alert("Couldn't create a new venue. " + error.message);
-      return;
+    if (!authUser || addingVenue) return;
+    setAddingVenue(true);
+    try {
+      const { data, error } = await supabase.from('businesses').insert({
+        user_id: authUser.id,
+        email:   authUser.email,
+        status:  'setting_up',
+        onboarding_step: 1,
+        name:    'New venue',
+      }).select('*').single();
+      if (error) {
+        console.error('addVenue error:', error.message);
+        alert("Couldn't create a new venue. " + error.message);
+        return;
+      }
+      const next = [data, ...venues];
+      setVenues(sortedVenues(next));
+      setActiveVenueId(data.id);
+      setScreen('onboarding');
+    } finally {
+      setAddingVenue(false);
     }
-    const next = [data, ...venues];
-    setVenues(sortedVenues(next));
-    setActiveVenueId(data.id);
-    setScreen('onboarding');
   }
 
   useEffect(()=>{
@@ -4834,7 +4845,22 @@ function BusinessPortal({ onSetView }) {
         setScreen("landing"); setVenues([]); setActiveVenueId(null); setAuthUser(null); setEmail(""); setPw("");
       }
     });
-    return ()=>subscription.unsubscribe();
+
+    // Refetch on tab focus so admin-side status changes in Supabase propagate
+    // without forcing the partner to hard-refresh.
+    function onVisibility() {
+      if (document.visibilityState !== 'visible') return;
+      if (!didLoad.current) return;
+      supabase.auth.getSession().then(({data:{session}})=>{
+        if (session) loadVenues(session);
+      });
+    }
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return ()=>{
+      subscription.unsubscribe();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   },[]);
 
   async function doLogin() {
@@ -5062,11 +5088,17 @@ function BusinessPortal({ onSetView }) {
         key={activeVenueId}
         bizData={bizData}
         onSubmitted={async ()=>{
-          // Refresh venues so the just-submitted row reflects status='submitted'
-          // and any approved sibling stays visible in the selector.
+          // Refresh venues so the just-submitted row reflects status='submitted'.
+          // Don't pin the active venue — pickBizRow will float an approved
+          // sibling (if one exists) to the top so the partner lands on their
+          // working dashboard instead of getting stuck on a "submitted" wall.
           const { data: { session } } = await supabase.auth.getSession();
-          if (session) await loadVenues(session, { activate: activeVenueId });
-          else setScreen("submitted");
+          if (session) {
+            setActiveVenueId(null);
+            await loadVenues(session);
+          } else {
+            setScreen("submitted");
+          }
         }}
         doSignOut={doSignOut}
         onBackToDashboard={backToDashboard}
@@ -5075,14 +5107,51 @@ function BusinessPortal({ onSetView }) {
   }
 
   // ── Submitted ─────────────────────────────────────────────────
-  if (screen==="submitted") return (
-    <div style={{maxWidth:520,margin:"80px auto",padding:"0 28px",textAlign:"center"}}>
-      <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:22}}>✓</div>
-      <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 10px"}}>Listing submitted</h1>
-      <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 24px"}}>We've received your listing for <strong style={{fontWeight:600,color:T.ink}}>{bizData?.name}</strong>. We'll review it and be in touch within 2 working days.</p>
-      <button onClick={doSignOut} style={{padding:"9px 22px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>Sign out</button>
-    </div>
-  );
+  if (screen==="submitted") {
+    const approvedVenue = venues.find(v => v.status === 'approved');
+    return (
+      <div>
+        {/* Venue selector strip — only meaningful when the partner owns more
+            than one venue. Lets them switch back to a live dashboard without
+            signing out. */}
+        {venues.length > 1 && (
+          <div style={{background:T.ink,padding:"12px 28px"}}>
+            <div style={{maxWidth:960,margin:"0 auto",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+              <span style={{fontFamily:F.body,fontSize:9,color:"rgba(255,255,255,0.4)",letterSpacing:"1.5px",textTransform:"uppercase",marginRight:4}}>Venues</span>
+              {venues.map(v => {
+                const active = v.id === activeVenueId;
+                const dot = v.status === 'approved' ? '#4ade80'
+                          : v.status === 'submitted' ? '#D6B47C'
+                          : v.status === 'setting_up' ? '#FFB07A'
+                          : 'rgba(255,255,255,0.4)';
+                return (
+                  <button key={v.id} onClick={() => !active && switchVenue(v.id)}
+                    style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:999,border:`1px solid ${active?"rgba(255,255,255,0.4)":"rgba(255,255,255,0.12)"}`,background:active?"rgba(255,255,255,0.18)":"rgba(255,255,255,0.04)",color:"#fff",fontFamily:F.body,fontSize:11,fontWeight:active?700:400,cursor:active?"default":"pointer",whiteSpace:"nowrap"}}>
+                    <span style={{width:6,height:6,borderRadius:"50%",background:dot,display:"inline-block",flexShrink:0}}/>
+                    {v.name || 'Untitled venue'}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+        <div style={{maxWidth:520,margin:"80px auto",padding:"0 28px",textAlign:"center"}}>
+          <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:22}}>✓</div>
+          <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 10px"}}>Listing submitted</h1>
+          <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 24px"}}>We've received your listing for <strong style={{fontWeight:600,color:T.ink}}>{bizData?.name}</strong>. We'll review it and be in touch within 2 working days.</p>
+          <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
+            {approvedVenue && (
+              <button onClick={()=>switchVenue(approvedVenue.id)}
+                style={{padding:"9px 22px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:600}}>
+                ← Back to {approvedVenue.name || 'your dashboard'}
+              </button>
+            )}
+            <button onClick={doSignOut} style={{padding:"9px 22px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>Sign out</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // ── Pending ───────────────────────────────────────────────────
   if (screen==="pending") return (
@@ -5115,6 +5184,7 @@ function BusinessPortal({ onSetView }) {
       activeVenueId={activeVenueId}
       onSwitchVenue={switchVenue}
       onAddVenue={addVenue}
+      addingVenue={addingVenue}
     />
   );
 
