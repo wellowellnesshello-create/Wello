@@ -515,30 +515,36 @@ function ModalShell({ onClose, children }) {
   );
 }
 
-// "+ Add another venue" picker. Asks which business type the new venue is
-// before we insert the row, so the wizard branches correctly from step 2.
-function AddVenueTypeModal({ onCancel, onPick, busy = false }) {
+// Business-type picker — used for both "+ Add another venue" and for an
+// existing partner who wants to change their listing type after the fact.
+// title, subtitle, and currentType (highlighted with a sage ring) are
+// optional so the caller can phrase it appropriately.
+function AddVenueTypeModal({ onCancel, onPick, busy = false, title, subtitle, currentType }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   return (
     <ModalShell onClose={busy ? () => {} : onCancel}>
       <div style={{padding:"clamp(22px,4vw,28px)"}}>
         <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,letterSpacing:"-0.4px",margin:"0 0 6px"}}>
-          What kind of venue?
+          {title || "What kind of venue?"}
         </h2>
         <p style={{fontFamily:F2,fontSize:12,color:T.stone,lineHeight:1.65,margin:"0 0 18px",fontWeight:300}}>
-          Pick the option that best describes the new venue you're adding. This shapes the rest of the setup wizard.
+          {subtitle || "Pick the option that best describes the new venue you're adding. This shapes the rest of the setup wizard."}
         </p>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(160px, 1fr))",gap:8,marginBottom:14}}>
-          {BUSINESS_TYPES.map(bt => (
-            <button key={bt.id} type="button" disabled={busy} onClick={()=>onPick(bt.id)}
-              style={{padding:"12px 14px",border:`1px solid ${T.border}`,background:T.paper,borderRadius:8,fontFamily:F2,fontSize:12,fontWeight:600,color:T.ink,cursor:busy?"wait":"pointer",textAlign:"left",display:"flex",flexDirection:"column",gap:4,transition:"all .12s"}}
-              onMouseEnter={e=>{if(!busy){e.currentTarget.style.borderColor=T.sage;e.currentTarget.style.background="rgba(33,60,24,0.04)";}}}
-              onMouseLeave={e=>{if(!busy){e.currentTarget.style.borderColor=T.border;e.currentTarget.style.background=T.paper;}}}>
-              <span style={{fontSize:18,lineHeight:1}}>{bt.icon}</span>
-              <span style={{fontWeight:700,marginTop:2}}>{bt.label}</span>
-              <span style={{fontSize:10,fontWeight:300,color:T.stone,lineHeight:1.4}}>{bt.desc}</span>
-            </button>
-          ))}
+          {BUSINESS_TYPES.map(bt => {
+            const isCurrent = currentType === bt.id;
+            return (
+              <button key={bt.id} type="button" disabled={busy} onClick={()=>onPick(bt.id)}
+                style={{padding:"12px 14px",border:`1px solid ${isCurrent?T.sage:T.border}`,background:isCurrent?"rgba(33,60,24,0.06)":T.paper,borderRadius:8,fontFamily:F2,fontSize:12,fontWeight:600,color:T.ink,cursor:busy?"wait":"pointer",textAlign:"left",display:"flex",flexDirection:"column",gap:4,transition:"all .12s",position:"relative"}}
+                onMouseEnter={e=>{if(!busy && !isCurrent){e.currentTarget.style.borderColor=T.sage;e.currentTarget.style.background="rgba(33,60,24,0.04)";}}}
+                onMouseLeave={e=>{if(!busy && !isCurrent){e.currentTarget.style.borderColor=T.border;e.currentTarget.style.background=T.paper;}}}>
+                <span style={{fontSize:18,lineHeight:1}}>{bt.icon}</span>
+                <span style={{fontWeight:700,marginTop:2}}>{bt.label}</span>
+                <span style={{fontSize:10,fontWeight:300,color:T.stone,lineHeight:1.4}}>{bt.desc}</span>
+                {isCurrent && <span style={{position:"absolute",top:8,right:8,fontFamily:F2,fontSize:9,fontWeight:700,color:T.sage,letterSpacing:"0.5px",textTransform:"uppercase"}}>Current</span>}
+              </button>
+            );
+          })}
         </div>
         <div style={{textAlign:"right"}}>
           <button onClick={onCancel} disabled={busy}
@@ -647,7 +653,7 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
         {step===1&&(
           <>
             {/* Header */}
-            <div style={{background:"#213C18",padding:"20px 24px",position:"relative"}}>
+            <div style={{background:"#213C18",padding:"clamp(18px,4vw,22px) clamp(18px,4vw,24px)",position:"relative"}}>
               <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",letterSpacing:"2px",textTransform:"uppercase",margin:"0 0 6px",fontWeight:600}}>Reserve your spot</p>
               <h2 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.5px"}}>{slot.name}</h2>
               <p style={{fontFamily:F2,fontSize:13,color:"rgba(255,255,255,0.65)",margin:"0 0 14px"}}>{biz.name} · {fd(slot.date)} · {slot.time} · {slot.dur}</p>
@@ -1507,7 +1513,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
       </div>
 
       {/* Sticky filter bar */}
-      <div style={{position:"sticky",top:91,zIndex:40,background:"rgba(251,249,244,0.97)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",borderBottom:"1px solid rgba(195,200,188,0.2)",padding:"10px clamp(12px,3vw,32px)"}}>
+      <div style={{position:"sticky",top:91,zIndex:40,background:"#FBF9F4",borderBottom:"1px solid rgba(195,200,188,0.4)",padding:"10px clamp(12px,3vw,32px)"}}>
         <div style={{maxWidth:1200,margin:"0 auto"}}>
           {/* Category pills — Private Classes pinned to position 2 (after All)
               with a "New" sparkle so it's the first thing the eye lands on. */}
@@ -2931,7 +2937,7 @@ CRITICAL: every "credits" value and "total_credits" MUST be a single positive in
   );
 }
 
-function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = true, venues = [], activeVenueId = null, onSwitchVenue, onAddVenue, addingVenue = false, onDeleteVenue }) {
+function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = true, venues = [], activeVenueId = null, onSwitchVenue, onAddVenue, addingVenue = false, onDeleteVenue, onChangeType }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   const bizData = bizDataProp || { name:"Demo Studio", cat:"Yoga", loc:"Sóller", monthlyBookings:24, monthlyCredits:86 };
   const [tab, setTab] = useState("overview");
@@ -2978,7 +2984,36 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // Private-instructor dashboards behave a bit differently — declared up here
   // (and not later beside the TABS array) so the pendingRequests useEffect
   // below doesn't trip over a TDZ when it reads it on initial render.
-  const dashIsPrivate = bizData?.category === 'Private Instructor';
+  const dashIsPrivate = bizData?.business_type === 'private_instructor'
+    || (!bizData?.business_type && bizData?.category === 'Private Instructor');
+
+  // Private-instructor specific editable state. We hydrate from bizData on
+  // mount and the dashboard's key={activeVenueId} prop ensures these reset
+  // when the partner switches venues.
+  const [coverageAreas, setCoverageAreas] = useState(
+    Array.isArray(bizData?.coverage_areas) ? bizData.coverage_areas : []
+  );
+  const [availabilityWindows, setAvailabilityWindows] = useState(
+    Array.isArray(bizData?.availability_windows) ? bizData.availability_windows : []
+  );
+  const [sessionDurationMin, setSessionDurationMin] = useState(
+    Number.isFinite(bizData?.session_duration_min) && bizData?.session_duration_min > 0
+      ? bizData.session_duration_min : 60
+  );
+
+  function toggleCoverageArea(loc) {
+    setCoverageAreas(prev => prev.includes(loc) ? prev.filter(x => x !== loc) : [...prev, loc]);
+  }
+  function addAvailabilityWindow(day) {
+    setAvailabilityWindows(prev => [...prev, { day, start: '09:00', end: '12:00' }]);
+  }
+  function updateAvailabilityWindow(idx, patch) {
+    setAvailabilityWindows(prev => prev.map((w, i) => i === idx ? { ...w, ...patch } : w));
+  }
+  function removeAvailabilityWindow(idx) {
+    setAvailabilityWindows(prev => prev.filter((_, i) => i !== idx));
+  }
+
   // Private-instructor: pending booking requests awaiting confirm/decline.
   // null = loading | [] = empty | [...] = loaded. Each item is the booking
   // row joined with a minimal customer-profile blob for display.
@@ -3092,9 +3127,115 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       cr:         Number.isFinite(crNum) && crNum > 0 ? crNum : null,
       price_mode: listingForm.price_mode || 'flat',
     }).eq('id', bizData.id);
+    // Mirror cr onto the live listings row so the marketplace card updates
+    // immediately (rather than waiting for the next approval cycle).
+    if (!error && Number.isFinite(crNum) && crNum > 0) {
+      await supabase.from('listings').update({ cr: crNum }).eq('business_id', bizData.id);
+    }
     setSaving(false);
     if (error) flashSaveMsg("err", "Couldn't save. " + error.message);
     else flashSaveMsg("listing", "Listing saved.");
+  }
+
+  // Private-instructor only. Saves coverage areas to businesses and mirrors
+  // them onto the live listings row + recomputes the listings.loc display
+  // string (used by the explore card "📍 Palma, Sóller +2" line).
+  async function saveCoverageAreas() {
+    if (isPreview || !bizData?.id) return;
+    setSaving(true);
+    const displayLoc = coverageAreas.length === 0
+      ? (bizData.location ?? null)
+      : (coverageAreas.length <= 3
+          ? coverageAreas.join(', ')
+          : `${coverageAreas.slice(0,3).join(', ')} +${coverageAreas.length - 3}`);
+    const { error: bizErr } = await supabase.from('businesses')
+      .update({ coverage_areas: coverageAreas })
+      .eq('id', bizData.id);
+    if (!bizErr) {
+      await supabase.from('listings')
+        .update({ coverage_areas: coverageAreas, loc: displayLoc })
+        .eq('business_id', bizData.id);
+    }
+    setSaving(false);
+    if (bizErr) flashSaveMsg("err", "Couldn't save coverage areas. " + bizErr.message);
+    else flashSaveMsg("listing", "Coverage areas updated.");
+  }
+
+  // Private-instructor only. Saves windows + session length, then re-expands
+  // them into concrete slot rows for the next 4 weeks. Mirrors the logic in
+  // notify-partner-status so the partner sees changes reflected immediately
+  // without waiting for an admin re-approval.
+  async function saveAvailability() {
+    if (isPreview || !bizData?.id) return;
+    setSaving(true);
+    const { error: bizErr } = await supabase.from('businesses').update({
+      availability_windows: availabilityWindows,
+      session_duration_min: sessionDurationMin,
+    }).eq('id', bizData.id);
+    if (bizErr) {
+      setSaving(false);
+      flashSaveMsg("err", "Couldn't save availability. " + bizErr.message);
+      return;
+    }
+    // Regenerate slot rows: delete old, expand new windows.
+    if (linkedListingId) {
+      await supabase.from('slots').delete().eq('listing_id', linkedListingId);
+      const DAY_IDX = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
+      const today = new Date();
+      const LEAD_MS = 4 * 24 * 60 * 60 * 1000;
+      const minBookable = new Date(Date.now() + LEAD_MS);
+      const durMin = sessionDurationMin;
+      const crCharge = listingForm.cr ? (parseInt(listingForm.cr) || (bizData.cr ?? 60)) : (bizData.cr ?? 60);
+      const slotRows = [];
+      for (const w of availabilityWindows) {
+        const dayIdx = DAY_IDX[w.day];
+        if (dayIdx === undefined) continue;
+        const [sH, sM] = String(w.start || '09:00').split(':').map(x => parseInt(x, 10));
+        const [eH, eM] = String(w.end   || '18:00').split(':').map(x => parseInt(x, 10));
+        const startMin = sH * 60 + sM;
+        const endMin   = eH * 60 + eM;
+        if (endMin <= startMin) continue;
+        const curr = today.getDay();
+        const daysAhead = (dayIdx - curr + 7) % 7 || 7;
+        for (let week = 0; week < 4; week++) {
+          const d = new Date(today);
+          d.setDate(today.getDate() + daysAhead + week * 7);
+          d.setHours(0, 0, 0, 0);
+          for (let mins = startMin; mins + durMin <= endMin; mins += durMin) {
+            const slotDateTime = new Date(d);
+            slotDateTime.setHours(Math.floor(mins / 60), mins % 60, 0, 0);
+            if (slotDateTime < minBookable) continue;
+            const hh = String(Math.floor(mins / 60)).padStart(2, '0');
+            const mm = String(mins % 60).padStart(2, '0');
+            slotRows.push({
+              listing_id: linkedListingId,
+              name: `${durMin}-min private session`,
+              date: d.toISOString().slice(0, 10),
+              time: `${hh}:${mm}`,
+              dur: `${durMin} min`,
+              spots: 1,
+              booked: 0,
+              credits: crCharge,
+              acuity_type_id: null,
+            });
+          }
+        }
+      }
+      if (slotRows.length > 0) {
+        const { error: insErr } = await supabase.from('slots').insert(slotRows);
+        if (insErr) console.error('saveAvailability: slot insert failed', insErr.message);
+        else {
+          // Re-pull dbSlots so the UI reflects the new state without a refresh.
+          const { data: rows } = await supabase
+            .from('slots').select('*').eq('listing_id', linkedListingId).order('date').order('time');
+          setDbSlots(rows || []);
+        }
+      } else {
+        setDbSlots([]);
+      }
+    }
+    setSaving(false);
+    flashSaveMsg("settings", `Availability saved. ${availabilityWindows.length} window${availabilityWindows.length === 1 ? '' : 's'} live.`);
   }
 
   async function goLive() {
@@ -3492,7 +3633,96 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         )}
 
         {/* ── SCHEDULE ── */}
-        {tab==="schedule"&&(
+        {tab==="schedule" && dashIsPrivate && (
+          <div>
+            <div style={{marginBottom:18}}>
+              <h2 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#1B1C19",margin:"0 0 4px"}}>Your weekly availability</h2>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.6}}>Block out the time windows when you're free to teach. We auto-generate {sessionDurationMin}-minute request slots inside each window for the next 4 weeks. Guests pick one, you confirm.</p>
+            </div>
+
+            {/* Session length */}
+            <div style={{background:"#fff",borderRadius:12,padding:"16px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:14,display:"grid",gridTemplateColumns:"160px 1fr",gap:14,alignItems:"center"}}>
+              <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F"}}>Session length</label>
+              <select value={sessionDurationMin} onChange={e=>setSessionDurationMin(parseInt(e.target.value,10))}
+                style={{...INP,maxWidth:240}}>
+                <option value={30}>30 minutes</option>
+                <option value={45}>45 minutes</option>
+                <option value={60}>60 minutes (recommended)</option>
+                <option value={75}>75 minutes</option>
+                <option value={90}>90 minutes</option>
+                <option value={120}>2 hours</option>
+              </select>
+            </div>
+
+            {/* Per-day windows */}
+            <div style={{background:"#fff",borderRadius:12,padding:"6px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:18}}>
+              {WEEK_DAYS.map(day => {
+                const dayWindows = availabilityWindows
+                  .map((w, idx) => ({ ...w, idx }))
+                  .filter(w => w.day === day);
+                const enabled = dayWindows.length > 0;
+                return (
+                  <div key={day} style={{borderTop:"1px solid #E4E2DD",padding:"14px 0"}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:dayWindows.length?10:0}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <span style={{fontFamily:F2,fontSize:13,fontWeight:600,color:enabled?"#1B1C19":"#A3B18A",minWidth:44}}>{day}</span>
+                        {!enabled && (
+                          <span style={{fontFamily:F2,fontSize:11,color:"#A3B18A",fontWeight:300}}>Not available</span>
+                        )}
+                      </div>
+                      <button type="button" onClick={()=>addAvailabilityWindow(day)}
+                        style={{background:"transparent",border:"1px dashed rgba(195,200,188,0.5)",color:"#213C18",fontFamily:F2,fontSize:11,fontWeight:600,padding:"5px 12px",borderRadius:999,cursor:"pointer"}}>
+                        + Add window
+                      </button>
+                    </div>
+                    {dayWindows.map(w => (
+                      <div key={w.idx} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                        <input type="time" value={w.start} onChange={e=>updateAvailabilityWindow(w.idx,{start:e.target.value})}
+                          style={{...INP,flex:"0 0 120px"}}/>
+                        <span style={{fontFamily:F2,fontSize:12,color:"#54584F"}}>to</span>
+                        <input type="time" value={w.end} onChange={e=>updateAvailabilityWindow(w.idx,{end:e.target.value})}
+                          style={{...INP,flex:"0 0 120px"}}/>
+                        <button type="button" onClick={()=>removeAvailabilityWindow(w.idx)} aria-label="Remove window"
+                          style={{background:"transparent",border:"none",color:"#54584F",fontSize:18,cursor:"pointer",padding:"0 6px",lineHeight:1}}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Save bar */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",padding:"12px 0"}}>
+              <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,flex:1,minWidth:200,lineHeight:1.5}}>Saving regenerates your bookable slots for the next 4 weeks. Slots inside the 4-day lead window are skipped.</p>
+              <button onClick={saveAvailability} disabled={saving||isPreview}
+                style={{padding:"11px 26px",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer"}}>
+                {saving ? "Saving" : "Save availability"}
+              </button>
+            </div>
+            {saveMsg.kind === "settings" && <p style={{fontFamily:F2,fontSize:12,color:"#213C18",marginTop:8,textAlign:"right"}}>{saveMsg.text}</p>}
+            {saveMsg.kind === "err"      && <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",marginTop:8,textAlign:"right"}}>{saveMsg.text}</p>}
+
+            {/* Generated slot preview */}
+            {dbSlots && dbSlots.length > 0 && (
+              <div style={{marginTop:24,background:"#F5F3EE",borderRadius:12,padding:"16px 20px"}}>
+                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 10px"}}>Next bookable slots ({dbSlots.length} total)</p>
+                <div style={{display:"flex",flexDirection:"column",gap:5,maxHeight:200,overflowY:"auto"}}>
+                  {dbSlots.slice(0, 12).map(s => (
+                    <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:F2,fontSize:11,color:"#1B1C19",padding:"5px 0"}}>
+                      <span>{new Date(s.date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})} · {s.time}</span>
+                      <span style={{color:"#54584F"}}>{s.dur} · ◈ {s.credits}</span>
+                    </div>
+                  ))}
+                  {dbSlots.length > 12 && (
+                    <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"6px 0 0"}}>+ {dbSlots.length - 12} more</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab==="schedule" && !dashIsPrivate && (
           <div>
             {/* Day selector */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
@@ -3774,8 +4004,17 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div>
                   <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Category</label>
-                  <input type="text" value={listingForm.category} onChange={e=>setListingForm(p=>({...p,category:e.target.value}))}
-                    style={{...INP}} onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  <select value={listingForm.category} onChange={e=>setListingForm(p=>({...p,category:e.target.value}))}
+                    style={{...INP}}>
+                    {(() => {
+                      const bt = bizData?.business_type
+                        ? BUSINESS_TYPES.find(t => t.id === bizData.business_type)
+                        : null;
+                      const opts = bt?.suggestedCats?.length ? bt.suggestedCats : CATS.filter(c => c !== "All");
+                      const list = listingForm.category && !opts.includes(listingForm.category) ? [listingForm.category, ...opts] : opts;
+                      return list.map(c => <option key={c} value={c}>{catLabel(c)}</option>);
+                    })()}
+                  </select>
                 </div>
                 <div>
                   <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Location</label>
@@ -3804,6 +4043,34 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 {saveMsg.kind === "err"     && <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:0,textAlign:"center"}}>{saveMsg.text}</p>}
               </div>
             </div>
+
+            {/* Coverage areas — private instructors only. Spans both columns. */}
+            {dashIsPrivate && (
+              <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",gridColumn:"1 / -1"}}>
+                <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Coverage areas</h3>
+                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 14px",lineHeight:1.6}}>The Mallorca areas you travel to. Guests filter by location, so update this whenever your radius changes.</p>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+                  {MALLORCA_LOCATIONS.map(loc => {
+                    const on = coverageAreas.includes(loc);
+                    return (
+                      <button key={loc} type="button" onClick={()=>toggleCoverageArea(loc)}
+                        style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${on?"#213C18":"rgba(195,200,188,0.5)"}`,background:on?"#213C18":"#fff",color:on?"#fff":"#1B1C19",fontFamily:F2,fontSize:11,fontWeight:on?600:400,cursor:"pointer",transition:"all .12s"}}>
+                        {on?"✓ ":""}{loc}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                  <p style={{fontFamily:F2,fontSize:11,color:coverageAreas.length>0?"#213C18":"#6F5B44",fontWeight:600,margin:0}}>
+                    {coverageAreas.length > 0 ? `${coverageAreas.length} area${coverageAreas.length===1?"":"s"} selected` : "At least one area is required"}
+                  </p>
+                  <button onClick={saveCoverageAreas} disabled={saving||isPreview||coverageAreas.length===0}
+                    style={{padding:"10px 22px",background:(saving||isPreview||coverageAreas.length===0)?"#E4E2DD":"#213C18",color:(saving||isPreview||coverageAreas.length===0)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview||coverageAreas.length===0)?"not-allowed":"pointer"}}>
+                    {saving ? "Saving" : "Save coverage areas"}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -3913,6 +4180,25 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 </div>
               )}
             </div>
+
+            {/* Change listing type — surfaces the same picker the partner
+                used at registration so they can amend their original choice
+                without contacting support. */}
+            {!isPreview && onChangeType && (
+              <div style={{padding:"16px 18px",border:"1px solid #E4E2DD",borderRadius:12,background:"#fff"}}>
+                <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 6px"}}>Listing type</p>
+                <p style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#1B1C19",margin:"0 0 4px"}}>
+                  {BUSINESS_TYPES.find(t => t.id === bizData?.business_type)?.label || "Not set"}
+                </p>
+                <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>
+                  Switching changes the wizard, dashboard tabs, and customer-facing card to match. Your fields stay intact.
+                </p>
+                <button onClick={onChangeType}
+                  style={{padding:"8px 14px",background:"transparent",color:"#213C18",border:"1px solid #213C18",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                  Change listing type
+                </button>
+              </div>
+            )}
 
             {/* Danger zone — remove this venue. Only shown to authenticated
                 partners (not preview), behind a strong confirm so it's hard
@@ -4100,31 +4386,33 @@ function OnboardingProgressBar({ step, total, doSignOut, onPreview, onBackToDash
   // (e.g. instructor variants of step 2/4 labels).
   const labels = stepLabels || ["Welcome","Details","Photos","Availability","Pricing","Payout","Review"];
   return (
-    <div style={{position:"sticky",top:0,zIndex:3100,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"12px 24px"}}>
+    <div style={{position:"sticky",top:91,zIndex:40,background:T.bg,borderBottom:`1px solid ${T.border}`,padding:"clamp(10px,2vw,14px) clamp(16px,4vw,28px)"}}>
       <div style={{maxWidth:880,margin:"0 auto"}}>
-        {/* Top row: utility buttons (Sign out, Preview, Dashboard, Remove) */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10,flexWrap:"wrap"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        {/* Top row: utility buttons (Sign out, Preview, Dashboard, Remove). On
+            mobile the row wraps; Preview stays full-width if it's the only
+            item on its line so it doesn't end up squished beside Sign out. */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:"clamp(8px,2vw,14px)",marginBottom:"clamp(12px,2.5vw,16px)",flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:"clamp(8px,2vw,14px)",flexWrap:"wrap"}}>
             {onBackToDashboard&&(
-              <button onClick={onBackToDashboard} style={{background:"none",border:"none",color:T.sage,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:600,padding:0,whiteSpace:"nowrap"}}>← Dashboard</button>
+              <button onClick={onBackToDashboard} style={{background:"none",border:"none",color:T.sage,fontFamily:F.body,fontSize:12,cursor:"pointer",fontWeight:600,padding:0,whiteSpace:"nowrap"}}>← Dashboard</button>
             )}
             {onRemoveVenue&&(
               <button onClick={onRemoveVenue} title="Remove this venue and start over"
-                style={{background:"none",border:"none",color:T.clay,fontFamily:F.body,fontSize:10,cursor:"pointer",fontWeight:500,padding:0,whiteSpace:"nowrap",textDecoration:"underline"}}>
+                style={{background:"none",border:"none",color:T.clay,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:500,padding:0,whiteSpace:"nowrap",textDecoration:"underline"}}>
                 Remove venue
               </button>
             )}
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:"clamp(10px,2vw,14px)",flexWrap:"wrap"}}>
             {step>1&&onPreview&&(
               <button onClick={onPreview}
-                style={{display:"inline-flex",alignItems:"center",gap:6,background:T.sage,border:"none",borderRadius:999,color:"#fff",fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:700,padding:"7px 14px",whiteSpace:"nowrap",boxShadow:"0 2px 8px rgba(33,60,24,0.18)"}}
+                style={{display:"inline-flex",alignItems:"center",gap:6,background:T.sage,border:"none",borderRadius:999,color:"#fff",fontFamily:F.body,fontSize:"clamp(12px,1.4vw,13px)",cursor:"pointer",fontWeight:700,padding:"clamp(8px,1.6vw,10px) clamp(14px,2.6vw,18px)",whiteSpace:"nowrap",boxShadow:"0 2px 8px rgba(33,60,24,0.18)",letterSpacing:"-0.2px"}}
                 onMouseEnter={e=>e.currentTarget.style.background=T.sage2}
                 onMouseLeave={e=>e.currentTarget.style.background=T.sage}>
                 👁 Preview my listing
               </button>
             )}
-            <button onClick={doSignOut} style={{background:"none",border:"none",color:T.stone,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300,padding:0}}>Sign out</button>
+            <button onClick={doSignOut} style={{background:"none",border:"none",color:T.stone,fontFamily:F.body,fontSize:12,cursor:"pointer",fontWeight:300,padding:0}}>Sign out</button>
           </div>
         </div>
 
@@ -4138,12 +4426,12 @@ function OnboardingProgressBar({ step, total, doSignOut, onPreview, onBackToDash
             const isPast    = num < step;
             const clickable = (isPast || isCurrent) && onJumpToStep;
             return (
-              <div key={num} style={{flex:"1 1 0",minWidth:60,display:"flex",flexDirection:"column",alignItems:"center",gap:5,cursor:clickable?"pointer":"default"}}
+              <div key={num} style={{flex:"1 1 0",minWidth:56,display:"flex",flexDirection:"column",alignItems:"center",gap:6,cursor:clickable?"pointer":"default"}}
                 onClick={clickable ? () => onJumpToStep(num) : undefined}>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:24,height:24,borderRadius:"50%",background:isPast?T.sage:(isCurrent?T.sage:T.bg2),color:isPast||isCurrent?"#fff":T.stone2,fontFamily:F.body,fontSize:11,fontWeight:700,border:isCurrent?`2px solid ${T.sage}`:`1px solid ${T.border}`,transition:"all .15s",boxShadow:isCurrent?"0 0 0 4px rgba(33,60,24,0.08)":"none"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"center",width:26,height:26,borderRadius:"50%",background:isPast?T.sage:(isCurrent?T.sage:T.bg2),color:isPast||isCurrent?"#fff":T.stone2,fontFamily:F.body,fontSize:11,fontWeight:700,border:isCurrent?`2px solid ${T.sage}`:`1px solid ${T.border}`,transition:"all .15s",boxShadow:isCurrent?"0 0 0 4px rgba(33,60,24,0.08)":"none"}}>
                   {isPast ? "✓" : num}
                 </div>
-                <span style={{fontFamily:F.body,fontSize:9,fontWeight:isCurrent?700:400,color:isCurrent?T.ink:isPast?T.sage:T.stone2,letterSpacing:"0.2px",textAlign:"center",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>
+                <span style={{fontFamily:F.body,fontSize:"clamp(9px,1.2vw,10px)",fontWeight:isCurrent?700:400,color:isCurrent?T.ink:isPast?T.sage:T.stone2,letterSpacing:"0.2px",textAlign:"center",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>
                   {label}
                 </span>
               </div>
@@ -4166,11 +4454,24 @@ function OBtn({ onClick, label, disabled, variant="primary", saving }) {
   );
 }
 
-function OWrap({ title, sub, children, footer, step, total, doSignOut, onPreview, onBackToDashboard, onRemoveVenue, stepLabels, onJumpToStep }) {
+function OWrap({ title, sub, children, footer, step, total, doSignOut, onPreview, onBackToDashboard, onRemoveVenue, stepLabels, onJumpToStep, listingTypeLabel, onChangeType }) {
   return (
     <>
       <OnboardingProgressBar step={step} total={total} doSignOut={doSignOut} onPreview={onPreview} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep}/>
       <div style={{maxWidth:960,margin:"0 auto",padding:"clamp(28px,4vw,48px) clamp(20px,4vw,40px) 100px"}}>
+        {/* Listing-type breadcrumb chip — always visible so the partner can
+            amend their original choice without hunting through the dashboard. */}
+        {listingTypeLabel && (
+          <div style={{display:"inline-flex",alignItems:"center",gap:8,padding:"5px 10px 5px 12px",background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:999,marginBottom:14}}>
+            <span style={{fontFamily:F.body,fontSize:10,fontWeight:600,color:T.sage,letterSpacing:"0.3px"}}>Listing type: <strong style={{fontWeight:700}}>{listingTypeLabel}</strong></span>
+            {onChangeType && (
+              <button onClick={onChangeType}
+                style={{background:"transparent",border:"none",padding:"2px 6px",margin:"-2px -4px -2px 0",fontFamily:F.body,fontSize:10,fontWeight:700,color:T.sage,cursor:"pointer",textDecoration:"underline"}}>
+                Change
+              </button>
+            )}
+          </div>
+        )}
         <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:"clamp(24px,3vw,32px)",fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 8px"}}>{title}</h1>
         {sub&&<p style={{fontFamily:F.body,fontSize:"clamp(13px,1.5vw,15px)",color:T.stone,fontWeight:300,margin:"0 0 32px",lineHeight:1.7}}>{sub}</p>}
         {children}
@@ -4180,7 +4481,7 @@ function OWrap({ title, sub, children, footer, step, total, doSignOut, onPreview
   );
 }
 
-function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard, onRemoveVenue }) {
+function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard, onRemoveVenue, onChangeType }) {
   const TOTAL = 7;
   const [step, setStep] = useState(bizData.onboarding_step > 0 ? Math.min(bizData.onboarding_step, TOTAL) : 1);
   const [saving, setSaving] = useState(false);
@@ -4332,6 +4633,10 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
   const onJumpToStep = (n) => {
     if (n >= 1 && n <= step) { setStep(n); window.scrollTo(0, 0); }
   };
+  // Human-readable listing type for the breadcrumb chip in OWrap.
+  const listingTypeLabel = bizData.business_type
+    ? (BUSINESS_TYPES.find(t => t.id === bizData.business_type)?.label || null)
+    : null;
   const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   const DURS = ["30 min","45 min","60 min","75 min","90 min","2 hours","Open"];
   // Common amenities & offerings partners can tick to advertise their venue.
@@ -4527,7 +4832,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
 
       {/* Two-column on wide screens: the listing card on the left, the
           completeness checklist on the right. Stacks vertically on mobile. */}
-      <div style={{maxWidth:1000,margin:"24px auto 60px",padding:"0 20px",display:"grid",gridTemplateColumns:"minmax(0, 1fr) minmax(0, 280px)",gap:24,width:"100%",alignItems:"start",boxSizing:"border-box"}}>
+      <div className="__wp-grid" style={{maxWidth:1000,margin:"24px auto 60px",padding:"0 clamp(16px,4vw,24px)",display:"grid",gridTemplateColumns:"minmax(0, 1fr) minmax(0, 280px)",gap:"clamp(16px,3vw,24px)",width:"100%",alignItems:"start",boxSizing:"border-box"}}>
 
         {/* ── The listing card itself ── */}
         <div style={{background:T.bg,borderRadius:16,overflow:"hidden",boxShadow:"0 24px 64px rgba(0,0,0,0.28)"}}>
@@ -4631,7 +4936,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
         </div>
 
         {/* ── Completeness checklist ── */}
-        <div style={{background:T.bg,borderRadius:12,padding:"18px 20px",boxShadow:"0 12px 28px rgba(0,0,0,0.15)",position:"sticky",top:90,maxHeight:"calc(100vh - 130px)",overflowY:"auto"}}>
+        <div className="__wp-checklist" style={{background:T.bg,borderRadius:12,padding:"18px 20px",boxShadow:"0 12px 28px rgba(0,0,0,0.15)",position:"sticky",top:90,maxHeight:"calc(100vh - 130px)",overflowY:"auto"}}>
           <p style={{fontFamily:F.body,fontSize:10,fontWeight:700,color:T.stone,letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 12px"}}>Ready to submit?</p>
           <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
             {checklist.map(c => (
@@ -4659,6 +4964,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
       <style>{`
         @media (max-width: 720px) {
           .__wp-grid { grid-template-columns: 1fr !important; }
+          .__wp-checklist { position: static !important; max-height: none !important; }
         }
       `}</style>
     </div>
@@ -4678,7 +4984,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
       : missing.length === 1 ? `Add your ${missing[0]} to continue.`
       : `Still needed: ${missing.join(", ")}.`;
     return (
-    <OWrap title={isPrivateInstructor ? "Your instructor profile" : "Your venue details"} sub={isPrivateInstructor ? "Tell guests who you are and where you travel. Your phone number stays private — we use it to text you booking requests." : "Confirm and complete your listing details — this is what guests will see on Wello."} step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} onPreview={()=>setPreviewOpen(true)}
+    <OWrap title={isPrivateInstructor ? "Your instructor profile" : "Your venue details"} sub={isPrivateInstructor ? "Tell guests who you are and where you travel. Your phone number stays private — we use it to text you booking requests." : "Confirm and complete your listing details — this is what guests will see on Wello."} step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} listingTypeLabel={listingTypeLabel} onChangeType={onChangeType} onPreview={()=>setPreviewOpen(true)}
       footer={[
         <OBtn key="b" saving={saving} onClick={()=>setStep(1)} label="← Back" variant="secondary"/>,
         <OBtn key="n" saving={saving} onClick={()=>goNext({name:venueName,category:venueCategory,location:venueLocation,description:desc,address,website,instagram,tags,bio,phone,coverage_areas:coverageAreas})} label="Save & continue →" disabled={!step2CanContinue}/>,
@@ -4692,8 +4998,20 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
         </div>
         <div>
           <label style={FL}>Category</label>
-          <input value={venueCategory} onChange={e=>setVenueCategory(e.target.value)} placeholder="e.g. Yoga"
-            style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+          <select value={venueCategory} onChange={e=>setVenueCategory(e.target.value)}
+            style={{...INP}} onFocus={onFi} onBlur={onBl}>
+            {(() => {
+              // Filter to the categories that fit the partner's chosen
+              // business type, but ensure the currently saved value remains
+              // selectable even if it's outside that set (e.g. admin set it).
+              const bt = bizData?.business_type
+                ? BUSINESS_TYPES.find(t => t.id === bizData.business_type)
+                : null;
+              const opts = bt?.suggestedCats?.length ? bt.suggestedCats : CATS.filter(c => c !== "All");
+              const list = venueCategory && !opts.includes(venueCategory) ? [venueCategory, ...opts] : opts;
+              return list.map(c => <option key={c} value={c}>{catLabel(c)}</option>);
+            })()}
+          </select>
         </div>
         <div>
           <label style={FL}>{isPrivateInstructor ? "Town / area" : "Location"}</label>
@@ -4921,7 +5239,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
     const totalUploading = primaryUploading || galleryUploadCount > 0;
 
     return (
-      <OWrap title="Add photos" sub="A square primary photo is required. Drag and zoom to set the crop. Up to four extras for your gallery." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} onPreview={()=>setPreviewOpen(true)}
+      <OWrap title="Add photos" sub="A square primary photo is required. Drag and zoom to set the crop. Up to four extras for your gallery." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} listingTypeLabel={listingTypeLabel} onChangeType={onChangeType} onPreview={()=>setPreviewOpen(true)}
         footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(2)} label="← Back" variant="secondary"/>,
                  <OBtn key="n" saving={saving} onClick={()=>goNext({img,gallery})} label="Save & continue →" disabled={!img||totalUploading}/>]}>
         <label style={FL}>Primary photo <span style={{color:T.clay,fontWeight:600}}>*</span></label>
@@ -5001,7 +5319,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
   }
 
   if (step===4) return (
-    <OWrap title={isPrivateInstructor ? "Your availability" : "List your availabilities"} sub={isPrivateInstructor ? "Set when you're available for 1-to-1 sessions. Each booking is a single private session." : "Connect Acuity Scheduling to sync your classes automatically, or add slots manually — you can always update this later."} step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} onPreview={()=>setPreviewOpen(true)}
+    <OWrap title={isPrivateInstructor ? "Your availability" : "List your availabilities"} sub={isPrivateInstructor ? "Set when you're available for 1-to-1 sessions. Each booking is a single private session." : "Connect Acuity Scheduling to sync your classes automatically, or add slots manually — you can always update this later."} step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} listingTypeLabel={listingTypeLabel} onChangeType={onChangeType} onPreview={()=>setPreviewOpen(true)}
       footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(3)} label="← Back" variant="secondary"/>,
                <OBtn key="n" saving={saving} onClick={()=>{
                  if (availType === "acuity") {
@@ -5330,7 +5648,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
   if (step===5) {
     const canAdvance = priceMode==="flat" ? !!cr : slots.every(sl=>sl.cr);
     return (
-      <OWrap title="Set your price" sub="Tell us what guests pay in euros. We charge them in Wello credits (1 credit = €1) so they see a single balance across every partner." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} onPreview={()=>setPreviewOpen(true)}
+      <OWrap title="Set your price" sub="Tell us what guests pay in euros. We charge them in Wello credits (1 credit = €1) so they see a single balance across every partner." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} listingTypeLabel={listingTypeLabel} onChangeType={onChangeType} onPreview={()=>setPreviewOpen(true)}
         footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(4)} label="← Back" variant="secondary"/>,
                  <OBtn key="n" saving={saving} onClick={()=>goNext(priceMode==="flat"?{cr:parseInt(cr)||catAvg,price_mode:"flat"}:{price_mode:"per_slot",slots,cr:null})} label="Save & continue →" disabled={!canAdvance}/>]}>
         {/* Toggle */}
@@ -5377,7 +5695,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
   }
 
   if (step===6) return (
-    <OWrap title="Payout details" sub="Enter your bank details so we can pay you for bookings made through Wello." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} onPreview={()=>setPreviewOpen(true)}
+    <OWrap title="Payout details" sub="Enter your bank details so we can pay you for bookings made through Wello." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} listingTypeLabel={listingTypeLabel} onChangeType={onChangeType} onPreview={()=>setPreviewOpen(true)}
       footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
                <OBtn key="n" saving={saving} onClick={()=>goNext({})} label="Save & continue →"/>]}>
       <div style={{pointerEvents:"none",opacity:1}}>
@@ -5397,7 +5715,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
 
   if (step===7) return (
     <>
-      <OWrap title="Review your listing" sub="Here's how you'll appear on Wello. Tap 'Preview' above for the full member view." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} onPreview={()=>setPreviewOpen(true)}
+      <OWrap title="Review your listing" sub="Here's how you'll appear on Wello. Tap 'Preview' above for the full member view." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} listingTypeLabel={listingTypeLabel} onChangeType={onChangeType} onPreview={()=>setPreviewOpen(true)}
         footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(6)} label="← Back" variant="secondary"/>,
                  <button key="s" onClick={handleSubmit} disabled={saving}
                    style={{padding:"11px 28px",background:saving?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:saving?"not-allowed":"pointer"}}
@@ -5546,6 +5864,10 @@ function BusinessPortal({ onSetView }) {
   // Whether the business-type picker is open. Shown when partner clicks
   // "+ Add another venue" so we know which flavor of wizard to launch.
   const [showAddTypeModal, setShowAddTypeModal] = useState(false);
+  // When a partner wants to amend the business_type they originally picked.
+  // Holds the venue id being edited, or null if the modal isn't showing.
+  const [changingTypeForId, setChangingTypeForId] = useState(null);
+  const [changingType, setChangingType] = useState(false);
   // ID of the venue the partner is being asked to confirm deletion of (null
   // = no modal). Kept in BusinessPortal so both the dashboard and the
   // submitted screen can mount the same branded DeleteVenueModal.
@@ -5677,6 +5999,45 @@ function BusinessPortal({ onSetView }) {
     setConfirmingDeleteId(id);
   }
 
+  // Open the business-type picker for an existing venue. Used by the wizard
+  // and the dashboard's Settings tab so the partner can amend the choice they
+  // made at registration.
+  function requestChangeVenueType(id) {
+    setChangingTypeForId(id);
+  }
+
+  // Persist a new business_type on an existing venue. We also stamp a fresh
+  // default category for that type so the wizard step 2 has something to
+  // load. Reloads venues afterwards so every downstream surface (wizard
+  // flavor, dashboard tabs, customer-facing listing) picks up the new value.
+  async function changeVenueType(id, typeId) {
+    if (!id || !typeId) return;
+    setChangingType(true);
+    try {
+      const bt = businessTypeFor(typeId);
+      const { error } = await supabase.from('businesses').update({
+        business_type: typeId,
+        category: bt.defaultCategory,
+      }).eq('id', id);
+      if (error) {
+        console.error('changeVenueType error:', error.message);
+        alert("Couldn't change the listing type. " + error.message);
+        return;
+      }
+      // Mirror the category onto the live listings row so the marketplace
+      // chip + filter reflect the change immediately.
+      await supabase.from('listings')
+        .update({ cat: bt.defaultCategory })
+        .eq('business_id', id);
+      // Reload so the wizard re-mounts with the new bizData.business_type.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) await loadVenues(session, { activate: id });
+    } finally {
+      setChangingType(false);
+      setChangingTypeForId(null);
+    }
+  }
+
   // Permanently remove a venue the partner owns. We rely on ON DELETE CASCADE
   // FKs (set on listings.business_id → businesses.id, slots.listing_id →
   // listings.id) so deleting the businesses row sweeps the child rows in one
@@ -5694,7 +6055,11 @@ function BusinessPortal({ onSetView }) {
       alert(`Can't remove "${v.name || 'this venue'}" — it has ${bookingCount} active booking${bookingCount === 1 ? '' : 's'}. Cancel them first, then try again.`);
       return;
     }
-    const { error: bizErr } = await supabase.from('businesses').delete().eq('id', id);
+    // .select() so we can detect the silent-zero-rows case (RLS blocking
+    // the DELETE without throwing). Without it, Supabase returns success
+    // even when no rows match the policy — and the venue stays in the DB.
+    const { data: deletedRows, error: bizErr } = await supabase
+      .from('businesses').delete().eq('id', id).select('id');
     if (bizErr) {
       console.error('deleteVenue error:', bizErr.message);
       const msg = /foreign key|fkey|referenced/i.test(bizErr.message)
@@ -5702,6 +6067,31 @@ function BusinessPortal({ onSetView }) {
         : "Couldn't remove the venue. " + bizErr.message;
       alert(msg);
       return;
+    }
+    if (!deletedRows || deletedRows.length === 0) {
+      console.warn('deleteVenue: 0 rows affected — Supabase RLS likely blocked the delete on businesses.');
+      alert("Looks like the venue wasn't actually removed. Your DELETE policy on the businesses table is missing. Add a Supabase RLS policy:\n\ncreate policy \"Partners can delete own venue\" on businesses for delete to authenticated using (user_id = auth.uid());");
+      return;
+    }
+    // Clean up orphaned photos from storage. Uploads use the path
+    // `<auth-uid>/<bizId>-<slot>-<ts>.jpg` so we can list the user's folder
+    // and remove only the files whose name starts with this venue's id.
+    if (authUser?.id) {
+      try {
+        const { data: files } = await supabase.storage.from('venue-photos').list(String(authUser.id), { limit: 200 });
+        const toRemove = (files || [])
+          .filter(f => f.name.startsWith(`${id}-`))
+          .map(f => `${authUser.id}/${f.name}`);
+        if (toRemove.length > 0) {
+          const { error: storageErr } = await supabase.storage.from('venue-photos').remove(toRemove);
+          if (storageErr) console.warn('Storage cleanup partial:', storageErr.message);
+          else console.log(`Removed ${toRemove.length} photo(s) from storage`);
+        }
+      } catch (e) {
+        // Non-fatal — the DB row is already gone. Photos becoming orphans is
+        // worse than the user thinking the delete didn't work, so we swallow.
+        console.warn('Storage cleanup failed (DB delete still succeeded):', e?.message);
+      }
     }
     // Reload venues from scratch — let pickBizRow pick the next active one.
     const remaining = venues.filter(v => v.id !== id);
@@ -5775,12 +6165,24 @@ function BusinessPortal({ onSetView }) {
     });
 
     // Refetch on tab focus so admin-side status changes in Supabase propagate
-    // without forcing the partner to hard-refresh.
+    // without forcing the partner to hard-refresh. We pass the live
+    // localStorage value as activate=, NOT the closure-captured activeVenueId
+    // — otherwise switching venues mid-session would cause this handler to
+    // snap us back to whichever venue was active when BusinessPortal first
+    // mounted (which kicked partners out of wizards they were working in).
     function onVisibility() {
       if (document.visibilityState !== 'visible') return;
       if (!didLoad.current) return;
+      let pinned = null;
+      try {
+        const raw = localStorage.getItem("wello_active_venue_id");
+        if (raw) {
+          const asNum = Number(raw);
+          pinned = Number.isFinite(asNum) && String(asNum) === raw ? asNum : raw;
+        }
+      } catch { /* non-critical: ignore */ }
       supabase.auth.getSession().then(({data:{session}})=>{
-        if (session) loadVenues(session);
+        if (session) loadVenues(session, pinned ? { activate: pinned } : {});
       });
     }
     document.addEventListener('visibilitychange', onVisibility);
@@ -6038,7 +6440,7 @@ function BusinessPortal({ onSetView }) {
     return (
       <>
         <PartnerOnboarding
-          key={activeVenueId}
+          key={`${activeVenueId}-${bizData?.business_type || 'unknown'}`}
           bizData={bizData}
           onSubmitted={async ()=>{
             // Refresh venues so the just-submitted row reflects status='submitted'.
@@ -6056,6 +6458,7 @@ function BusinessPortal({ onSetView }) {
           doSignOut={doSignOut}
           onBackToDashboard={backToDashboard}
           onRemoveVenue={bizData?.id ? () => requestDeleteVenue(bizData.id) : null}
+          onChangeType={bizData?.id ? () => requestChangeVenueType(bizData.id) : null}
         />
         {confirmingDeleteId !== null && (
           <DeleteVenueModal
@@ -6067,6 +6470,16 @@ function BusinessPortal({ onSetView }) {
               try { await deleteVenue(confirmingDeleteId); }
               finally { setDeletingVenue(false); setConfirmingDeleteId(null); }
             }}
+          />
+        )}
+        {changingTypeForId !== null && (
+          <AddVenueTypeModal
+            title="Change listing type"
+            subtitle="Pick a different category for this venue. The wizard will reflow to match."
+            currentType={venues.find(v => v.id === changingTypeForId)?.business_type}
+            busy={changingType}
+            onCancel={() => setChangingTypeForId(null)}
+            onPick={(typeId) => changeVenueType(changingTypeForId, typeId)}
           />
         )}
       </>
@@ -6186,7 +6599,7 @@ function BusinessPortal({ onSetView }) {
   if (screen==="dashboard") return (
     <>
       <BusinessPortalDashboard
-        key={activeVenueId}
+        key={`${activeVenueId}-${bizData?.business_type || 'unknown'}`}
         onExit={doSignOut}
         bizData={bizData}
         isPreview={false}
@@ -6196,6 +6609,7 @@ function BusinessPortal({ onSetView }) {
         onAddVenue={() => setShowAddTypeModal(true)}
         addingVenue={addingVenue}
         onDeleteVenue={requestDeleteVenue}
+        onChangeType={bizData?.id ? () => requestChangeVenueType(bizData.id) : null}
       />
       {showAddTypeModal && (
         <AddVenueTypeModal
@@ -6205,6 +6619,16 @@ function BusinessPortal({ onSetView }) {
             setShowAddTypeModal(false);
             await addVenue(typeId);
           }}
+        />
+      )}
+      {changingTypeForId !== null && (
+        <AddVenueTypeModal
+          title="Change listing type"
+          subtitle="Pick a different category for this venue. The dashboard tabs and customer-facing card will refresh to match."
+          currentType={venues.find(v => v.id === changingTypeForId)?.business_type}
+          busy={changingType}
+          onCancel={() => setChangingTypeForId(null)}
+          onPick={(typeId) => changeVenueType(changingTypeForId, typeId)}
         />
       )}
       {confirmingDeleteId !== null && (
@@ -6740,7 +7164,7 @@ export default function App() {
             <span style={{width:1,height:12,background:"rgba(255,255,255,0.2)",display:"inline-block",flexShrink:0}}/>
             <a href="mailto:hello@wello-wellness.com" style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,fontWeight:700,color:"#CAECBA",textDecoration:"none",whiteSpace:"nowrap"}}>hello@wello-wellness.com</a>
           </div>
-        <nav style={{background:"rgba(251,249,244,0.96)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"1px solid rgba(195,200,188,0.2)"}}>
+        <nav style={{background:"#FBF9F4",borderBottom:"1px solid rgba(195,200,188,0.35)"}}>
           <style>{`body{overflow-x:hidden;} @media(max-width:640px){.wello-nav-links{display:none!important}} .wello-nav-links{display:flex;} .scroll-indicator{display:flex;} @media(max-width:767px){.scroll-indicator{display:none!important}} .mob-menu-btn{display:none;} @media(max-width:640px){.mob-menu-btn{display:flex!important;}}`}</style>
           <div style={{maxWidth:1200,margin:"0 auto",padding:"0 clamp(16px,4vw,32px)",display:"flex",alignItems:"center",height:60,gap:16}}>
             {/* Wordmark — left */}
