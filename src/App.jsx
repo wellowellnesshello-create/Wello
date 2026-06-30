@@ -614,16 +614,20 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
   const [myEmail, setMyEmail] = useState(profileEmail);
   const [guests, setGuests] = useState([]); // [{type:"new", id, name, email}]
   const [newEmail, setNewEmail] = useState("");
-  // Private-instructor only: collected at booking, saved to bookings.notes
-  // so the instructor knows where to travel to.
+  // Private-instructor only: collected at booking, both fields saved into
+  // bookings.notes so the instructor knows where to travel to AND any
+  // special instructions (gate codes, parking, what to bring, etc.).
   const [myLocation, setMyLocation] = useState("");
+  const [myLocationNote, setMyLocationNote] = useState("");
   const isPrivateBooking = biz.cat === "Private Instructor";
   const avail = isPrivateBooking ? 1 : slot.spots - slot.booked;
   const totalPeople = isPrivateBooking ? 1 : (1 + guests.length);
   const cost = biz.cr * totalPeople;
   const canAfford = credits >= cost;
   const canAddMore = !isPrivateBooking && totalPeople < avail;
-  const locationOk = !isPrivateBooking || !!myLocation.trim();
+  // Require a usable address for private bookings — at least 6 chars so
+  // a typo like 'p' doesn't pass. Notes are optional.
+  const locationOk = !isPrivateBooking || myLocation.trim().length >= 6;
 
   // If the profile loads after the modal opens (rare race), pull the prefilled
   // values in. Won't clobber user edits because anon flow doesn't have a profile.
@@ -714,14 +718,32 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                 </>
               )}
 
-              {/* Private-instructor only: where are you based? Saved into bookings.notes */}
+              {/* Private-instructor only: exact session address + optional
+                  arrival notes. Both fields composed into bookings.notes so
+                  the instructor sees everything in one place. */}
               {isPrivateBooking && (
                 <>
-                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Where are you based? <span style={{color:"#C46A4D"}}>*</span></p>
-                  <input type="text" placeholder="e.g. Palma old town, near Plaça d'Espanya" value={myLocation} onChange={e=>setMyLocation(e.target.value)}
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>
+                    Exact session address <span style={{color:"#C46A4D"}}>*</span>
+                  </p>
+                  <input type="text"
+                    placeholder="Street, number, town · e.g. Carrer del Born 14, 07012 Palma"
+                    value={myLocation} onChange={e=>setMyLocation(e.target.value)}
                     style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:13,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",marginBottom:6,transition:"border-color .15s"}}
                     onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
-                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 18px"}}>So your instructor knows where to travel to.</p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 14px"}}>
+                    Give a precise street + town so your instructor can navigate. Hotel names work too if you're a visitor.
+                  </p>
+
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 8px"}}>
+                    Arrival notes <span style={{color:"#54584F",fontWeight:500,fontSize:10,letterSpacing:0,textTransform:"none"}}>· optional</span>
+                  </p>
+                  <textarea
+                    placeholder="Gate code, where to park, which floor, what to bring (mat, towel)…"
+                    rows={2}
+                    value={myLocationNote} onChange={e=>setMyLocationNote(e.target.value)}
+                    style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:13,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",marginBottom:18,resize:"vertical",lineHeight:1.5,transition:"border-color .15s"}}
+                    onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
 
                   <div style={{background:"#FFF7EA",border:"1px solid #E8C9A4",borderRadius:10,padding:"10px 14px",marginBottom:20}}>
                     <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#7A5C32",margin:"0 0 2px",letterSpacing:"0.3px"}}>This is a booking request</p>
@@ -774,7 +796,7 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
 
               <button onClick={()=>{
                 if(myName&&myEmail&&canAfford&&locationOk){
-                  onConfirm({biz,slot,form:{name:myName,email:myEmail,guests:totalPeople,location:isPrivateBooking?myLocation.trim():undefined},cost});
+                  onConfirm({biz,slot,form:{name:myName,email:myEmail,guests:totalPeople,location:isPrivateBooking?myLocation.trim():undefined,locationNote:isPrivateBooking?myLocationNote.trim():undefined},cost});
                   setSt(2);
                 }}}
                 disabled={!myName||!myEmail||!canAfford||!locationOk}
@@ -3750,7 +3772,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                             const customerName = b._customer?.full_name || b._customer?.email || "Customer";
                             const customerEmail = b._customer?.email || "";
                             const sessionName = b._slot_name || b.duration || "Session";
-                            const customerLocation = (b.notes || "").replace(/^Customer location:\s*/i, "").trim();
+                            // Parse the two-line composite notes string the
+                            // booking modal builds ("Customer location: …\nNotes: …").
+                            const notesBlob = b.notes || "";
+                            const locLine = notesBlob.split('\n').find(l => /^Customer location:/i.test(l)) || "";
+                            const noteLine = notesBlob.split('\n').find(l => /^Notes:/i.test(l)) || "";
+                            const customerLocation = locLine.replace(/^Customer location:\s*/i, "").trim();
+                            const customerNote = noteLine.replace(/^Notes:\s*/i, "").trim();
                             return (
                               <div key={b.id} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"8px 10px",borderRadius:6,background:"#F5F3EE"}}>
                                 <div style={{textAlign:"center",minWidth:44,paddingTop:2}}>
@@ -3766,6 +3794,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                   <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 2px"}}>{sessionName}</p>
                                   {customerLocation && (
                                     <p style={{fontFamily:F2,fontSize:11,color:"#766149",margin:0}}>📍 {customerLocation}</p>
+                                  )}
+                                  {customerNote && (
+                                    <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"3px 0 0",fontStyle:"italic"}}>📝 {customerNote}</p>
                                   )}
                                 </div>
                                 <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:700,whiteSpace:"nowrap",alignSelf:"center"}}>◈ {b.credits_used}</span>
@@ -3864,8 +3895,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   const expired = hoursLeft <= 0;
                   const customerName = req._customer?.full_name || req._customer?.email || 'Customer';
                   const customerEmail = req._customer?.email || '';
-                  const customerLocationRaw = req.notes || '';
-                  const customerLocation = customerLocationRaw.replace(/^Customer location:\s*/i, '') || 'Not provided';
+                  // Parse the two-line composite notes the booking modal
+                  // builds ("Customer location: …\nNotes: …").
+                  const notesBlob = req.notes || '';
+                  const locLine = notesBlob.split('\n').find(l => /^Customer location:/i.test(l)) || '';
+                  const noteLine = notesBlob.split('\n').find(l => /^Notes:/i.test(l)) || '';
+                  const customerLocation = locLine.replace(/^Customer location:\s*/i, '').trim() || 'Not provided';
+                  const customerNote = noteLine.replace(/^Notes:\s*/i, '').trim();
                   return (
                     <div key={req.id} style={{padding:"16px 18px",background:"#fff",border:"1px solid #E4E2DD",borderRadius:8}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:10,flexWrap:"wrap"}}>
@@ -3892,8 +3928,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                         </div>
                       </div>
                       <div style={{marginBottom:14}}>
-                        <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 3px"}}>Customer location</p>
-                        <p style={{fontFamily:F2,fontSize:12,color:"#1B1C19",margin:0}}>{customerLocation}</p>
+                        <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 3px"}}>Session address</p>
+                        <p style={{fontFamily:F2,fontSize:12,color:"#1B1C19",margin:0,lineHeight:1.5}}>{customerLocation}</p>
+                        {customerNote && (
+                          <>
+                            <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"10px 0 3px"}}>Arrival notes</p>
+                            <p style={{fontFamily:F2,fontSize:12,color:"#1B1C19",margin:0,lineHeight:1.5,fontStyle:"italic"}}>{customerNote}</p>
+                          </>
+                        )}
                       </div>
                       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                         <button onClick={()=>respondToRequest(req.id,'confirm')} disabled={!!respondingId}
@@ -7535,9 +7577,14 @@ export default function App() {
       const peak_flag = t >= '07:00' && t < '09:00';
 
       // For private bookings the customer's location is required and saved to
-      // bookings.notes so the instructor sees it on their dashboard + in the SMS.
+      // bookings.notes so the instructor sees it on their dashboard + in the
+      // SMS. We also append the optional arrival notes underneath when
+      // present (gate code, parking, etc.).
       const notes = isPrivateBooking
-        ? (form?.location ? `Customer location: ${form.location}` : null)
+        ? [
+            form?.location ? `Customer location: ${form.location}` : null,
+            form?.locationNote ? `Notes: ${form.locationNote}` : null,
+          ].filter(Boolean).join('\n') || null
         : (form?.note || null);
 
       const payload = {
