@@ -1605,21 +1605,6 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
 
   return (
     <div style={{paddingTop:16,paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
-      {/* Slim utility row — view toggle only. We dropped the venue counter
-          ("X venues live · Live sync") and the "Curated Sanctuary / Find
-          your flow" hero so the page can lead with the search bar. */}
-      <div style={{maxWidth:1200,margin:"0 auto 10px",padding:"0 clamp(16px,4vw,32px)",display:"flex",alignItems:"center",justifyContent:"flex-end",gap:10}}>
-        <div style={{display:"flex",background:"#EAE8E3",borderRadius:999,padding:3,gap:2}}>
-          {[["grid","⊞ Grid"],["map","📍 Map"]].map(([mode,label])=>(
-            <button key={mode} onClick={()=>setViewMode(mode)}
-              style={{padding:"4px 11px",borderRadius:999,border:"none",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",transition:"all .15s",
-                background:viewMode===mode?"#213C18":"transparent",
-                color:viewMode===mode?"#fff":"#54584F"}}>
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {/* AI-powered semantic search. Front-and-center so guests can type
           intent ("calm beach session", "energy boost morning") and get
@@ -1722,6 +1707,21 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
 
       {/* Grid */}
       <div style={{maxWidth:1200,margin:"16px auto 0",padding:"0 clamp(16px,4vw,32px)"}}>
+        {/* Grid/Map toggle — sits right above the For You rail (or the
+            single-category grid when a chip is active). Right-aligned so
+            it doesn't compete with the section header on the left. */}
+        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:10}}>
+          <div style={{display:"flex",background:"#EAE8E3",borderRadius:999,padding:3,gap:2}}>
+            {[["grid","⊞ Grid"],["map","📍 Map"]].map(([mode,label])=>(
+              <button key={mode} onClick={()=>setViewMode(mode)}
+                style={{padding:"4px 11px",borderRadius:999,border:"none",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",transition:"all .15s",
+                  background:viewMode===mode?"#213C18":"transparent",
+                  color:viewMode===mode?"#fff":"#54584F"}}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         {viewMode==="grid" && activeCat==="All" && (()=>{
           // Source of truth respects the AI search override AND the location chip.
           const sourcePool = aiResults ?? listings;
