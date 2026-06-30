@@ -3187,6 +3187,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const DASH_LENGTH_OPTIONS = [30, 45, 60, 75, 90, 120];
   // Inline "add new offering" form state — opens under the chip row when
   // partner taps "+ Add offering". Avoids the dense table layout entirely.
+  // Whether the inline add forms are open. Default closed so the Schedule
+  // tab leads with current state, not empty input fields. Open via the
+  // dashed "+ Add offering" / "+ Add availability window" buttons.
+  const [showAddOffering, setShowAddOffering] = useState(false);
+  const [showAddWindow,   setShowAddWindow]   = useState(false);
   const [newOff, setNewOff] = useState({ type: "", length_min: 60, price_eur: 50 });
   // Inline "add new window" form state — supports multi-day in one go
   // ("Mon Wed Fri 09:00 → 12:00" creates 3 windows in one action).
@@ -3205,6 +3210,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       ...newWindow.days.map(d => ({ day: d, start: newWindow.start, end: newWindow.end })),
     ]);
     setNewWindow({ days: [], start: "09:00", end: "12:00" });
+    setShowAddWindow(false);
   }
   function commitNewOffering() {
     const type = (newOff.type || "").trim();
@@ -3214,6 +3220,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     if (price_eur <= 0) return;
     setDashSessionOfferings(prev => [...prev, { type, length_min, price_eur }]);
     setNewOff({ type: "", length_min: 60, price_eur: 50 });
+    setShowAddOffering(false);
   }
   function dashAddOffering() {
     setDashSessionOfferings(prev => [...prev, {
@@ -4060,67 +4067,88 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             </div>
 
             {/* What you offer — chip-based. Each offering is a tappable
-                pill. Inline add form lives below; no dense table. */}
+                pill with a clear "Remove" button. Add form is hidden by
+                default and opens via the dashed Add button. */}
             <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:14}}>
               <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>What you offer</p>
-              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>One pill per session type. Tap × to remove. Add a new one below.</p>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>One pill per session type. Click Remove to delete one, or add a new one below.</p>
 
               {dashSessionOfferings.length > 0 && (
                 <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
                   {dashSessionOfferings.map((off, idx) => (
-                    <span key={idx} style={{display:"inline-flex",alignItems:"center",gap:8,padding:"7px 10px 7px 14px",borderRadius:999,background:"rgba(33,60,24,0.06)",border:"1px solid rgba(33,60,24,0.18)",fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600}}>
+                    <span key={idx} style={{display:"inline-flex",alignItems:"center",gap:10,padding:"7px 6px 7px 14px",borderRadius:999,background:"rgba(33,60,24,0.06)",border:"1px solid rgba(33,60,24,0.18)",fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600}}>
                       <span>{off.type}</span>
                       <span style={{color:"#54584F",fontWeight:400}}>·</span>
                       <span style={{color:"#54584F",fontWeight:400}}>{off.length_min} min</span>
                       <span style={{color:"#54584F",fontWeight:400}}>·</span>
                       <span style={{color:"#766149"}}>€{off.price_eur}</span>
                       <button type="button" onClick={()=>dashRemoveOffering(idx)} aria-label={`Remove ${off.type}`}
-                        style={{background:"transparent",border:"none",color:"#213C18",fontSize:14,cursor:"pointer",padding:"0 2px 0 4px",lineHeight:1,fontWeight:700}}>×</button>
+                        style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 9px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase",marginLeft:4}}>
+                        Remove
+                      </button>
                     </span>
                   ))}
                 </div>
               )}
 
-              {/* Inline add form — three compact inputs + Add button */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 110px 110px 92px",gap:8,alignItems:"center",padding:"10px 12px",background:"#F5F3EE",borderRadius:8}}>
-                <input value={newOff.type}
-                  onChange={e=>setNewOff(p=>({...p,type:e.target.value}))}
-                  onKeyDown={e=>{ if (e.key === 'Enter') commitNewOffering(); }}
-                  placeholder="Class type (e.g. Yoga)"
-                  style={{...INP,marginBottom:0}}/>
-                <select value={newOff.length_min}
-                  onChange={e=>setNewOff(p=>({...p,length_min:parseInt(e.target.value,10)}))}
-                  style={{...INP,marginBottom:0}}>
-                  {DASH_LENGTH_OPTIONS.map(m => <option key={m} value={m}>{m} min</option>)}
-                </select>
-                <div style={{position:"relative"}}>
-                  <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
-                  <input type="number" min="1" value={newOff.price_eur}
-                    onChange={e=>setNewOff(p=>({...p,price_eur:parseInt(e.target.value,10)||0}))}
-                    onKeyDown={e=>{ if (e.key === 'Enter') commitNewOffering(); }}
-                    style={{...INP,paddingLeft:22,marginBottom:0}}/>
-                </div>
-                <button type="button" onClick={commitNewOffering}
-                  disabled={!newOff.type.trim() || !newOff.price_eur}
-                  style={{padding:"10px 0",background:(!newOff.type.trim()||!newOff.price_eur)?"#E4E2DD":"#213C18",color:(!newOff.type.trim()||!newOff.price_eur)?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(!newOff.type.trim()||!newOff.price_eur)?"not-allowed":"pointer"}}>
-                  + Add
+              {/* Add button OR inline add form. Collapsed by default so the
+                  panel stays compact when the partner is just reviewing. */}
+              {!showAddOffering && (
+                <button type="button" onClick={()=>setShowAddOffering(true)}
+                  style={{background:"transparent",border:"1px dashed rgba(33,60,24,0.4)",color:"#213C18",fontFamily:F2,fontSize:12,fontWeight:600,padding:"9px 16px",borderRadius:999,cursor:"pointer"}}>
+                  + Add offering
                 </button>
-              </div>
+              )}
+
+              {showAddOffering && (
+                <div style={{padding:"12px 14px",background:"#F5F3EE",borderRadius:8}}>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 110px 110px",gap:8,alignItems:"center",marginBottom:10}}>
+                    <input value={newOff.type}
+                      onChange={e=>setNewOff(p=>({...p,type:e.target.value}))}
+                      onKeyDown={e=>{ if (e.key === 'Enter') commitNewOffering(); }}
+                      placeholder="Class type (e.g. Yoga)"
+                      autoFocus
+                      style={{...INP,marginBottom:0}}/>
+                    <select value={newOff.length_min}
+                      onChange={e=>setNewOff(p=>({...p,length_min:parseInt(e.target.value,10)}))}
+                      style={{...INP,marginBottom:0}}>
+                      {DASH_LENGTH_OPTIONS.map(m => <option key={m} value={m}>{m} min</option>)}
+                    </select>
+                    <div style={{position:"relative"}}>
+                      <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
+                      <input type="number" min="1" value={newOff.price_eur}
+                        onChange={e=>setNewOff(p=>({...p,price_eur:parseInt(e.target.value,10)||0}))}
+                        onKeyDown={e=>{ if (e.key === 'Enter') commitNewOffering(); }}
+                        style={{...INP,paddingLeft:22,marginBottom:0}}/>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                    <button type="button" onClick={()=>{setShowAddOffering(false);setNewOff({type:"",length_min:60,price_eur:50});}}
+                      style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer",padding:"6px 12px"}}>
+                      Cancel
+                    </button>
+                    <button type="button" onClick={commitNewOffering}
+                      disabled={!newOff.type.trim() || !newOff.price_eur}
+                      style={{padding:"8px 18px",background:(!newOff.type.trim()||!newOff.price_eur)?"#E4E2DD":"#213C18",color:(!newOff.type.trim()||!newOff.price_eur)?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(!newOff.type.trim()||!newOff.price_eur)?"not-allowed":"pointer"}}>
+                      Add offering
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Weekly availability — multi-day picker. Each existing window
-                shows as a row with day, time range, and remove. The add form
-                lets the partner bulk-pick days ("Mon Wed Fri") + one time
-                range, creating those windows in a single action. */}
+                shows as a row with day, time range, and a clear Remove button.
+                Add form is hidden by default and opens via the dashed button. */}
             <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:18}}>
               <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>When you're available</p>
-              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 14px",lineHeight:1.6}}>Pick the days, then set a time range. Add several rows for varied schedules.</p>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 14px",lineHeight:1.6}}>Click Remove to delete a window, or add a new one below covering multiple days at once.</p>
 
               {availabilityWindows.length === 0 && (
                 <p style={{fontFamily:F2,fontSize:12,color:"#54584F",fontStyle:"italic",margin:"0 0 12px"}}>No availability yet. Add at least one window below.</p>
               )}
 
-              {/* Existing windows — one row per window */}
+              {/* Existing windows — one row per window with explicit Remove */}
               {availabilityWindows.length > 0 && (
                 <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:14}}>
                   {availabilityWindows.map((w, idx) => (
@@ -4128,66 +4156,83 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                       <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",minWidth:36}}>{w.day}</span>
                       <span style={{flex:1,fontFamily:F2,fontSize:12,color:"#1B1C19",fontWeight:500}}>{w.start} → {w.end}</span>
                       <button type="button" onClick={()=>removeAvailabilityWindow(idx)} aria-label="Remove window"
-                        style={{background:"transparent",border:"none",color:"#54584F",fontSize:16,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>
+                        style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 10px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                        Remove
+                      </button>
                     </div>
                   ))}
                 </div>
               )}
 
-              {/* Multi-day inline add form */}
-              <div style={{padding:"14px 16px",background:"#F5F3EE",borderRadius:8}}>
-                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",margin:"0 0 8px"}}>Add a new window</p>
+              {/* Add button OR multi-day inline form. Collapsed by default. */}
+              {!showAddWindow && (
+                <button type="button" onClick={()=>setShowAddWindow(true)}
+                  style={{background:"transparent",border:"1px dashed rgba(33,60,24,0.4)",color:"#213C18",fontFamily:F2,fontSize:12,fontWeight:600,padding:"9px 16px",borderRadius:999,cursor:"pointer"}}>
+                  + Add availability window
+                </button>
+              )}
 
-                {/* Day chips */}
-                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:12}}>
-                  {WEEK_DAYS.map(day => {
-                    const on = newWindow.days.includes(day);
-                    return (
-                      <button key={day} type="button" onClick={()=>toggleNewWindowDay(day)}
-                        style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${on?"#213C18":"rgba(195,200,188,0.6)"}`,background:on?"#213C18":"#fff",color:on?"#fff":"#1B1C19",fontFamily:F2,fontSize:11,fontWeight:on?700:500,cursor:"pointer",transition:"all .12s"}}>
-                        {day}
-                      </button>
-                    );
-                  })}
-                </div>
+              {showAddWindow && (
+                <div style={{padding:"14px 16px",background:"#F5F3EE",borderRadius:8}}>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",margin:"0 0 8px"}}>Add a new window</p>
 
-                {/* Quick presets */}
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
-                  <button type="button" onClick={()=>setNewWindow(p=>({...p,days:["Mon","Tue","Wed","Thu","Fri"]}))}
-                    style={{background:"transparent",border:"1px dashed rgba(33,60,24,0.4)",color:"#213C18",fontFamily:F2,fontSize:10,fontWeight:600,padding:"4px 10px",borderRadius:999,cursor:"pointer"}}>
-                    Weekdays
-                  </button>
-                  <button type="button" onClick={()=>setNewWindow(p=>({...p,days:["Sat","Sun"]}))}
-                    style={{background:"transparent",border:"1px dashed rgba(33,60,24,0.4)",color:"#213C18",fontFamily:F2,fontSize:10,fontWeight:600,padding:"4px 10px",borderRadius:999,cursor:"pointer"}}>
-                    Weekend
-                  </button>
-                  <button type="button" onClick={()=>setNewWindow(p=>({...p,days:[...WEEK_DAYS]}))}
-                    style={{background:"transparent",border:"1px dashed rgba(33,60,24,0.4)",color:"#213C18",fontFamily:F2,fontSize:10,fontWeight:600,padding:"4px 10px",borderRadius:999,cursor:"pointer"}}>
-                    Every day
-                  </button>
-                  {newWindow.days.length > 0 && (
-                    <button type="button" onClick={()=>setNewWindow(p=>({...p,days:[]}))}
-                      style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:10,fontWeight:500,padding:"4px 10px",borderRadius:999,cursor:"pointer",textDecoration:"underline"}}>
-                      Clear
+                  {/* Day chips */}
+                  <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:12}}>
+                    {WEEK_DAYS.map(day => {
+                      const on = newWindow.days.includes(day);
+                      return (
+                        <button key={day} type="button" onClick={()=>toggleNewWindowDay(day)}
+                          style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${on?"#213C18":"rgba(195,200,188,0.6)"}`,background:on?"#213C18":"#fff",color:on?"#fff":"#1B1C19",fontFamily:F2,fontSize:11,fontWeight:on?700:500,cursor:"pointer",transition:"all .12s"}}>
+                          {day}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Quick presets */}
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+                    <button type="button" onClick={()=>setNewWindow(p=>({...p,days:["Mon","Tue","Wed","Thu","Fri"]}))}
+                      style={{background:"transparent",border:"1px dashed rgba(33,60,24,0.4)",color:"#213C18",fontFamily:F2,fontSize:10,fontWeight:600,padding:"4px 10px",borderRadius:999,cursor:"pointer"}}>
+                      Weekdays
                     </button>
-                  )}
-                </div>
+                    <button type="button" onClick={()=>setNewWindow(p=>({...p,days:["Sat","Sun"]}))}
+                      style={{background:"transparent",border:"1px dashed rgba(33,60,24,0.4)",color:"#213C18",fontFamily:F2,fontSize:10,fontWeight:600,padding:"4px 10px",borderRadius:999,cursor:"pointer"}}>
+                      Weekend
+                    </button>
+                    <button type="button" onClick={()=>setNewWindow(p=>({...p,days:[...WEEK_DAYS]}))}
+                      style={{background:"transparent",border:"1px dashed rgba(33,60,24,0.4)",color:"#213C18",fontFamily:F2,fontSize:10,fontWeight:600,padding:"4px 10px",borderRadius:999,cursor:"pointer"}}>
+                      Every day
+                    </button>
+                    {newWindow.days.length > 0 && (
+                      <button type="button" onClick={()=>setNewWindow(p=>({...p,days:[]}))}
+                        style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:10,fontWeight:500,padding:"4px 10px",borderRadius:999,cursor:"pointer",textDecoration:"underline"}}>
+                        Clear
+                      </button>
+                    )}
+                  </div>
 
-                {/* Time pickers + Add button */}
-                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                  <span style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:600}}>From</span>
-                  <input type="time" value={newWindow.start} onChange={e=>setNewWindow(p=>({...p,start:e.target.value}))}
-                    style={{...INP,flex:"0 0 110px",marginBottom:0}}/>
-                  <span style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:600}}>to</span>
-                  <input type="time" value={newWindow.end} onChange={e=>setNewWindow(p=>({...p,end:e.target.value}))}
-                    style={{...INP,flex:"0 0 110px",marginBottom:0}}/>
-                  <button type="button" onClick={commitNewWindow}
-                    disabled={newWindow.days.length===0 || newWindow.end <= newWindow.start}
-                    style={{flex:"0 0 auto",padding:"10px 18px",background:(newWindow.days.length===0||newWindow.end<=newWindow.start)?"#E4E2DD":"#213C18",color:(newWindow.days.length===0||newWindow.end<=newWindow.start)?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(newWindow.days.length===0||newWindow.end<=newWindow.start)?"not-allowed":"pointer"}}>
-                    {newWindow.days.length === 0 ? "Pick days first" : `+ Add to ${newWindow.days.length} day${newWindow.days.length===1?"":"s"}`}
-                  </button>
+                  {/* Time pickers + Cancel/Add */}
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                    <span style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:600}}>From</span>
+                    <input type="time" value={newWindow.start} onChange={e=>setNewWindow(p=>({...p,start:e.target.value}))}
+                      style={{...INP,flex:"0 0 110px",marginBottom:0}}/>
+                    <span style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:600}}>to</span>
+                    <input type="time" value={newWindow.end} onChange={e=>setNewWindow(p=>({...p,end:e.target.value}))}
+                      style={{...INP,flex:"0 0 110px",marginBottom:0}}/>
+                  </div>
+                  <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                    <button type="button" onClick={()=>{setShowAddWindow(false);setNewWindow({days:[],start:"09:00",end:"12:00"});}}
+                      style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer",padding:"6px 12px"}}>
+                      Cancel
+                    </button>
+                    <button type="button" onClick={commitNewWindow}
+                      disabled={newWindow.days.length===0 || newWindow.end <= newWindow.start}
+                      style={{padding:"8px 18px",background:(newWindow.days.length===0||newWindow.end<=newWindow.start)?"#E4E2DD":"#213C18",color:(newWindow.days.length===0||newWindow.end<=newWindow.start)?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(newWindow.days.length===0||newWindow.end<=newWindow.start)?"not-allowed":"pointer"}}>
+                      {newWindow.days.length === 0 ? "Pick days first" : `Add to ${newWindow.days.length} day${newWindow.days.length===1?"":"s"}`}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Save bar — primary action lives here */}
