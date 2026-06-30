@@ -195,23 +195,33 @@ serve(async (req) => {
 
         const LEAD_MS = 4 * 24 * 60 * 60 * 1000
         const minBookable = new Date(Date.now() + LEAD_MS)
+        // Optional partner-defined booking window. Empty = rolling 4 weeks
+        // (today's behaviour). Set = honour it, capped at 26 weeks to keep
+        // slot row counts sane.
+        const HARD_CAP_MS = 26 * 7 * 24 * 60 * 60 * 1000
+        const rangeFrom = record.availability_from ? new Date(String(record.availability_from) + 'T00:00:00') : null
+        const rangeTo   = record.availability_to   ? new Date(String(record.availability_to)   + 'T23:59:59') : null
+        const horizonStart = rangeFrom && rangeFrom > minBookable ? rangeFrom : minBookable
+        const defaultEnd   = new Date(Date.now() + 4 * 7 * 24 * 60 * 60 * 1000)
+        const hardCap      = new Date(Date.now() + HARD_CAP_MS)
+        const horizonEnd   = rangeTo ? (rangeTo < hardCap ? rangeTo : hardCap) : defaultEnd
 
-        for (const w of windows) {
-          const dayIdx = DAY_IDX[w?.day]
-          if (dayIdx === undefined) continue
-          const [sH, sM] = String(w.start || '09:00').split(':').map((x: string) => parseInt(x, 10))
-          const [eH, eM] = String(w.end   || '18:00').split(':').map((x: string) => parseInt(x, 10))
-          const windowStartMin = sH * 60 + sM
-          const windowEndMin   = eH * 60 + eM
-          if (windowEndMin <= windowStartMin) continue
+        const dayCursor = new Date(horizonStart)
+        dayCursor.setHours(0, 0, 0, 0)
+        const horizonEndDay = new Date(horizonEnd)
+        horizonEndDay.setHours(0, 0, 0, 0)
+        while (dayCursor <= horizonEndDay) {
+          const dow = dayCursor.getDay()
+          for (const w of windows) {
+            const dayIdx = DAY_IDX[w?.day]
+            if (dayIdx === undefined || dayIdx !== dow) continue
+            const [sH, sM] = String(w.start || '09:00').split(':').map((x: string) => parseInt(x, 10))
+            const [eH, eM] = String(w.end   || '18:00').split(':').map((x: string) => parseInt(x, 10))
+            const windowStartMin = sH * 60 + sM
+            const windowEndMin   = eH * 60 + eM
+            if (windowEndMin <= windowStartMin) continue
 
-          const curr = today.getDay()
-          const daysAhead = (dayIdx - curr + 7) % 7 || 7
-
-          for (let week = 0; week < 4; week++) {
-            const d = new Date(today)
-            d.setDate(today.getDate() + daysAhead + week * 7)
-            d.setHours(0, 0, 0, 0)
+            const d = new Date(dayCursor)
             for (const off of offerings) {
               const dur = off.length_min
               for (let mins = windowStartMin; mins + dur <= windowEndMin; mins += dur) {
@@ -234,6 +244,7 @@ serve(async (req) => {
               }
             }
           }
+          dayCursor.setDate(dayCursor.getDate() + 1)
         }
       } else {
         for (const sl of (record.slots ?? [])) {

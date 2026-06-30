@@ -3202,6 +3202,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const [availabilityWindows, setAvailabilityWindows] = useState(
     Array.isArray(bizData?.availability_windows) ? bizData.availability_windows : []
   );
+  // Optional "I'm only taking bookings between these dates" range for
+  // private instructors. Empty strings mean no bound — fall back to the
+  // rolling 4-week window. Stored as YYYY-MM-DD on the businesses row.
+  const [availabilityFrom, setAvailabilityFrom] = useState(bizData?.availability_from || "");
+  const [availabilityTo,   setAvailabilityTo]   = useState(bizData?.availability_to   || "");
   const [sessionDurationMin, setSessionDurationMin] = useState(
     Number.isFinite(bizData?.session_duration_min) && bizData?.session_duration_min > 0
       ? bizData.session_duration_min : 60
@@ -3523,6 +3528,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       availability_windows: availabilityWindows,
       session_duration_min: sessionDurationMin,
       session_offerings: dashSessionOfferings,
+      availability_from: availabilityFrom || null,
+      availability_to:   availabilityTo   || null,
     }).eq('id', bizData.id);
     if (bizErr) {
       setSaving(false);
@@ -3536,6 +3543,16 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       const today = new Date();
       const LEAD_MS = 4 * 24 * 60 * 60 * 1000;
       const minBookable = new Date(Date.now() + LEAD_MS);
+      // Resolve the expansion horizon. No range = rolling 4 weeks (today's
+      // behaviour). Range set = honour it, capped at 26 weeks (6 months) to
+      // keep slot counts sane.
+      const HARD_CAP_MS = 26 * 7 * 24 * 60 * 60 * 1000;
+      const rangeFrom = availabilityFrom ? new Date(availabilityFrom + "T00:00:00") : null;
+      const rangeTo   = availabilityTo   ? new Date(availabilityTo   + "T23:59:59") : null;
+      const horizonStart = rangeFrom && rangeFrom > minBookable ? rangeFrom : minBookable;
+      const defaultEnd   = new Date(Date.now() + 4 * 7 * 24 * 60 * 60 * 1000);
+      const hardCap      = new Date(Date.now() + HARD_CAP_MS);
+      const horizonEnd   = rangeTo ? (rangeTo < hardCap ? rangeTo : hardCap) : defaultEnd;
       const fallbackCr = listingForm.cr ? (parseInt(listingForm.cr) || (bizData.cr ?? 60)) : (bizData.cr ?? 60);
       // If the partner hasn't filled in any offerings yet, fall back to a
       // single offering built from the legacy duration + price pair so we
@@ -3544,20 +3561,25 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         ? dashSessionOfferings
         : [{ type: bizData?.category || 'Private session', length_min: sessionDurationMin, price_eur: fallbackCr }];
       const slotRows = [];
-      for (const w of availabilityWindows) {
-        const dayIdx = DAY_IDX[w.day];
-        if (dayIdx === undefined) continue;
-        const [sH, sM] = String(w.start || '09:00').split(':').map(x => parseInt(x, 10));
-        const [eH, eM] = String(w.end   || '18:00').split(':').map(x => parseInt(x, 10));
-        const startMin = sH * 60 + sM;
-        const endMin   = eH * 60 + eM;
-        if (endMin <= startMin) continue;
-        const curr = today.getDay();
-        const daysAhead = (dayIdx - curr + 7) % 7 || 7;
-        for (let week = 0; week < 4; week++) {
-          const d = new Date(today);
-          d.setDate(today.getDate() + daysAhead + week * 7);
-          d.setHours(0, 0, 0, 0);
+      // Walk every day from horizonStart through horizonEnd. For each day,
+      // check every availability window whose weekday matches and emit slots.
+      // This is O(days × windows × offerings) rather than the old fixed
+      // 4-week-rolling loop so a partner-defined range "just works".
+      const dayCursor = new Date(horizonStart);
+      dayCursor.setHours(0, 0, 0, 0);
+      const horizonEndDay = new Date(horizonEnd);
+      horizonEndDay.setHours(0, 0, 0, 0);
+      while (dayCursor <= horizonEndDay) {
+        const dow = dayCursor.getDay();
+        for (const w of availabilityWindows) {
+          const dayIdx = DAY_IDX[w.day];
+          if (dayIdx === undefined || dayIdx !== dow) continue;
+          const [sH, sM] = String(w.start || '09:00').split(':').map(x => parseInt(x, 10));
+          const [eH, eM] = String(w.end   || '18:00').split(':').map(x => parseInt(x, 10));
+          const startMin = sH * 60 + sM;
+          const endMin   = eH * 60 + eM;
+          if (endMin <= startMin) continue;
+          const d = new Date(dayCursor);
           for (const off of offerings) {
             const dur = off.length_min;
             for (let mins = startMin; mins + dur <= endMin; mins += dur) {
@@ -3580,6 +3602,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             }
           }
         }
+        dayCursor.setDate(dayCursor.getDate() + 1);
       }
       if (slotRows.length > 0) {
         // .select() returns the inserted rows so we can detect the
@@ -3838,12 +3861,23 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           </div>
           {/* Tabs */}
           <div style={{display:"flex",marginTop:4,gap:0,overflowX:"auto",scrollbarWidth:"none"}}>
-            {TABS.map(([k,l])=>(
-              <button key={k} onClick={()=>setTab(k)}
-                style={{padding:"12px 20px",border:"none",borderBottom:`3px solid ${tab===k?"#fff":"transparent"}`,background:tab===k?"rgba(255,255,255,0.1)":"transparent",color:tab===k?"#fff":"rgba(255,255,255,0.45)",fontFamily:F2,fontSize:12,fontWeight:tab===k?700:400,cursor:"pointer",transition:"all .15s"}}>
-                {l}
-              </button>
-            ))}
+            {TABS.map(([k,l])=>{
+              // Show a pill badge on Manage with the count of pending booking
+              // requests so partners see "you've got work" the moment they sign in.
+              const showBadge = k === "manage" && dashIsPrivate
+                && Array.isArray(pendingRequests) && pendingRequests.length > 0;
+              return (
+                <button key={k} onClick={()=>{ setTab(k); if (k==="manage" && showBadge) setManageSubTab("requests"); }}
+                  style={{position:"relative",padding:"12px 20px",border:"none",borderBottom:`3px solid ${tab===k?"#fff":"transparent"}`,background:tab===k?"rgba(255,255,255,0.1)":"transparent",color:tab===k?"#fff":"rgba(255,255,255,0.45)",fontFamily:F2,fontSize:12,fontWeight:tab===k?700:400,cursor:"pointer",transition:"all .15s",display:"inline-flex",alignItems:"center",gap:8}}>
+                  {l}
+                  {showBadge && (
+                    <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",minWidth:18,height:18,padding:"0 6px",borderRadius:999,background:"#C46A4D",color:"#fff",fontSize:10,fontWeight:800,lineHeight:1}}>
+                      {pendingRequests.length}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -4013,9 +4047,15 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           <div style={{marginBottom:18,padding:4,background:"rgba(33,60,24,0.06)",border:"1px solid rgba(33,60,24,0.08)",borderRadius:14,display:"flex",gap:4,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
             {MANAGE_SUBTABS.map(([id,label])=>{
               const active = manageSubTab===id;
+              const requestCount = id === "requests" && Array.isArray(pendingRequests) ? pendingRequests.length : 0;
               return (
-                <button key={id} onClick={()=>setManageSubTab(id)} style={{flex:"1 1 auto",minWidth:96,padding:"10px 14px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:F2,fontSize:13,fontWeight:600,whiteSpace:"nowrap",background:active?"#213C18":"transparent",color:active?"#FBF9F4":"#213C18",transition:"background 120ms ease"}}>
-                  {label}
+                <button key={id} onClick={()=>setManageSubTab(id)} style={{flex:"1 1 auto",minWidth:96,padding:"10px 14px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:F2,fontSize:13,fontWeight:600,whiteSpace:"nowrap",background:active?"#213C18":"transparent",color:active?"#FBF9F4":"#213C18",transition:"background 120ms ease",display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                  <span>{label}</span>
+                  {requestCount > 0 && (
+                    <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",minWidth:18,height:18,padding:"0 6px",borderRadius:999,background:active?"#FBF9F4":"#C46A4D",color:active?"#213C18":"#fff",fontSize:10,fontWeight:800,lineHeight:1}}>
+                      {requestCount}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -4124,6 +4164,37 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             <div style={{marginBottom:18}}>
               <h2 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#1B1C19",margin:"0 0 4px"}}>Your weekly availability</h2>
               <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.6}}>Block out time windows + the session types you offer. We generate bookable slots for each offering inside every window. Guests pick the slot they want.</p>
+            </div>
+
+            {/* Optional booking-window range. Useful for seasonal pop-ups
+                ("I'm only here Jul 1 – Sep 30"). Empty = rolling 4 weeks. */}
+            <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:14}}>
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>When you're taking bookings</p>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Optional. Leave blank to keep a rolling 4-week window. Set a range if you only take bookings between specific dates (e.g. a summer season). Capped at 6 months.</p>
+              <div style={{display:"flex",flexWrap:"wrap",gap:10,alignItems:"flex-end"}}>
+                <div style={{flex:"1 1 160px",minWidth:140}}>
+                  <label style={{display:"block",fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"0 0 4px"}}>From</label>
+                  <input type="date" value={availabilityFrom}
+                    onChange={e=>setAvailabilityFrom(e.target.value)}
+                    style={{...INP,marginBottom:0,width:"100%"}}/>
+                </div>
+                <div style={{flex:"1 1 160px",minWidth:140}}>
+                  <label style={{display:"block",fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"0 0 4px"}}>To</label>
+                  <input type="date" value={availabilityTo}
+                    onChange={e=>setAvailabilityTo(e.target.value)}
+                    min={availabilityFrom || undefined}
+                    style={{...INP,marginBottom:0,width:"100%"}}/>
+                </div>
+                {(availabilityFrom || availabilityTo) && (
+                  <button type="button" onClick={()=>{setAvailabilityFrom("");setAvailabilityTo("");}}
+                    style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer",padding:"10px 12px",textDecoration:"underline"}}>
+                    Clear range
+                  </button>
+                )}
+              </div>
+              {availabilityFrom && availabilityTo && availabilityTo < availabilityFrom && (
+                <p style={{fontFamily:F2,fontSize:11,color:"#C46A4D",margin:"8px 0 0"}}>End date must be on or after the start date.</p>
+              )}
             </div>
 
             {/* What you offer — chip-based. Each offering is a tappable
@@ -4297,11 +4368,23 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
 
             {/* Save bar — primary action lives here */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",padding:"12px 0 18px"}}>
-              <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,flex:1,minWidth:200,lineHeight:1.5}}>Saving regenerates your bookable slots for the next 4 weeks. Slots inside the 4-day lead window are skipped.</p>
-              <button onClick={saveAvailability} disabled={saving||isPreview}
-                style={{padding:"11px 26px",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer"}}>
-                {saving ? "Saving" : "Save availability"}
-              </button>
+              <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,flex:1,minWidth:200,lineHeight:1.5}}>
+                Saving regenerates your bookable slots
+                {availabilityFrom || availabilityTo
+                  ? ` for the dates you've set (${availabilityFrom || "today"} → ${availabilityTo || "+4 weeks"})`
+                  : " for the next 4 weeks"}.
+                Slots inside the 4-day lead window are skipped.
+              </p>
+              {(() => {
+                const badRange = availabilityFrom && availabilityTo && availabilityTo < availabilityFrom;
+                const blocked = saving || isPreview || badRange;
+                return (
+                  <button onClick={saveAvailability} disabled={blocked}
+                    style={{padding:"11px 26px",background:blocked?"#E4E2DD":"#213C18",color:blocked?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:blocked?"not-allowed":"pointer"}}>
+                    {saving ? "Saving" : "Save availability"}
+                  </button>
+                );
+              })()}
             </div>
 
             {/* Save toast — large, sage success or clay error so it's hard to
