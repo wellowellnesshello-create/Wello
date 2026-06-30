@@ -2141,7 +2141,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
 // ═══════════════════════════════════════════════════════════════
 // PAGE: PROFILE
 // ═══════════════════════════════════════════════════════════════
-function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetView, isBiz, onToggleBiz, onPreviewDashboard, profile, authSession, onSignOut, onOpenSignIn, bookingsVersion = 0, onSaveInterests }) {
+function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetView, isBiz, onToggleBiz, onPreviewDashboard, profile, authSession, onSignOut, onOpenSignIn, bookingsVersion = 0, onSaveInterests, onProfilePatch }) {
   const [tab,setTab]=useState("reservations");
   const saved=listings.filter(b=>savedIds.includes(b.id));
   const [friends]=useState(FRIENDS);
@@ -2165,12 +2165,21 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
   async function saveAccount() {
     if (!authSession?.user?.id) return;
     setAcctSaving(true); setAcctMsg("");
-    const { error } = await supabase.from('profiles').update({
+    const patch = {
       full_name: acctForm.full_name.trim() || null,
       phone:     acctForm.phone.trim()     || null,
-    }).eq('id', authSession.user.id);
+    };
+    const { error } = await supabase.from('profiles').update(patch).eq('id', authSession.user.id);
     setAcctSaving(false);
-    setAcctMsg(error ? "error" : "saved");
+    if (error) {
+      setAcctMsg("error");
+    } else {
+      // Propagate to the parent so every other surface that reads from
+      // `profile` (greeting, avatar initial, booking flow defaults) updates
+      // immediately, not just on next page-reload.
+      onProfilePatch?.(patch);
+      setAcctMsg("saved");
+    }
     setTimeout(() => setAcctMsg(""), 2600);
   }
 
@@ -3274,6 +3283,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   useEffect(() => {
     try { localStorage.setItem("wello_dash_tab", tab); } catch { /* non-critical */ }
   }, [tab]);
+  // Derived: is this dashboard a private-instructor venue? Read by the
+  // manageSubTab init below + the pendingRequests effect further down, so it
+  // has to live above both to avoid TDZ when React runs the lazy initializer.
+  const dashIsPrivate = bizData?.business_type === 'private_instructor'
+    || (!bizData?.business_type && bizData?.category === 'Private Instructor');
   // Sub-tab within Manage. Defaults to Requests for private instructors
   // (most actionable), Schedule for everyone else.
   const [manageSubTab, setManageSubTab] = useState(() => {
@@ -3330,11 +3344,6 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const [linkedListingId, setLinkedListingId] = useState(null);
   const [dbSlots, setDbSlots]     = useState(null); // null = loading | [] = empty | [...] = loaded
   const [statusLive, setStatusLive] = useState(bizData.status === 'approved' || bizData.status === 'submitted');
-  // Private-instructor dashboards behave a bit differently — declared up here
-  // (and not later beside the TABS array) so the pendingRequests useEffect
-  // below doesn't trip over a TDZ when it reads it on initial render.
-  const dashIsPrivate = bizData?.business_type === 'private_instructor'
-    || (!bizData?.business_type && bizData?.category === 'Private Instructor');
 
   // Keep the Manage sub-tab valid when the venue type flips. Requests only
   // exists for private instructors, so a non-private venue stuck on Requests
@@ -8300,7 +8309,7 @@ export default function App() {
         <div style={{paddingTop:headerH}}>
           {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds} onGotoCredits={gotoCredits}/>}
           {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds} profile={profile} authSession={authSession} onSaveInterests={saveInterests}/>}
-          {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion} onSaveInterests={saveInterests}/>}
+          {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion} onSaveInterests={saveInterests} onProfilePatch={(patch)=>setProfile(p => p ? { ...p, ...patch } : { id: authSession?.user?.id, ...patch })}/>}
           {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
           {view==="credits"    &&<CreditsPage credits={credits} listings={listings}/>}
           {view==="about"      &&<AboutPage onSetView={setView}/>}
