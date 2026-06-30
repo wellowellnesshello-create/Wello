@@ -86,7 +86,7 @@ serve(async (req) => {
 
     // Customer profile for emails + credit accounting.
     const { data: customer } = await supabase
-      .from('profiles').select('id, full_name, email, credits').eq('id', booking.user_id).maybeSingle()
+      .from('profiles').select('id, full_name, email, phone, credits').eq('id', booking.user_id).maybeSingle()
 
     // Pull the slot name so emails read naturally.
     const { data: slot } = await supabase
@@ -115,17 +115,53 @@ serve(async (req) => {
       // Confirmation emails — instructor + customer.
       const dateStr = fmtDate(booking.booking_date)
       const timeStr = (booking.start_time || '').slice(0,5)
-      const customerName = customer?.full_name || customer?.email || 'your customer'
+      const customerName  = customer?.full_name || customer?.email || 'your customer'
       const customerEmail = customer?.email
-      const customerLoc = (booking.notes || '').replace(/^Customer location:\s*/i, '').trim() || 'see Wello dashboard'
+      const customerPhone = customer?.phone || null
+      // Parse the two-line composite notes the booking modal builds
+      // ("Customer location: …\nNotes: …").
+      const notesBlob = booking.notes || ''
+      const locLine   = notesBlob.split('\n').find((l: string) => /^Customer location:/i.test(l)) || ''
+      const noteLine  = notesBlob.split('\n').find((l: string) => /^Notes:/i.test(l)) || ''
+      const customerLoc  = locLine.replace(/^Customer location:\s*/i, '').trim() || 'see Wello dashboard'
+      const customerNote = noteLine.replace(/^Notes:\s*/i, '').trim()
 
+      // ── Customer confirmation email ──────────────────────────
       if (customerEmail) {
         await sendEmail(customerEmail, `Your booking with ${business.name} is confirmed`,
-          `<div style="font-family:Arial,sans-serif;max-width:480px;padding:24px;background:#FBF9F4;"><h2 style="color:#213C18;">You're confirmed!</h2><p style="color:#54584F;line-height:1.7;">${business.name} has confirmed your booking for <strong>${sessionName}</strong> on <strong>${dateStr}</strong> at <strong>${timeStr}</strong>.</p><p style="color:#54584F;line-height:1.7;">${booking.credits_used} credits have been deducted from your balance.</p><p style="color:#54584F;line-height:1.7;">Have a great session,<br>Wello</p></div>`)
+          `<div style="font-family:Arial,sans-serif;max-width:520px;padding:24px;background:#FBF9F4;">
+            <h2 style="color:#213C18;">You're confirmed!</h2>
+            <p style="color:#54584F;line-height:1.7;">${business.name} has confirmed your booking for <strong>${sessionName}</strong> on <strong>${dateStr}</strong> at <strong>${timeStr}</strong>.</p>
+            <div style="background:#fff;border-radius:8px;padding:16px 18px;border:1px solid #E4E2DD;margin:14px 0;">
+              <p style="color:#54584F;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 4px;">Session address</p>
+              <p style="color:#213C18;font-weight:600;margin:0;line-height:1.5;">${customerLoc}</p>
+            </div>
+            <p style="color:#54584F;line-height:1.7;">${booking.credits_used} credits have been deducted from your balance.</p>
+            <p style="color:#54584F;line-height:1.7;">Have a great session,<br>Wello</p>
+          </div>`)
       }
+
+      // ── Partner confirmation email — now includes phone + notes ──
       if (business.email) {
+        const phoneLine = customerPhone
+          ? `<p style="color:#54584F;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;margin:10px 0 4px;">Customer phone</p>
+             <p style="color:#213C18;font-weight:600;margin:0;line-height:1.5;"><a href="tel:${customerPhone.replace(/\s+/g,'')}" style="color:#213C18;text-decoration:none;">📞 ${customerPhone}</a></p>`
+          : ''
+        const noteBlock = customerNote
+          ? `<p style="color:#54584F;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;margin:10px 0 4px;">Arrival notes</p>
+             <p style="color:#213C18;font-style:italic;margin:0;line-height:1.5;">${customerNote}</p>`
+          : ''
         await sendEmail(business.email, `Booking confirmed — ${customerName} on ${dateStr}`,
-          `<div style="font-family:Arial,sans-serif;max-width:480px;padding:24px;background:#FBF9F4;"><h2 style="color:#213C18;">Booking confirmed</h2><p style="color:#54584F;line-height:1.7;"><strong>${customerName}</strong> for <strong>${sessionName}</strong> on <strong>${dateStr}</strong> at <strong>${timeStr}</strong>.</p><p style="color:#54584F;line-height:1.7;">Customer location: <strong>${customerLoc}</strong></p></div>`)
+          `<div style="font-family:Arial,sans-serif;max-width:520px;padding:24px;background:#FBF9F4;">
+            <h2 style="color:#213C18;">Booking confirmed</h2>
+            <p style="color:#54584F;line-height:1.7;"><strong>${customerName}</strong> for <strong>${sessionName}</strong> on <strong>${dateStr}</strong> at <strong>${timeStr}</strong>.</p>
+            <div style="background:#fff;border-radius:8px;padding:16px 18px;border:1px solid #E4E2DD;margin:14px 0;">
+              <p style="color:#54584F;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 4px;">Session address</p>
+              <p style="color:#213C18;font-weight:600;margin:0;line-height:1.5;">${customerLoc}</p>
+              ${phoneLine}
+              ${noteBlock}
+            </div>
+          </div>`)
       }
 
       return json({ success: true, status: 'confirmed' })
