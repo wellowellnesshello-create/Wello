@@ -3326,20 +3326,33 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         }
       }
       if (slotRows.length > 0) {
-        const { error: insErr } = await supabase.from('slots').insert(slotRows);
-        if (insErr) console.error('saveAvailability: slot insert failed', insErr.message);
-        else {
-          // Re-pull dbSlots so the UI reflects the new state without a refresh.
-          const { data: rows } = await supabase
-            .from('slots').select('*').eq('listing_id', linkedListingId).order('date').order('time');
-          setDbSlots(rows || []);
+        // .select() returns the inserted rows so we can detect the
+        // RLS-silent-zero-rows case (insert succeeds but blocked → 0 rows).
+        const { data: insertedRows, error: insErr } = await supabase
+          .from('slots').insert(slotRows).select('id');
+        if (insErr) {
+          console.error('saveAvailability: slot insert failed', insErr.message);
+          setSaving(false);
+          flashSaveMsg("err", "Couldn't insert slots — " + insErr.message);
+          return;
         }
+        if (!insertedRows || insertedRows.length === 0) {
+          console.warn('saveAvailability: 0 slot rows inserted — likely RLS blocking. Check the "Partners can insert own slots" policy on slots.');
+          setSaving(false);
+          flashSaveMsg("err", "Slots couldn't be saved — your DB needs the slots INSERT policy keyed to user_id.");
+          return;
+        }
+        // Re-pull dbSlots so the UI reflects the new state without a refresh.
+        const { data: rows } = await supabase
+          .from('slots').select('*').eq('listing_id', linkedListingId).order('date').order('time');
+        setDbSlots(rows || []);
       } else {
         setDbSlots([]);
       }
     }
     setSaving(false);
-    flashSaveMsg("settings", `Availability saved. ${availabilityWindows.length} window${availabilityWindows.length === 1 ? '' : 's'} live.`);
+    const slotCount = (dbSlots && dbSlots.length) || 0;
+    flashSaveMsg("settings", `Availability saved. ${availabilityWindows.length} window${availabilityWindows.length === 1 ? '' : 's'} live · ${slotCount} bookable slot${slotCount === 1 ? '' : 's'} generated.`);
   }
 
   async function goLive() {
