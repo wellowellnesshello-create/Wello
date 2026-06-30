@@ -90,15 +90,17 @@ function SEO({ title, description, path="" }) {
   return null;
 }
 
+// Calls the ai-chat Supabase Edge Function (which proxies to Anthropic
+// server-side). Used to call api.anthropic.com directly from the browser,
+// which CORS-blocked every request and exposed the API contract.
 async function ai(sys, usr, tok = 900) {
   try {
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: tok, system: sys, messages: [{ role: "user", content: usr }] }),
+    const { data, error } = await supabase.functions.invoke('ai-chat', {
+      body: { system: sys, messages: [{ role: 'user', content: usr }], max_tokens: tok },
     });
-    const d = await r.json();
-    return d.content?.map(b => b.text || "").join("") || "";
-  } catch { return ""; }
+    if (error) { console.warn('ai-chat invoke failed:', error.message); return ""; }
+    return data?.content?.map(b => b.text || "").join("") || "";
+  } catch (e) { console.warn('ai-chat exception:', e); return ""; }
 }
 async function aiJSON(sys, usr, tok = 900) {
   const t = await ai(sys, usr, tok);
@@ -1511,55 +1513,6 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
     }
   }
 
-  // AI search state. When aiResults is non-null we constrain the listing
-  // grid to just those venues and surface the AI's one-line "why these"
-  // note above the results. Otherwise the normal filter logic runs.
-  const [aiQ, setAiQ]                   = useState("");
-  const [aiLoading, setAiLoading]       = useState(false);
-  const [aiNote, setAiNote]             = useState("");
-  const [aiResults, setAiResults]       = useState(null); // null | array of listings
-  const [aiError, setAiError]           = useState("");
-
-  async function runSemanticSearch() {
-    const q = aiQ.trim();
-    if (!q) return;
-    setAiLoading(true); setAiError("");
-    try {
-      const ls = listings.map(b => {
-        const tags = (b.tags || []).join(",");
-        const cov  = Array.isArray(b.coverage_areas) && b.coverage_areas.length ? ` covers:${b.coverage_areas.join(",")}` : "";
-        return `ID:${b.id} "${b.name}" ${b.cat} ${b.loc}${cov} €${b.cr}${tags ? ` tags:${tags}` : ""}`;
-      }).join("\n");
-      const r = await aiJSON(
-        `You are a generous Wello wellness search. The user describes intent in their OWN words — match loosely to similar mood, vibe, category, activity type, or location. Treat synonyms and near-matches as valid (e.g. "1-to-1" matches "Private Instructor", "ocean" matches "beachfront" tag, "morning energy" matches early-time slots or HIIT). Return AT LEAST 3 listings (8 max) if anything could plausibly fit — never return an empty list when there's any reasonable interpretation. Return ONLY JSON: {"ids":[<listing-ids>],"explanation":"short reason max 14 words"}`,
-        `User query: "${q}"\nListings:\n${ls}`,
-        900
-      );
-      if (r?.ids && Array.isArray(r.ids)) {
-        const matched = listings.filter(b => r.ids.includes(b.id));
-        if (matched.length === 0) {
-          // AI parsed but found nothing it was willing to suggest. Fall back
-          // to showing every listing so the page isn't empty, and surface a
-          // gentle note rather than a hard error.
-          setAiResults(null);
-          setAiNote("No close matches — here's everything we have. Try a different angle?");
-        } else {
-          setAiResults(matched);
-          setAiNote(r.explanation || `Showing ${matched.length} match${matched.length === 1 ? '' : 'es'}.`);
-        }
-      } else {
-        // Couldn't parse the AI's JSON. Treat as a soft note, not a blocker.
-        setAiResults(null);
-        setAiNote("Couldn't quite read that — try a feel like 'calm beach session' or 'energy boost morning'.");
-      }
-    } catch (e) {
-      console.error('Explore AI search error:', e);
-      setAiError("Search hiccupped. Try again in a moment.");
-    } finally {
-      setAiLoading(false);
-    }
-  }
-  function clearAI() { setAiQ(""); setAiResults(null); setAiNote(""); setAiError(""); }
 
   // Cross-page deep links (home page "Browse private instructors" CTA, etc.)
   // can fire a window-level CustomEvent('wello-set-cat', { detail: <CAT> })
@@ -1585,59 +1538,41 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
     "Coast Meditation":   [39.3574, 3.1287],
     "Rooftop Pool Club":  [39.5697, 2.6501],
   };
-  // When AI search is active, the result set is authoritative — chip filters
-  // still apply on top so the partner can narrow further (e.g. "show me only
-  // the Pollença ones from the AI's picks").
-  const baseSet = aiResults ?? listings;
-  const filtered = baseSet.filter(b => {
+  // Substring filter across name / category / location / tags / coverage
+  // areas. Lower-cased once per listing for efficiency.
+  const q = search.trim().toLowerCase();
+  const filtered = listings.filter(b => {
     const mC = activeCat === "All" || b.cat === activeCat;
     const isPrivate = b.cat === "Private Instructor";
     const mL = activeLoc === "All Mallorca"
       || (isPrivate && Array.isArray(b.coverage_areas) && b.coverage_areas.includes(activeLoc))
       || (!isPrivate && b.loc === activeLoc)
       || (isPrivate && (!b.coverage_areas?.length) && b.loc === activeLoc);
-    const mS = !search
-      || b.name.toLowerCase().includes(search.toLowerCase())
-      || (b.loc || '').toLowerCase().includes(search.toLowerCase())
-      || (b.cat || '').toLowerCase().includes(search.toLowerCase());
-    return mC && mL && mS;
+    if (!q) return mC && mL;
+    const blob = (`${b.name || ''} ${b.cat || ''} ${b.loc || ''} ${(b.tags || []).join(' ')} ${(b.coverage_areas || []).join(' ')}`).toLowerCase();
+    return mC && mL && blob.includes(q);
   });
 
   return (
     <div style={{paddingTop:16,paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
 
-      {/* AI-powered semantic search. Front-and-center so guests can type
-          intent ("calm beach session", "energy boost morning") and get
-          listings with the right vibe rather than a literal word match. */}
-      <div style={{maxWidth:920,margin:"0 auto 14px",padding:"0 clamp(16px,4vw,32px)"}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,background:"#fff",borderRadius:999,padding:"6px 6px 6px clamp(16px,2.5vw,22px)",boxShadow:"0 4px 18px rgba(27,28,25,0.08)",border:"1px solid rgba(195,200,188,0.4)",flexWrap:"wrap"}}>
-          <span style={{color:"#A3B18A",fontSize:18,fontWeight:700,flexShrink:0}}>✦</span>
-          <input value={aiQ}
-            onChange={e=>setAiQ(e.target.value)}
-            onKeyDown={e=>{ if (e.key==="Enter" && !aiLoading) runSemanticSearch(); }}
-            disabled={aiLoading}
-            placeholder="Describe what you want — 'calm beach session', 'energy boost morning'…"
-            style={{flex:"1 1 200px",minWidth:0,border:"none",outline:"none",fontFamily:F2,fontSize:"clamp(13px,1.5vw,15px)",background:"transparent",color:"#1B1C19",fontWeight:500,padding:"10px 0"}}/>
-          {(aiQ || aiResults) && (
-            <button onClick={clearAI}
-              style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:12,cursor:"pointer",fontWeight:500,padding:"6px 10px",whiteSpace:"nowrap"}}>
-              Clear
+      {/* Simple live-filter search. Matches against name, category, location,
+          tags, and (for private instructors) coverage areas. No API call —
+          instant, no credit cost, no CORS. */}
+      <div style={{maxWidth:720,margin:"0 auto 14px",padding:"0 clamp(16px,4vw,32px)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,background:"#fff",borderRadius:999,padding:"8px 14px",boxShadow:"0 2px 10px rgba(27,28,25,0.05)",border:"1px solid rgba(195,200,188,0.4)"}}>
+          <span style={{color:"#A3B18A",fontSize:16,flexShrink:0}}>⌕</span>
+          <input value={search}
+            onChange={e=>setSearch(e.target.value)}
+            placeholder="Search by activity, venue, or area…"
+            style={{flex:1,minWidth:0,border:"none",outline:"none",fontFamily:F2,fontSize:14,background:"transparent",color:"#1B1C19",fontWeight:500,padding:"4px 0"}}/>
+          {search && (
+            <button onClick={()=>setSearch("")} aria-label="Clear search"
+              style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:14,cursor:"pointer",fontWeight:500,padding:"4px 6px",lineHeight:1,flexShrink:0}}>
+              ✕
             </button>
           )}
-          <button onClick={runSemanticSearch} disabled={aiLoading || !aiQ.trim()}
-            style={{padding:"clamp(9px,1.4vw,11px) clamp(18px,2.5vw,24px)",background:aiLoading||!aiQ.trim()?"#E4E2DD":"#213C18",color:aiLoading||!aiQ.trim()?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:aiLoading||!aiQ.trim()?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
-            {aiLoading ? "Searching…" : "Search"}
-          </button>
         </div>
-        {/* Live feedback under the bar */}
-        {aiNote && !aiError && (
-          <p style={{fontFamily:F2,fontSize:12,color:"#213C18",margin:"10px 4px 0",fontStyle:"italic"}}>
-            ✦ {aiNote}
-          </p>
-        )}
-        {aiError && (
-          <p style={{fontFamily:F2,fontSize:12,color:"#C46A4D",margin:"10px 4px 0"}}>{aiError}</p>
-        )}
       </div>
 
       {/* Compact private-classes chip pinned in the filter row carries the
@@ -1723,14 +1658,21 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
           </div>
         </div>
         {viewMode==="grid" && activeCat==="All" && (()=>{
-          // Source of truth respects the AI search override AND the location chip.
-          const sourcePool = aiResults ?? listings;
-          const matchLocSearch = b => (
-            activeLoc === "All Mallorca"
-              || (b.cat === "Private Instructor" && Array.isArray(b.coverage_areas) && b.coverage_areas.includes(activeLoc))
-              || b.loc === activeLoc
-          );
-          const pool = sourcePool.filter(matchLocSearch);
+          // Carousel source = everything matching the live filters (location
+          // chip + text search). The text query reuses the same blob match
+          // computed for `filtered` above.
+          const matchLocSearch = b => {
+            const isPrivate = b.cat === "Private Instructor";
+            const mL = activeLoc === "All Mallorca"
+              || (isPrivate && Array.isArray(b.coverage_areas) && b.coverage_areas.includes(activeLoc))
+              || (!isPrivate && b.loc === activeLoc)
+              || (isPrivate && (!b.coverage_areas?.length) && b.loc === activeLoc);
+            if (!mL) return false;
+            if (!q) return true;
+            const blob = (`${b.name || ''} ${b.cat || ''} ${b.loc || ''} ${(b.tags || []).join(' ')} ${(b.coverage_areas || []).join(' ')}`).toLowerCase();
+            return blob.includes(q);
+          };
+          const pool = listings.filter(matchLocSearch);
 
           // ── For You ── Personalised carousel.
           //   Score every listing on three signals:
