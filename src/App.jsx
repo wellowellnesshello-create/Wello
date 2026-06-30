@@ -3100,7 +3100,11 @@ CRITICAL: every "credits" value and "total_credits" MUST be a single positive in
 
 function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = true, venues = [], activeVenueId = null, onSwitchVenue, onAddVenue, addingVenue = false, onDeleteVenue, onChangeType }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
-  const bizData = bizDataProp || { name:"Demo Studio", cat:"Yoga", loc:"Sóller", monthlyBookings:24, monthlyCredits:86 };
+  // Local mirror of the prop so in-place edits (Settings save) can update the
+  // dashboard header immediately. Synced from the prop when the parent
+  // re-fetches or switches venues.
+  const [bizData, setBizData] = useState(() => bizDataProp || { name:"Demo Studio", cat:"Yoga", loc:"Sóller", monthlyBookings:24, monthlyCredits:86 });
+  useEffect(() => { if (bizDataProp) setBizData(bizDataProp); }, [bizDataProp]);
   // Persist the active tab across remounts (navigate-away-and-back snaps the
   // dashboard back to overview otherwise). Stored per-tab not per-venue so a
   // partner who likes the Manage tab can come back to it on any venue.
@@ -3438,7 +3442,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   async function saveSettings() {
     if (isPreview || !bizData?.id) return;
     setSaving(true);
-    const { error } = await supabase.from('businesses').update({
+    const payload = {
       name:        settingsForm.name.trim() || null,
       description: settingsForm.description || null,
       address:     settingsForm.address || null,
@@ -3446,7 +3450,19 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       instagram:   settingsForm.instagram || null,
       phone:       settingsForm.phone || null,
       email:       settingsForm.email.trim() || bizData.email, // keep email if cleared
-    }).eq('id', bizData.id);
+    };
+    const { error } = await supabase.from('businesses').update(payload).eq('id', bizData.id);
+    if (!error) {
+      // Mirror customer-visible fields onto the live listings row so the
+      // marketplace card / search / venue page pick up the rename without
+      // waiting for the next approval cycle.
+      await supabase.from('listings')
+        .update({ name: payload.name, description: payload.description })
+        .eq('business_id', bizData.id);
+      // Refresh local state so the dashboard header reflects the new name
+      // immediately (rather than only after a reload).
+      setBizData(prev => ({ ...prev, ...payload }));
+    }
     setSaving(false);
     if (error) flashSaveMsg("err", "Couldn't save. " + error.message);
     else flashSaveMsg("settings", "Settings saved.");
