@@ -1427,6 +1427,49 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
   const [viewMode,setViewMode]=useState("grid");
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
 
+  // AI search state. When aiResults is non-null we constrain the listing
+  // grid to just those venues and surface the AI's one-line "why these"
+  // note above the results. Otherwise the normal filter logic runs.
+  const [aiQ, setAiQ]                   = useState("");
+  const [aiLoading, setAiLoading]       = useState(false);
+  const [aiNote, setAiNote]             = useState("");
+  const [aiResults, setAiResults]       = useState(null); // null | array of listings
+  const [aiError, setAiError]           = useState("");
+
+  async function runSemanticSearch() {
+    const q = aiQ.trim();
+    if (!q) return;
+    setAiLoading(true); setAiError("");
+    try {
+      // Serialize every listing as a compact tagged line. Includes coverage
+      // areas for private instructors so semantic matches like "instructor
+      // in Pollença" surface the right rows.
+      const ls = listings.map(b => {
+        const tags = (b.tags || []).join(",");
+        const cov  = Array.isArray(b.coverage_areas) && b.coverage_areas.length ? ` covers:${b.coverage_areas.join(",")}` : "";
+        return `ID:${b.id} "${b.name}" ${b.cat} ${b.loc}${cov} €${b.cr}${tags ? ` tags:${tags}` : ""}`;
+      }).join("\n");
+      const r = await aiJSON(
+        `You are a Wello wellness search. Interpret the user's intent loosely — return UP TO 8 listings that capture similar mood, activity, vibe, or location. Do NOT require exact word matches. Return ONLY JSON: {"ids":[<listing-ids>],"explanation":"short reason max 14 words"}`,
+        `User query: "${q}"\nListings:\n${ls}`,
+        900
+      );
+      if (r?.ids && Array.isArray(r.ids)) {
+        const matched = listings.filter(b => r.ids.includes(b.id));
+        setAiResults(matched);
+        setAiNote(r.explanation || "");
+      } else {
+        setAiError("Couldn't interpret that one. Try rephrasing or browse the categories below.");
+      }
+    } catch (e) {
+      console.error('Explore AI search error:', e);
+      setAiError("Search hiccupped. Try again in a moment.");
+    } finally {
+      setAiLoading(false);
+    }
+  }
+  function clearAI() { setAiQ(""); setAiResults(null); setAiNote(""); setAiError(""); }
+
   // Cross-page deep links (home page "Browse private instructors" CTA, etc.)
   // can fire a window-level CustomEvent('wello-set-cat', { detail: <CAT> })
   // and we apply it here as the active filter chip.
@@ -1451,18 +1494,22 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
     "Coast Meditation":   [39.3574, 3.1287],
     "Rooftop Pool Club":  [39.5697, 2.6501],
   };
-  const filtered=listings.filter(b=>{
-    const mC=activeCat==="All"||b.cat===activeCat;
-    // Private instructors travel — match against any of their coverage areas
-    // rather than the (multi-area) loc string. Falls back to the loc check
-    // for older listings that don't have coverage_areas populated yet.
+  // When AI search is active, the result set is authoritative — chip filters
+  // still apply on top so the partner can narrow further (e.g. "show me only
+  // the Pollença ones from the AI's picks").
+  const baseSet = aiResults ?? listings;
+  const filtered = baseSet.filter(b => {
+    const mC = activeCat === "All" || b.cat === activeCat;
     const isPrivate = b.cat === "Private Instructor";
     const mL = activeLoc === "All Mallorca"
       || (isPrivate && Array.isArray(b.coverage_areas) && b.coverage_areas.includes(activeLoc))
       || (!isPrivate && b.loc === activeLoc)
       || (isPrivate && (!b.coverage_areas?.length) && b.loc === activeLoc);
-    const mS=!search||b.name.toLowerCase().includes(search.toLowerCase())||b.loc.toLowerCase().includes(search.toLowerCase())||b.cat.toLowerCase().includes(search.toLowerCase());
-    return mC&&mL&&mS;
+    const mS = !search
+      || b.name.toLowerCase().includes(search.toLowerCase())
+      || (b.loc || '').toLowerCase().includes(search.toLowerCase())
+      || (b.cat || '').toLowerCase().includes(search.toLowerCase());
+    return mC && mL && mS;
   });
 
   return (
@@ -1491,6 +1538,45 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
             </div>
           </div>
         </div>
+      </div>
+
+      {/* AI-powered semantic search. Front-and-center so guests can type
+          intent ("calm beach session", "energy boost morning") and get
+          listings with the right vibe rather than a literal word match. */}
+      <div style={{maxWidth:920,margin:"0 auto 22px",padding:"0 clamp(16px,4vw,32px)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,background:"#fff",borderRadius:999,padding:"6px 6px 6px clamp(16px,2.5vw,22px)",boxShadow:"0 4px 18px rgba(27,28,25,0.08)",border:"1px solid rgba(195,200,188,0.4)",flexWrap:"wrap"}}>
+          <span style={{color:"#A3B18A",fontSize:18,fontWeight:700,flexShrink:0}}>✦</span>
+          <input value={aiQ}
+            onChange={e=>setAiQ(e.target.value)}
+            onKeyDown={e=>{ if (e.key==="Enter" && !aiLoading) runSemanticSearch(); }}
+            disabled={aiLoading}
+            placeholder="Describe what you want — 'calm beach session', 'energy boost morning'…"
+            style={{flex:"1 1 200px",minWidth:0,border:"none",outline:"none",fontFamily:F2,fontSize:"clamp(13px,1.5vw,15px)",background:"transparent",color:"#1B1C19",fontWeight:500,padding:"10px 0"}}/>
+          {(aiQ || aiResults) && (
+            <button onClick={clearAI}
+              style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:12,cursor:"pointer",fontWeight:500,padding:"6px 10px",whiteSpace:"nowrap"}}>
+              Clear
+            </button>
+          )}
+          <button onClick={runSemanticSearch} disabled={aiLoading || !aiQ.trim()}
+            style={{padding:"clamp(9px,1.4vw,11px) clamp(18px,2.5vw,24px)",background:aiLoading||!aiQ.trim()?"#E4E2DD":"#213C18",color:aiLoading||!aiQ.trim()?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:aiLoading||!aiQ.trim()?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
+            {aiLoading ? "Searching…" : "Search"}
+          </button>
+        </div>
+        {/* Live feedback under the bar */}
+        {aiNote && !aiError && (
+          <p style={{fontFamily:F2,fontSize:12,color:"#213C18",margin:"10px 4px 0",fontStyle:"italic"}}>
+            ✦ {aiNote}
+          </p>
+        )}
+        {aiError && (
+          <p style={{fontFamily:F2,fontSize:12,color:"#C46A4D",margin:"10px 4px 0"}}>{aiError}</p>
+        )}
+        {!aiResults && !aiLoading && !aiError && (
+          <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"8px 4px 0",fontWeight:300}}>
+            Try a feel, not just a category — Wello understands "morning energy" or "quiet practice near the sea".
+          </p>
+        )}
       </div>
 
       {/* Private classes promo banner — keeps the new instructor-booking
@@ -1535,13 +1621,6 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
                 </button>
               );
             })}
-            <div style={{marginLeft:"auto",flexShrink:0,display:"flex",alignItems:"center",gap:8,background:"#F0EEE9",borderRadius:999,padding:"8px 16px"}}>
-              <span style={{color:"#54584F",fontSize:14}}>⌕</span>
-              <input value={search} onChange={e=>setSearch(e.target.value)}
-                style={{border:"none",outline:"none",fontFamily:F2,fontSize:13,background:"transparent",color:"#1B1C19",width:"clamp(60px,20vw,140px)"}}
-                placeholder="Search..."/>
-              {search&&<button onClick={()=>setSearch("")} style={{background:"transparent",border:"none",cursor:"pointer",color:"#54584F",fontSize:12}}>✕</button>}
-            </div>
           </div>
           {/* Location pills */}
           <div style={{display:"flex",gap:6,overflowX:"auto",paddingTop:8,scrollbarWidth:"none"}}>
