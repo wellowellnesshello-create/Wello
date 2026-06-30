@@ -3058,6 +3058,30 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     Number.isFinite(bizData?.session_duration_min) && bizData?.session_duration_min > 0
       ? bizData.session_duration_min : 60
   );
+  // Mirror of session_offerings — see wizard equivalent for the shape.
+  const [dashSessionOfferings, setDashSessionOfferings] = useState(
+    Array.isArray(bizData?.session_offerings) && bizData.session_offerings.length > 0
+      ? bizData.session_offerings.map(o => ({
+          type: o?.type || (bizData?.category || ""),
+          length_min: Number.isFinite(o?.length_min) && o.length_min > 0 ? o.length_min : 60,
+          price_eur:  Number.isFinite(o?.price_eur)  && o.price_eur  > 0 ? o.price_eur  : (bizData?.cr || 50),
+        }))
+      : []
+  );
+  const DASH_LENGTH_OPTIONS = [30, 45, 60, 75, 90, 120];
+  function dashAddOffering() {
+    setDashSessionOfferings(prev => [...prev, {
+      type: bizData?.category || "Yoga",
+      length_min: 60,
+      price_eur: bizData?.cr || 50,
+    }]);
+  }
+  function dashUpdateOffering(idx, patch) {
+    setDashSessionOfferings(prev => prev.map((o, i) => i === idx ? { ...o, ...patch } : o));
+  }
+  function dashRemoveOffering(idx) {
+    setDashSessionOfferings(prev => prev.filter((_, i) => i !== idx));
+  }
 
   function toggleCoverageArea(loc) {
     setCoverageAreas(prev => prev.includes(loc) ? prev.filter(x => x !== loc) : [...prev, loc]);
@@ -3229,21 +3253,27 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     const { error: bizErr } = await supabase.from('businesses').update({
       availability_windows: availabilityWindows,
       session_duration_min: sessionDurationMin,
+      session_offerings: dashSessionOfferings,
     }).eq('id', bizData.id);
     if (bizErr) {
       setSaving(false);
       flashSaveMsg("err", "Couldn't save availability. " + bizErr.message);
       return;
     }
-    // Regenerate slot rows: delete old, expand new windows.
+    // Regenerate slot rows: delete old, expand new windows × offerings.
     if (linkedListingId) {
       await supabase.from('slots').delete().eq('listing_id', linkedListingId);
       const DAY_IDX = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
       const today = new Date();
       const LEAD_MS = 4 * 24 * 60 * 60 * 1000;
       const minBookable = new Date(Date.now() + LEAD_MS);
-      const durMin = sessionDurationMin;
-      const crCharge = listingForm.cr ? (parseInt(listingForm.cr) || (bizData.cr ?? 60)) : (bizData.cr ?? 60);
+      const fallbackCr = listingForm.cr ? (parseInt(listingForm.cr) || (bizData.cr ?? 60)) : (bizData.cr ?? 60);
+      // If the partner hasn't filled in any offerings yet, fall back to a
+      // single offering built from the legacy duration + price pair so we
+      // still generate something they can preview.
+      const offerings = (dashSessionOfferings && dashSessionOfferings.length > 0)
+        ? dashSessionOfferings
+        : [{ type: bizData?.category || 'Private session', length_min: sessionDurationMin, price_eur: fallbackCr }];
       const slotRows = [];
       for (const w of availabilityWindows) {
         const dayIdx = DAY_IDX[w.day];
@@ -3259,23 +3289,26 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           const d = new Date(today);
           d.setDate(today.getDate() + daysAhead + week * 7);
           d.setHours(0, 0, 0, 0);
-          for (let mins = startMin; mins + durMin <= endMin; mins += durMin) {
-            const slotDateTime = new Date(d);
-            slotDateTime.setHours(Math.floor(mins / 60), mins % 60, 0, 0);
-            if (slotDateTime < minBookable) continue;
-            const hh = String(Math.floor(mins / 60)).padStart(2, '0');
-            const mm = String(mins % 60).padStart(2, '0');
-            slotRows.push({
-              listing_id: linkedListingId,
-              name: `${durMin}-min private session`,
-              date: d.toISOString().slice(0, 10),
-              time: `${hh}:${mm}`,
-              dur: `${durMin} min`,
-              spots: 1,
-              booked: 0,
-              credits: crCharge,
-              acuity_type_id: null,
-            });
+          for (const off of offerings) {
+            const dur = off.length_min;
+            for (let mins = startMin; mins + dur <= endMin; mins += dur) {
+              const slotDateTime = new Date(d);
+              slotDateTime.setHours(Math.floor(mins / 60), mins % 60, 0, 0);
+              if (slotDateTime < minBookable) continue;
+              const hh = String(Math.floor(mins / 60)).padStart(2, '0');
+              const mm = String(mins % 60).padStart(2, '0');
+              slotRows.push({
+                listing_id: linkedListingId,
+                name: `${off.type} · ${dur} min`,
+                date: d.toISOString().slice(0, 10),
+                time: `${hh}:${mm}`,
+                dur: `${dur} min`,
+                spots: 1,
+                booked: 0,
+                credits: off.price_eur,
+                acuity_type_id: null,
+              });
+            }
           }
         }
       }
@@ -3695,21 +3728,39 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           <div>
             <div style={{marginBottom:18}}>
               <h2 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#1B1C19",margin:"0 0 4px"}}>Your weekly availability</h2>
-              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.6}}>Block out the time windows when you're free to teach. We auto-generate {sessionDurationMin}-minute request slots inside each window for the next 4 weeks. Guests pick one, you confirm.</p>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.6}}>Block out time windows + the session types you offer. We generate bookable slots for each offering inside every window. Guests pick the slot they want.</p>
             </div>
 
-            {/* Session length */}
-            <div style={{background:"#fff",borderRadius:12,padding:"16px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:14,display:"grid",gridTemplateColumns:"160px 1fr",gap:14,alignItems:"center"}}>
-              <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F"}}>Session length</label>
-              <select value={sessionDurationMin} onChange={e=>setSessionDurationMin(parseInt(e.target.value,10))}
-                style={{...INP,maxWidth:240}}>
-                <option value={30}>30 minutes</option>
-                <option value={45}>45 minutes</option>
-                <option value={60}>60 minutes (recommended)</option>
-                <option value={75}>75 minutes</option>
-                <option value={90}>90 minutes</option>
-                <option value={120}>2 hours</option>
-              </select>
+            {/* What you offer — type / length / price rows */}
+            <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:14}}>
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>What you offer</p>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 14px",lineHeight:1.6}}>One row per session type. Different types or lengths can have different prices.</p>
+              {dashSessionOfferings.length === 0 && (
+                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",fontStyle:"italic",margin:"0 0 12px"}}>No offerings yet. Add at least one below before saving.</p>
+              )}
+              {dashSessionOfferings.map((off, idx) => (
+                <div key={idx} style={{display:"grid",gridTemplateColumns:"1fr 130px 130px 32px",gap:8,alignItems:"center",marginBottom:8}}>
+                  <input value={off.type} onChange={e=>dashUpdateOffering(idx,{type:e.target.value})}
+                    placeholder="e.g. Yoga"
+                    style={{...INP}}/>
+                  <select value={off.length_min} onChange={e=>dashUpdateOffering(idx,{length_min:parseInt(e.target.value,10)})}
+                    style={{...INP}}>
+                    {DASH_LENGTH_OPTIONS.map(m => <option key={m} value={m}>{m} min</option>)}
+                  </select>
+                  <div style={{position:"relative"}}>
+                    <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
+                    <input type="number" min="1" value={off.price_eur}
+                      onChange={e=>dashUpdateOffering(idx,{price_eur:parseInt(e.target.value,10)||0})}
+                      style={{...INP,paddingLeft:22}}/>
+                  </div>
+                  <button type="button" onClick={()=>dashRemoveOffering(idx)} aria-label="Remove"
+                    style={{background:"transparent",border:"none",color:"#54584F",fontSize:18,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>
+                </div>
+              ))}
+              <button type="button" onClick={dashAddOffering}
+                style={{background:"transparent",border:"1px dashed rgba(195,200,188,0.6)",color:"#213C18",fontFamily:F2,fontSize:11,fontWeight:600,padding:"7px 14px",borderRadius:999,cursor:"pointer",marginTop:4}}>
+                + Add offering
+              </button>
             </div>
 
             {/* Per-day windows */}
@@ -4667,6 +4718,34 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
     Number.isFinite(bizData.session_duration_min) && bizData.session_duration_min > 0
       ? bizData.session_duration_min : 60
   );
+  // Private-instructor session offerings — each row is one (type, length,
+  // price) combo. The expander multiplies offerings × time slots to build
+  // the bookable slot rows on approval. Replaces the old single
+  // session_duration_min + cr pair so an instructor can offer Yoga 60 min
+  // for €50 + Pilates 90 min for €70 from the same windows.
+  const [sessionOfferings, setSessionOfferings] = useState(
+    Array.isArray(bizData.session_offerings) && bizData.session_offerings.length > 0
+      ? bizData.session_offerings.map(o => ({
+          type: o?.type || (bizData.category || ""),
+          length_min: Number.isFinite(o?.length_min) && o.length_min > 0 ? o.length_min : 60,
+          price_eur:  Number.isFinite(o?.price_eur)  && o.price_eur  > 0 ? o.price_eur  : (bizData.cr || 50),
+        }))
+      : []
+  );
+  const LENGTH_OPTIONS = [30, 45, 60, 75, 90, 120];
+  function addOffering() {
+    setSessionOfferings(prev => [...prev, {
+      type: bizData.category || "Yoga",
+      length_min: 60,
+      price_eur: bizData.cr || 50,
+    }]);
+  }
+  function updateOffering(idx, patch) {
+    setSessionOfferings(prev => prev.map((o, i) => i === idx ? { ...o, ...patch } : o));
+  }
+  function removeOffering(idx) {
+    setSessionOfferings(prev => prev.filter((_, i) => i !== idx));
+  }
   function addWindow(day) {
     setAvailabilityWindows(prev => [...prev, { day, start: '09:00', end: '12:00' }]);
   }
@@ -5405,14 +5484,15 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
                  } else if (availType === "ical") {
                    goNext({ ical_url: icalUrl.trim(), integration_request: intgRequest });
                  } else if (isPrivateInstructor) {
-                   // Private instructor: save weekly windows + session length.
-                   // notify-partner-status expands the windows into hourly
-                   // request slots on approval. Also persist a single placeholder
-                   // entry on businesses.slots so step 7 review counts something.
+                   // Private instructor: save weekly windows + session offerings.
+                   // notify-partner-status iterates over windows × offerings to
+                   // build the bookable slot rows on approval. session_duration_min
+                   // and cr still saved as fallbacks for any legacy paths.
                    goNext({
                      availability_windows: availabilityWindows,
+                     session_offerings: sessionOfferings,
                      session_duration_min: sessionDurationMin,
-                     cr: parseInt(cr) || catAvg,
+                     cr: parseInt(cr) || (sessionOfferings[0]?.price_eur ?? catAvg),
                      integration_request: intgRequest,
                    });
                  } else {
@@ -5556,27 +5636,47 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
         </>
       ) : isPrivateInstructor ? (
         <>
-          {/* Private instructors set weekly windows, not recurring class slots.
-              We auto-generate hourly request slots inside each window when the
-              listing is approved (see notify-partner-status). */}
+          {/* What you offer — define one row per (type, length, price). Each
+              row generates its own slot variants inside your weekly windows. */}
+          <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:8,padding:16,marginBottom:16}}>
+            <div style={{fontFamily:F.body,fontSize:11,fontWeight:600,color:T.ink,marginBottom:6}}>What you offer</div>
+            <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"0 0 12px",lineHeight:1.55}}>
+              Add one row per session type. Different types and lengths can have different prices. Guests pick the one they want when they book.
+            </p>
+            {sessionOfferings.length === 0 && (
+              <p style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300,fontStyle:"italic",margin:"0 0 10px"}}>No offerings yet. Add at least one below.</p>
+            )}
+            {sessionOfferings.map((off, idx) => (
+              <div key={idx} style={{display:"grid",gridTemplateColumns:"1fr 110px 110px 32px",gap:8,alignItems:"center",marginBottom:8}}>
+                <input value={off.type} onChange={e=>updateOffering(idx,{type:e.target.value})}
+                  placeholder="e.g. Yoga"
+                  style={{...INP,marginBottom:0}} onFocus={onFi} onBlur={onBl}/>
+                <select value={off.length_min} onChange={e=>updateOffering(idx,{length_min:parseInt(e.target.value,10)})}
+                  style={{...INP,marginBottom:0}} onFocus={onFi} onBlur={onBl}>
+                  {LENGTH_OPTIONS.map(m => <option key={m} value={m}>{m} min</option>)}
+                </select>
+                <div style={{position:"relative"}}>
+                  <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:T.stone,fontFamily:F.body,fontSize:12,fontWeight:600,pointerEvents:"none"}}>€</span>
+                  <input type="number" min="1" value={off.price_eur}
+                    onChange={e=>updateOffering(idx,{price_eur:parseInt(e.target.value,10)||0})}
+                    style={{...INP,paddingLeft:22,marginBottom:0}} onFocus={onFi} onBlur={onBl}/>
+                </div>
+                <button type="button" onClick={()=>removeOffering(idx)} aria-label="Remove offering"
+                  style={{background:"transparent",border:"none",color:T.stone,fontSize:18,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>
+              </div>
+            ))}
+            <button type="button" onClick={addOffering}
+              style={{background:"transparent",border:`1px dashed ${T.border}`,color:T.sage,fontFamily:F.body,fontSize:11,fontWeight:600,padding:"6px 14px",borderRadius:999,cursor:"pointer",marginTop:4}}>
+              + Add offering
+            </button>
+          </div>
+
+          {/* Weekly availability — when you're free to teach. */}
           <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:8,padding:16,marginBottom:16}}>
             <div style={{fontFamily:F.body,fontSize:11,fontWeight:600,color:T.ink,marginBottom:6}}>Your weekly availability</div>
             <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"0 0 12px",lineHeight:1.55}}>
-              Block out the time windows when you're free to teach. We'll generate {sessionDurationMin}-minute request slots inside each window — guests pick one and you confirm.
+              Block out the time windows when you're free to teach. We'll generate bookable slots for each offering inside every window.
             </p>
-
-            <div style={{display:"grid",gridTemplateColumns:"120px 1fr",gap:10,alignItems:"start",marginBottom:14}}>
-              <label style={{...FL,marginTop:10}}>Session length</label>
-              <select value={sessionDurationMin} onChange={e=>setSessionDurationMin(parseInt(e.target.value,10))}
-                style={{...INP}} onFocus={onFi} onBlur={onBl}>
-                <option value={30}>30 minutes</option>
-                <option value={45}>45 minutes</option>
-                <option value={60}>60 minutes (recommended)</option>
-                <option value={75}>75 minutes</option>
-                <option value={90}>90 minutes</option>
-                <option value={120}>2 hours</option>
-              </select>
-            </div>
 
             {DAYS.map(day => {
               const dayWindows = availabilityWindows
@@ -5613,20 +5713,6 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
             })}
           </div>
 
-          {/* Pricing per request — reuses the existing cr field. We collect
-              a euro amount from the partner (mental model they actually use)
-              and store the same number as credits — 1 credit = €1 at Wello. */}
-          <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:8,padding:16,marginBottom:8}}>
-            <label style={FL}>Price per session (€)</label>
-            <div style={{position:"relative",maxWidth:200}}>
-              <span style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",color:T.stone,fontFamily:F.body,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
-              <input type="number" min="1" value={cr} onChange={e=>setCr(e.target.value)} placeholder={String(catAvg)}
-                style={{...INP,paddingLeft:24}} onFocus={onFi} onBlur={onBl}/>
-            </div>
-            <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"6px 0 0",lineHeight:1.55}}>
-              What guests pay per private session. Step 5 lets you fine-tune pricing if you want different rates by time of day.
-            </p>
-          </div>
         </>
       ) : (
         <>

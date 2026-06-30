@@ -164,16 +164,129 @@ serve(async (req) => {
       status: 'active',
     }
 
+    // ── Builds the slot rows for this listing ────────────────────
+    // Private instructors:
+    //   - Iterate every availability_window × every session_offering (or
+    //     fall back to a single offering built from session_duration_min +
+    //     cr if the partner hasn't filled in offerings yet).
+    //   - One slot row per (offering × valid start time) in each window
+    //     across the next 4 weeks, skipping anything inside the 4-day lead.
+    // Venues: existing slots-array expansion is unchanged.
+    function buildSlotRows(targetListingId: number | string): object[] {
+      const today = new Date()
+      const rows: object[] = []
+
+      if (isPrivate) {
+        const windows = Array.isArray(record.availability_windows) ? record.availability_windows : []
+        const offeringsRaw = Array.isArray(record.session_offerings) ? record.session_offerings : []
+        const fallback = [{
+          type:      record.category || 'Private session',
+          length_min: Number.isFinite(record.session_duration_min) && record.session_duration_min > 0 ? record.session_duration_min : 60,
+          price_eur:  record.cr ?? 3,
+        }]
+        const offerings = offeringsRaw.length > 0
+          ? offeringsRaw
+              .map((o: any) => ({
+                type:      String(o?.type || '').trim() || record.category || 'Private session',
+                length_min: Number.isFinite(o?.length_min) && o.length_min > 0 ? o.length_min : 60,
+                price_eur:  Number.isFinite(o?.price_eur)  && o.price_eur  > 0 ? o.price_eur  : (record.cr ?? 3),
+              }))
+          : fallback
+
+        const LEAD_MS = 4 * 24 * 60 * 60 * 1000
+        const minBookable = new Date(Date.now() + LEAD_MS)
+
+        for (const w of windows) {
+          const dayIdx = DAY_IDX[w?.day]
+          if (dayIdx === undefined) continue
+          const [sH, sM] = String(w.start || '09:00').split(':').map((x: string) => parseInt(x, 10))
+          const [eH, eM] = String(w.end   || '18:00').split(':').map((x: string) => parseInt(x, 10))
+          const windowStartMin = sH * 60 + sM
+          const windowEndMin   = eH * 60 + eM
+          if (windowEndMin <= windowStartMin) continue
+
+          const curr = today.getDay()
+          const daysAhead = (dayIdx - curr + 7) % 7 || 7
+
+          for (let week = 0; week < 4; week++) {
+            const d = new Date(today)
+            d.setDate(today.getDate() + daysAhead + week * 7)
+            d.setHours(0, 0, 0, 0)
+            for (const off of offerings) {
+              const dur = off.length_min
+              for (let mins = windowStartMin; mins + dur <= windowEndMin; mins += dur) {
+                const slotDateTime = new Date(d)
+                slotDateTime.setHours(Math.floor(mins / 60), mins % 60, 0, 0)
+                if (slotDateTime < minBookable) continue
+                const hh = String(Math.floor(mins / 60)).padStart(2, '0')
+                const mm = String(mins % 60).padStart(2, '0')
+                rows.push({
+                  listing_id: targetListingId,
+                  name: `${off.type} · ${dur} min`,
+                  date: d.toISOString().slice(0, 10),
+                  time: `${hh}:${mm}`,
+                  dur: `${dur} min`,
+                  spots: 1,
+                  booked: 0,
+                  credits: off.price_eur,
+                  acuity_type_id: null,
+                })
+              }
+            }
+          }
+        }
+      } else {
+        for (const sl of (record.slots ?? [])) {
+          for (const day of (sl.days ?? [])) {
+            const target = DAY_IDX[day] ?? 1
+            const curr = today.getDay()
+            const daysAhead = (target - curr + 7) % 7 || 7
+            for (let week = 0; week < 4; week++) {
+              const d = new Date(today)
+              d.setDate(today.getDate() + daysAhead + week * 7)
+              rows.push({
+                listing_id: targetListingId,
+                name: sl.name ?? '',
+                date: d.toISOString().slice(0, 10),
+                time: sl.time ?? '09:00',
+                dur: sl.dur ?? '60 min',
+                spots: sl.spots ?? 10,
+                booked: 0,
+                credits: sl.cr ?? record.cr ?? 3,
+                acuity_type_id: sl.acuity_type_id ?? null,
+              })
+            }
+          }
+        }
+      }
+      return rows
+    }
+
     if (listingId) {
-      // Re-approval path: flip back to active and refresh the user-editable
-      // fields. Slots are left alone — they were preserved from the first
-      // approval and the partner can edit them via the dashboard.
+      // Re-approval path: refresh fields. For private instructors we ALSO
+      // regenerate slots so the partner's latest windows / offerings take
+      // effect — venues keep their existing slots untouched.
       const { error: updErr } = await supabase
         .from('listings').update(baseFields).eq('id', listingId)
       if (updErr) console.error('Failed to update listing on re-approval:', updErr.message)
       else console.log('Listing re-activated for:', record.name, '| id:', listingId)
+
+      if (isPrivate) {
+        const todayStr = new Date().toISOString().slice(0, 10)
+        const { error: delErr } = await supabase
+          .from('slots').delete().eq('listing_id', listingId).gte('date', todayStr)
+        if (delErr) console.error('Failed to clear stale slots on re-approval:', delErr.message)
+        const slotRows = buildSlotRows(listingId)
+        if (slotRows.length > 0) {
+          const { error: slotsError } = await supabase.from('slots').insert(slotRows)
+          if (slotsError) console.error('Failed to regenerate slots on re-approval:', slotsError.message)
+          else console.log('Regenerated', slotRows.length, 'slot instances for listing', listingId)
+        } else {
+          console.warn('Re-approval expanded 0 slot rows — availability_windows likely empty for', record.name)
+        }
+      }
     } else {
-      // First-time approval: insert listing + expand recurring slots.
+      // First-time approval: insert listing + expand slots
       const { data: inserted, error: listingError } = await supabase
         .from('listings')
         .insert({
@@ -190,93 +303,13 @@ serve(async (req) => {
       } else {
         listingId = inserted.id
         console.log('Listing created for:', record.name, '| id:', listingId)
-
-        // ── Create slot instances ─────────────────────────────────
-        // Two models live side by side:
-        // - Venues (default): businesses.slots is [{id, name, days, time, dur, spots, cr}]
-        //   and each entry expands into one concrete row per (day × 4 weeks).
-        // - Private instructors: businesses.availability_windows is
-        //   [{day, start, end}] plus session_duration_min. We slice each
-        //   window into back-to-back request slots of that length, again over
-        //   the next 4 weeks, skipping anything inside a 4-day lead-time
-        //   buffer so customers can't request something too imminent.
-        const today = new Date()
-        const slotRows: object[] = []
-
-        if (isPrivate) {
-          const windows = Array.isArray(record.availability_windows) ? record.availability_windows : []
-          const durMin = Number.isFinite(record.session_duration_min) && record.session_duration_min > 0
-            ? record.session_duration_min : 60
-          const LEAD_MS = 4 * 24 * 60 * 60 * 1000
-          const minBookable = new Date(Date.now() + LEAD_MS)
-
-          for (const w of windows) {
-            const dayIdx = DAY_IDX[w?.day]
-            if (dayIdx === undefined) continue
-            const [sH, sM] = String(w.start || '09:00').split(':').map((x: string) => parseInt(x, 10))
-            const [eH, eM] = String(w.end   || '18:00').split(':').map((x: string) => parseInt(x, 10))
-            const windowStartMin = sH * 60 + sM
-            const windowEndMin   = eH * 60 + eM
-            if (windowEndMin <= windowStartMin) continue // ignore inverted
-
-            const curr = today.getDay()
-            const daysAhead = (dayIdx - curr + 7) % 7 || 7
-            for (let week = 0; week < 4; week++) {
-              const d = new Date(today)
-              d.setDate(today.getDate() + daysAhead + week * 7)
-              d.setHours(0, 0, 0, 0)
-              for (let mins = windowStartMin; mins + durMin <= windowEndMin; mins += durMin) {
-                const slotDateTime = new Date(d)
-                slotDateTime.setHours(Math.floor(mins / 60), mins % 60, 0, 0)
-                if (slotDateTime < minBookable) continue
-                const hh = String(Math.floor(mins / 60)).padStart(2, '0')
-                const mm = String(mins % 60).padStart(2, '0')
-                slotRows.push({
-                  listing_id: listingId,
-                  name: `${durMin}-min private session`,
-                  date: d.toISOString().slice(0, 10),
-                  time: `${hh}:${mm}`,
-                  dur: `${durMin} min`,
-                  spots: 1,
-                  booked: 0,
-                  credits: record.cr ?? 3,
-                  acuity_type_id: null,
-                })
-              }
-            }
-          }
-        } else {
-          for (const sl of (record.slots ?? [])) {
-            for (const day of (sl.days ?? [])) {
-              const target = DAY_IDX[day] ?? 1
-              const curr = today.getDay()
-              const daysAhead = (target - curr + 7) % 7 || 7
-              for (let week = 0; week < 4; week++) {
-                const d = new Date(today)
-                d.setDate(today.getDate() + daysAhead + week * 7)
-                slotRows.push({
-                  listing_id: listingId,
-                  name: sl.name ?? '',
-                  date: d.toISOString().slice(0, 10),
-                  time: sl.time ?? '09:00',
-                  dur: sl.dur ?? '60 min',
-                  spots: sl.spots ?? 10,
-                  booked: 0,
-                  credits: sl.cr ?? record.cr ?? 3,
-                  acuity_type_id: sl.acuity_type_id ?? null,
-                })
-              }
-            }
-          }
-        }
-
+        const slotRows = buildSlotRows(listingId!)
         if (slotRows.length > 0) {
           const { error: slotsError } = await supabase.from('slots').insert(slotRows)
-          if (slotsError) {
-            console.error('Failed to create slots:', slotsError.message)
-          } else {
-            console.log('Created', slotRows.length, 'slot instances for listing', listingId)
-          }
+          if (slotsError) console.error('Failed to create slots:', slotsError.message)
+          else console.log('Created', slotRows.length, 'slot instances for listing', listingId)
+        } else {
+          console.warn('First-time approval expanded 0 slot rows — check availability_windows/slots for', record.name)
         }
       }
     }
