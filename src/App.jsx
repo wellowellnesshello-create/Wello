@@ -3675,6 +3675,85 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         {/* ── OVERVIEW ── */}
         {tab==="overview"&&(
           <div style={{display:"flex",flexDirection:"column",gap:20}}>
+            {/* Live bookings panel — confirmed sessions sorted soonest first.
+                Pinned at the top of Overview so it's the first thing partners
+                see when they open the dashboard. */}
+            <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
+              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginBottom:14}}>
+                <div>
+                  <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Your live bookings</h3>
+                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.55}}>
+                    {upcomingBookings === null
+                      ? "Loading…"
+                      : upcomingBookings.length === 0
+                        ? "No confirmed sessions yet. Once a booking is confirmed, it'll appear here."
+                        : `${upcomingBookings.length} confirmed session${upcomingBookings.length===1?"":"s"} ahead.`}
+                  </p>
+                </div>
+                {upcomingBookings && upcomingBookings.length > 0 && (
+                  <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 11px",borderRadius:999,background:"#CAECBA",border:"1px solid #A3B18A",fontFamily:F2,fontSize:11,fontWeight:600,color:"#213C18"}}>
+                    <span style={{width:7,height:7,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
+                    Confirmed
+                  </span>
+                )}
+              </div>
+
+              {upcomingBookings && upcomingBookings.length > 0 && (() => {
+                const byDate = {};
+                for (const b of upcomingBookings) {
+                  if (!byDate[b.booking_date]) byDate[b.booking_date] = [];
+                  byDate[b.booking_date].push(b);
+                }
+                const dates = Object.keys(byDate).sort();
+                return (
+                  <div style={{maxHeight:340,overflowY:"auto",borderTop:"1px solid #E4E2DD"}}>
+                    {dates.map(date => (
+                      <div key={date} style={{padding:"10px 0",borderBottom:"1px solid #E4E2DD"}}>
+                        <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 8px"}}>
+                          {new Date(date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}
+                          <span style={{marginLeft:8,fontWeight:400,color:"#A3B18A"}}>{byDate[date].length} session{byDate[date].length===1?"":"s"}</span>
+                        </p>
+                        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                          {byDate[date].sort((a,b)=>(a.start_time||"").localeCompare(b.start_time||"")).map(b => {
+                            const customerName = b._customer?.full_name || b._customer?.email || "Customer";
+                            const customerEmail = b._customer?.email || "";
+                            const sessionName = b._slot_name || b.duration || "Session";
+                            const customerLocation = (b.notes || "").replace(/^Customer location:\s*/i, "").trim();
+                            return (
+                              <div key={b.id} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"8px 10px",borderRadius:6,background:"#F5F3EE"}}>
+                                <div style={{textAlign:"center",minWidth:44,paddingTop:2}}>
+                                  <div style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>{(b.start_time||"").slice(0,5)}</div>
+                                  <div style={{fontFamily:F2,fontSize:9,color:"#A3B18A",fontWeight:300}}>{b.duration || ""}</div>
+                                </div>
+                                <div style={{width:1,background:"#E4E2DD",alignSelf:"stretch"}}/>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <p style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#1B1C19",margin:"0 0 2px"}}>
+                                    {customerName}
+                                    {customerEmail && <span style={{color:"#54584F",fontWeight:400,fontSize:11,marginLeft:6}}>· {customerEmail}</span>}
+                                  </p>
+                                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 2px"}}>{sessionName}</p>
+                                  {customerLocation && (
+                                    <p style={{fontFamily:F2,fontSize:11,color:"#766149",margin:0}}>📍 {customerLocation}</p>
+                                  )}
+                                </div>
+                                <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:700,whiteSpace:"nowrap",alignSelf:"center"}}>◈ {b.credits_used}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              {upcomingBookings && upcomingBookings.length === 0 && (
+                <div style={{padding:"20px 16px",background:"#F5F3EE",borderRadius:8,textAlign:"center"}}>
+                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.55}}>Once a request is confirmed (Requests tab) or a customer books a slot directly, it'll land here.</p>
+                </div>
+              )}
+            </div>
+
             {/* Summary cards */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(45%,200px),1fr))",gap:10}}>
               {overviewCards.map(({label,value,sub,color})=>(
@@ -3988,86 +4067,6 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 <p style={{fontFamily:F2,fontSize:13,color:"#6F5B44",fontWeight:600,margin:0}}>{saveMsg.text}</p>
               </div>
             )}
-
-            {/* Live bookings panel — confirmed sessions sorted soonest first.
-                Sits above the bookable-slots panel so the partner sees real
-                customer bookings before the generated availability list. */}
-            <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:16}}>
-              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginBottom:14}}>
-                <div>
-                  <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Your live bookings</h3>
-                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.55}}>
-                    {upcomingBookings === null
-                      ? "Loading…"
-                      : upcomingBookings.length === 0
-                        ? "No confirmed sessions yet. Once a booking is confirmed, it'll appear here."
-                        : `${upcomingBookings.length} confirmed session${upcomingBookings.length===1?"":"s"} ahead.`}
-                  </p>
-                </div>
-                {upcomingBookings && upcomingBookings.length > 0 && (
-                  <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 11px",borderRadius:999,background:"#CAECBA",border:"1px solid #A3B18A",fontFamily:F2,fontSize:11,fontWeight:600,color:"#213C18"}}>
-                    <span style={{width:7,height:7,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
-                    Confirmed
-                  </span>
-                )}
-              </div>
-
-              {upcomingBookings && upcomingBookings.length > 0 && (() => {
-                // Group by date for a tidy date-headed list.
-                const byDate = {};
-                for (const b of upcomingBookings) {
-                  if (!byDate[b.booking_date]) byDate[b.booking_date] = [];
-                  byDate[b.booking_date].push(b);
-                }
-                const dates = Object.keys(byDate).sort();
-                return (
-                  <div style={{maxHeight:340,overflowY:"auto",borderTop:"1px solid #E4E2DD"}}>
-                    {dates.map(date => (
-                      <div key={date} style={{padding:"10px 0",borderBottom:"1px solid #E4E2DD"}}>
-                        <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 8px"}}>
-                          {new Date(date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}
-                          <span style={{marginLeft:8,fontWeight:400,color:"#A3B18A"}}>{byDate[date].length} session{byDate[date].length===1?"":"s"}</span>
-                        </p>
-                        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                          {byDate[date].sort((a,b)=>(a.start_time||"").localeCompare(b.start_time||"")).map(b => {
-                            const customerName = b._customer?.full_name || b._customer?.email || "Customer";
-                            const customerEmail = b._customer?.email || "";
-                            const sessionName = b._slot_name || b.duration || "Session";
-                            const customerLocation = (b.notes || "").replace(/^Customer location:\s*/i, "").trim();
-                            return (
-                              <div key={b.id} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"8px 10px",borderRadius:6,background:"#F5F3EE"}}>
-                                <div style={{textAlign:"center",minWidth:44,paddingTop:2}}>
-                                  <div style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>{(b.start_time||"").slice(0,5)}</div>
-                                  <div style={{fontFamily:F2,fontSize:9,color:"#A3B18A",fontWeight:300}}>{b.duration || ""}</div>
-                                </div>
-                                <div style={{width:1,background:"#E4E2DD",alignSelf:"stretch"}}/>
-                                <div style={{flex:1,minWidth:0}}>
-                                  <p style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#1B1C19",margin:"0 0 2px"}}>
-                                    {customerName}
-                                    {customerEmail && <span style={{color:"#54584F",fontWeight:400,fontSize:11,marginLeft:6}}>· {customerEmail}</span>}
-                                  </p>
-                                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 2px"}}>{sessionName}</p>
-                                  {customerLocation && (
-                                    <p style={{fontFamily:F2,fontSize:11,color:"#766149",margin:0}}>📍 {customerLocation}</p>
-                                  )}
-                                </div>
-                                <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:700,whiteSpace:"nowrap",alignSelf:"center"}}>◈ {b.credits_used}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-
-              {upcomingBookings && upcomingBookings.length === 0 && (
-                <div style={{padding:"20px 16px",background:"#F5F3EE",borderRadius:8,textAlign:"center"}}>
-                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.55}}>Once a request is confirmed (Requests tab) or a customer books a slot directly, it'll land here.</p>
-                </div>
-              )}
-            </div>
 
             {/* Live bookable slots panel — front-and-centre so the partner can
                 immediately see what got generated, when, and how customers
