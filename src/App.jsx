@@ -3800,34 +3800,129 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               })}
             </div>
 
-            {/* Save bar */}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",padding:"12px 0"}}>
+            {/* Save bar — primary action lives here */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",padding:"12px 0 18px"}}>
               <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,flex:1,minWidth:200,lineHeight:1.5}}>Saving regenerates your bookable slots for the next 4 weeks. Slots inside the 4-day lead window are skipped.</p>
               <button onClick={saveAvailability} disabled={saving||isPreview}
                 style={{padding:"11px 26px",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer"}}>
                 {saving ? "Saving" : "Save availability"}
               </button>
             </div>
-            {saveMsg.kind === "settings" && <p style={{fontFamily:F2,fontSize:12,color:"#213C18",marginTop:8,textAlign:"right"}}>{saveMsg.text}</p>}
-            {saveMsg.kind === "err"      && <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",marginTop:8,textAlign:"right"}}>{saveMsg.text}</p>}
 
-            {/* Generated slot preview */}
-            {dbSlots && dbSlots.length > 0 && (
-              <div style={{marginTop:24,background:"#F5F3EE",borderRadius:12,padding:"16px 20px"}}>
-                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 10px"}}>Next bookable slots ({dbSlots.length} total)</p>
-                <div style={{display:"flex",flexDirection:"column",gap:5,maxHeight:200,overflowY:"auto"}}>
-                  {dbSlots.slice(0, 12).map(s => (
-                    <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:F2,fontSize:11,color:"#1B1C19",padding:"5px 0"}}>
-                      <span>{new Date(s.date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})} · {s.time}</span>
-                      <span style={{color:"#54584F"}}>{s.dur} · ◈ {s.credits}</span>
-                    </div>
-                  ))}
-                  {dbSlots.length > 12 && (
-                    <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"6px 0 0"}}>+ {dbSlots.length - 12} more</p>
-                  )}
-                </div>
+            {/* Save toast — large, sage success or clay error so it's hard to
+                miss after pressing Save. */}
+            {saveMsg.kind === "settings" && (
+              <div style={{padding:"12px 16px",background:"#CAECBA",border:"1px solid #A3B18A",borderRadius:8,marginBottom:18,display:"flex",alignItems:"center",gap:10}}>
+                <span style={{fontSize:18,lineHeight:1}}>✓</span>
+                <p style={{fontFamily:F2,fontSize:13,color:"#213C18",fontWeight:600,margin:0}}>{saveMsg.text}</p>
               </div>
             )}
+            {saveMsg.kind === "err" && (
+              <div style={{padding:"12px 16px",background:"#FFE6D9",border:"1px solid #DCC2A6",borderRadius:8,marginBottom:18}}>
+                <p style={{fontFamily:F2,fontSize:13,color:"#6F5B44",fontWeight:600,margin:0}}>{saveMsg.text}</p>
+              </div>
+            )}
+
+            {/* Live bookable slots panel — front-and-centre so the partner can
+                immediately see what got generated, when, and how customers
+                will see it. Groups by date, shows offering name + price. */}
+            <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
+              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginBottom:14}}>
+                <div>
+                  <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>What customers can book</h3>
+                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.55}}>
+                    {dbSlots && dbSlots.length > 0
+                      ? `${dbSlots.length} slot${dbSlots.length===1?"":"s"} live on the marketplace. Edit your offerings or windows above and Save to regenerate.`
+                      : "No slots yet. Add at least one offering + one window above, then click Save availability."}
+                  </p>
+                </div>
+                {dbSlots && dbSlots.length > 0 && (
+                  <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 11px",borderRadius:999,background:"#CAECBA",border:"1px solid #A3B18A",fontFamily:F2,fontSize:11,fontWeight:600,color:"#213C18"}}>
+                    <span style={{width:7,height:7,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
+                    Live
+                  </span>
+                )}
+              </div>
+
+              {dbSlots === null && (
+                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",fontStyle:"italic",margin:0}}>Loading slots…</p>
+              )}
+
+              {dbSlots && dbSlots.length === 0 && (
+                <div style={{padding:"22px 16px",background:"#F5F3EE",borderRadius:8,textAlign:"center"}}>
+                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 6px",lineHeight:1.6}}>
+                    Either your offerings list is empty, your windows are entirely inside the 4-day lead buffer, or you haven't saved yet.
+                  </p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:0,fontWeight:600}}>Add at least one offering AND one window above → Save availability.</p>
+                </div>
+              )}
+
+              {dbSlots && dbSlots.length > 0 && (() => {
+                // Summary chips per offering: "12 × Yoga 60 min", "8 × Pilates 90 min"
+                const byOffering = {};
+                for (const s of dbSlots) {
+                  const key = s.name || "Session";
+                  byOffering[key] = (byOffering[key] || 0) + 1;
+                }
+                // Group by date for the scrollable list
+                const byDate = {};
+                for (const s of dbSlots) {
+                  if (!byDate[s.date]) byDate[s.date] = [];
+                  byDate[s.date].push(s);
+                }
+                const dates = Object.keys(byDate).sort();
+                return (
+                  <>
+                    {/* Offering breakdown chips */}
+                    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+                      {Object.entries(byOffering).sort((a,b)=>b[1]-a[1]).map(([name, count]) => (
+                        <span key={name} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 10px",borderRadius:999,background:"#F5F3EE",border:"1px solid rgba(195,200,188,0.5)",fontFamily:F2,fontSize:11,color:"#1B1C19"}}>
+                          <strong style={{fontWeight:700,color:"#213C18"}}>{count}</strong>
+                          <span style={{color:"#54584F"}}>×</span>
+                          {name}
+                        </span>
+                      ))}
+                    </div>
+
+                    {/* Date-grouped list, scrollable */}
+                    <div style={{maxHeight:340,overflowY:"auto",borderTop:"1px solid #E4E2DD"}}>
+                      {dates.map(date => (
+                        <div key={date} style={{padding:"10px 0",borderBottom:"1px solid #E4E2DD"}}>
+                          <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>
+                            {new Date(date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}
+                            <span style={{marginLeft:8,fontWeight:400,color:"#A3B18A"}}>{byDate[date].length} slot{byDate[date].length===1?"":"s"}</span>
+                          </p>
+                          <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                            {byDate[date].sort((a,b)=>(a.time||"").localeCompare(b.time||"")).map(s => {
+                              const isBooked = (s.booked || 0) > 0;
+                              return (
+                                <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 8px",borderRadius:6,background:isBooked?"#F0EEE9":"transparent",fontFamily:F2,fontSize:12,color:"#1B1C19"}}>
+                                  <span style={{fontWeight:600}}>
+                                    {(s.time||"").slice(0,5)}
+                                    <span style={{color:"#54584F",fontWeight:400,marginLeft:8}}>{s.name || ""}</span>
+                                  </span>
+                                  <span style={{display:"flex",alignItems:"center",gap:10}}>
+                                    {isBooked && (
+                                      <span style={{fontSize:10,fontWeight:700,color:"#766149",letterSpacing:"0.5px",textTransform:"uppercase"}}>Booked</span>
+                                    )}
+                                    <span style={{color:"#766149",fontWeight:600}}>€{s.credits}</span>
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"14px 0 0",lineHeight:1.6}}>
+                      <strong style={{color:"#213C18",fontWeight:700}}>To change a slot:</strong> edit the offerings or windows above and click Save availability — slots regenerate from your latest setup.
+                      <strong style={{color:"#213C18",fontWeight:700,marginLeft:6}}>To temporarily go offline:</strong> remove all your windows and Save.
+                    </p>
+                  </>
+                );
+              })()}
+            </div>
           </div>
         )}
 
