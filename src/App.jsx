@@ -1622,37 +1622,31 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
   });
 
   return (
-    <div style={{paddingTop:24,paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
-      {/* Header */}
-      <div style={{maxWidth:1200,margin:"0 auto",padding:"0 clamp(16px,4vw,32px) 0"}}>
-        <div style={{display:"flex",flexWrap:"wrap",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20,gap:10}}>
-          <div>
-            <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#6F5B44",letterSpacing:"4px",textTransform:"uppercase",display:"block",marginBottom:8}}>Curated Sanctuary</span>
-            <h1 style={{fontFamily:F2,fontSize:"clamp(28px,4vw,44px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:0,lineHeight:1}}>Find your flow.</h1>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <span style={{width:8,height:8,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
-              <span style={{fontFamily:F2,fontSize:13,color:"#54584F",fontWeight:500}}>{filtered.length} experiences · Live sync</span>
-            </div>
-            <div style={{display:"flex",background:"#EAE8E3",borderRadius:999,padding:3,gap:2}}>
-              {[["grid","⊞ Grid"],["map","📍 Map"]].map(([mode,label])=>(
-                <button key={mode} onClick={()=>setViewMode(mode)}
-                  style={{padding:"5px 12px",borderRadius:999,border:"none",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",transition:"all .15s",
-                    background:viewMode===mode?"#213C18":"transparent",
-                    color:viewMode===mode?"#fff":"#54584F"}}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
+    <div style={{paddingTop:16,paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
+      {/* Slim utility row — venue count + view toggle. Replaces the old
+          "Curated Sanctuary / Find your flow" hero so the page can lead
+          with the search bar and get more density above the fold. */}
+      <div style={{maxWidth:1200,margin:"0 auto 10px",padding:"0 clamp(16px,4vw,32px)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6}}>
+          <span style={{width:7,height:7,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
+          <span style={{fontFamily:F2,fontSize:12,color:"#54584F",fontWeight:500}}>{filtered.length} venues live</span>
+        </div>
+        <div style={{display:"flex",background:"#EAE8E3",borderRadius:999,padding:3,gap:2}}>
+          {[["grid","⊞ Grid"],["map","📍 Map"]].map(([mode,label])=>(
+            <button key={mode} onClick={()=>setViewMode(mode)}
+              style={{padding:"4px 11px",borderRadius:999,border:"none",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",transition:"all .15s",
+                background:viewMode===mode?"#213C18":"transparent",
+                color:viewMode===mode?"#fff":"#54584F"}}>
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* AI-powered semantic search. Front-and-center so guests can type
           intent ("calm beach session", "energy boost morning") and get
           listings with the right vibe rather than a literal word match. */}
-      <div style={{maxWidth:920,margin:"0 auto 22px",padding:"0 clamp(16px,4vw,32px)"}}>
+      <div style={{maxWidth:920,margin:"0 auto 14px",padding:"0 clamp(16px,4vw,32px)"}}>
         <div style={{display:"flex",alignItems:"center",gap:8,background:"#fff",borderRadius:999,padding:"6px 6px 6px clamp(16px,2.5vw,22px)",boxShadow:"0 4px 18px rgba(27,28,25,0.08)",border:"1px solid rgba(195,200,188,0.4)",flexWrap:"wrap"}}>
           <span style={{color:"#A3B18A",fontSize:18,fontWeight:700,flexShrink:0}}>✦</span>
           <input value={aiQ}
@@ -1686,27 +1680,23 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
       {/* Compact private-classes chip pinned in the filter row carries the
           same message — the previous fat promo banner doubled with it. */}
 
-      {/* Personalize-me soft banner. Only shown to signed-in customers who
-          haven't told us what they like yet — disappears once they save
-          interests or tap Maybe later. */}
+      {/* Slim single-line personalize prompt — only for signed-in customers
+          who haven't picked interests yet. */}
       {signedIn && interests.length === 0 && (
-        <div style={{maxWidth:920,margin:"0 auto 18px",padding:"0 clamp(16px,4vw,32px)"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,padding:"12px clamp(14px,2.5vw,18px)",background:"rgba(202,236,186,0.18)",border:"1px solid rgba(163,177,138,0.4)",borderRadius:12,flexWrap:"wrap"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10,flex:"1 1 auto",minWidth:0}}>
-              <span style={{fontSize:18,lineHeight:1}}>✦</span>
-              <div style={{minWidth:0}}>
-                <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",margin:"0 0 2px",letterSpacing:"-0.2px"}}>Personalize your For You rail</p>
-                <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.5}}>Tell us what you love and we'll surface venues that fit your vibe.</p>
-              </div>
-            </div>
-            <div style={{display:"flex",gap:8,flexShrink:0}}>
+        <div style={{maxWidth:920,margin:"0 auto 12px",padding:"0 clamp(16px,4vw,32px)"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"8px 14px",background:"rgba(202,236,186,0.22)",borderRadius:999,flexWrap:"wrap"}}>
+            <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:500}}>
+              <span style={{marginRight:6}}>✦</span>
+              Want a personalized For You rail?
+            </span>
+            <div style={{display:"flex",gap:6,flexShrink:0}}>
               <button onClick={dismissInterestsPrompt}
-                style={{padding:"7px 12px",background:"transparent",color:"#54584F",border:"none",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer"}}>
-                Not now
+                style={{padding:"5px 10px",background:"transparent",color:"#54584F",border:"none",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer"}}>
+                Dismiss
               </button>
               <button onClick={()=>setShowInterestsModal(true)}
-                style={{padding:"8px 16px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
-                ✦ Pick your vibes
+                style={{padding:"5px 14px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                Pick your vibes
               </button>
             </div>
           </div>
@@ -1753,7 +1743,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
       </div>
 
       {/* Grid */}
-      <div style={{maxWidth:1200,margin:"24px auto 0",padding:"0 clamp(16px,4vw,32px)"}}>
+      <div style={{maxWidth:1200,margin:"16px auto 0",padding:"0 clamp(16px,4vw,32px)"}}>
         {viewMode==="grid" && activeCat==="All" && (()=>{
           // Source of truth respects the AI search override AND the location chip.
           const sourcePool = aiResults ?? listings;
@@ -1878,7 +1868,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
             );
           }
           return (
-            <div style={{display:"flex",flexDirection:"column",gap:18}}>
+            <div style={{display:"flex",flexDirection:"column",gap:14}}>
               {sections.map(({key, name, cat, blurb, items}) => (
                 <section key={key}>
                   <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6,gap:12}}>
@@ -7579,10 +7569,32 @@ export default function App() {
         <div style={{paddingTop:headerH}}>
           {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds} onGotoCredits={gotoCredits}/>}
           {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds} profile={profile} authSession={authSession} onSaveInterests={async(interests)=>{
-            if(!authSession?.user?.id) return;
-            const{error}=await supabase.from('profiles').update({interests}).eq('id',authSession.user.id);
-            if(error){console.error('save interests failed:',error.message);return;}
-            setProfile(p=>p?{...p,interests}:{id:authSession.user.id,interests});
+            if(!authSession?.user?.id) {
+              showToast("Please sign in to save your preferences.","info");
+              throw new Error("not signed in");
+            }
+            // .select() so RLS-silent-zero-rows is detected (same pattern as
+            // the delete-venue bug). Without it, an update blocked by a
+            // missing UPDATE policy returns success with 0 rows affected and
+            // the partner sees no change.
+            const{data,error} = await supabase
+              .from('profiles')
+              .update({interests})
+              .eq('id',authSession.user.id)
+              .select('id, interests');
+            if(error){
+              console.error('save interests failed:',error.message);
+              showToast("Couldn't save preferences. "+error.message,"error");
+              throw error;
+            }
+            if(!data || data.length===0){
+              console.warn('save interests: 0 rows updated — RLS probably blocking. Add an UPDATE policy on profiles.');
+              showToast("Saved locally, but your account didn't accept the update — check your profile RLS policy.","error");
+              setProfile(p=>p?{...p,interests}:{id:authSession.user.id,interests});
+              return;
+            }
+            setProfile(p=>p?{...p,interests}:{...data[0]});
+            showToast("Preferences saved. Refreshing For You…","success");
           }}/>}
           {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion}/>}
           {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
