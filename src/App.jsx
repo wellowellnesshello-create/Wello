@@ -1129,19 +1129,12 @@ function SyncEngine({ listings, onUpdate }) {
 // PAGE: HOME
 // ═══════════════════════════════════════════════════════════════
 function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onToggleSave, onSetView, syncingIds, onGotoCredits }) {
-  const [aiQ,setAiQ]=useState(""); const [aiLoading,setAiLoading]=useState(false);
-  const [aiNote,setAiNote]=useState(""); const [aiResults,setAiResults]=useState(null);
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
 
-  async function runAI() {
-    if (!aiQ.trim()) return; setAiLoading(true);
-    const ls=listings.map(b=>`ID:${b.id} "${b.name}" ${b.cat} ${b.loc} ◈${b.cr} tags:${b.tags.join(",")}`).join("\n");
-    const r=await aiJSON(`Wellness search. Return ONLY JSON: {"ids":[1,2],"explanation":"short sentence max 12 words"}`,`Query:"${aiQ}"\nListings:\n${ls}`);
-    if(r?.ids){setAiResults(listings.filter(b=>r.ids.includes(b.id)));setAiNote(r.explanation||"");}
-    setAiLoading(false);
-  }
-
-  const featured = aiResults || listings.slice(0,4);
+  // Featured strip is a static 4-up of the first listings. Used to host an
+  // AI search that filtered this strip in place (no navigation) — removed
+  // because the better-positioned search lives on /explore now.
+  const featured = listings.slice(0,4);
 
   return (
     <div>
@@ -1157,21 +1150,10 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
           <p style={{fontFamily:F2,fontSize:"clamp(12px,2vw,18px)",color:"#54584F",fontWeight:500,lineHeight:1.5,maxWidth:520,margin:"0 auto clamp(10px,2.5vw,32px)",letterSpacing:"-0.2px",padding:"0 8px"}}>
             Book yoga classes, gym access, hotel pools, spa treatments and outdoor adventures — or a private instructor who comes to you. All with one pass. No membership needed.
           </p>
-          {/* AI Search bar */}
-          <div style={{maxWidth:560,margin:"0 auto 8px",background:"#fff",borderRadius:999,padding:"4px 4px 4px 16px",display:"flex",alignItems:"center",boxShadow:"0 1px 12px rgba(27,28,25,0.06)",border:"1px solid rgba(195,200,188,0.3)"}}>
-            <span style={{color:"#54584F",fontSize:13,marginRight:6,flexShrink:0}}>✦</span>
-            <input value={aiQ} onChange={e=>setAiQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&runAI()}
-              style={{flex:1,border:"none",outline:"none",fontFamily:F2,fontSize:13,background:"transparent",color:"#1B1C19",fontWeight:500,minWidth:0}}
-              placeholder="Find a class, spa, gym or adventure..."/>
-            {aiResults&&<button onClick={()=>{setAiResults(null);setAiQ("");setAiNote("");}}
-              style={{background:"transparent",border:"none",color:"#54584F",cursor:"pointer",fontSize:13,padding:"0 6px",flexShrink:0}}>✕</button>}
-            <button onClick={runAI} disabled={aiLoading||!aiQ.trim()}
-              style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"10px clamp(12px,3vw,20px)",fontFamily:F2,fontSize:13,fontWeight:700,cursor:aiLoading||!aiQ.trim()?"not-allowed":"pointer",opacity:aiLoading||!aiQ.trim()?0.5:1,flexShrink:0}}>
-              {aiLoading?"…":"Search"}
-            </button>
-          </div>
-          {aiNote&&<p style={{fontFamily:F2,fontSize:11,color:"#54584F",fontStyle:"italic",margin:"0 0 16px"}}>✦ {aiNote}</p>}
-          {/* CTAs */}
+          {/* CTAs — the home page used to host an AI search bar here, but
+              it filtered the Featured strip in place rather than navigating,
+              which felt broken. The semantic search lives on /explore now;
+              the Explore CTA below sends guests straight to it. */}
           <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginTop:"clamp(16px,3vw,28px)"}}>
             <button onClick={onGotoCredits || (()=>onSetView("credits"))}
               style={{display:"flex",alignItems:"center",gap:8,padding:"12px clamp(16px,4vw,36px)",borderRadius:999,background:"#213C18",color:"#fff",border:"none",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>
@@ -1623,14 +1605,10 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
 
   return (
     <div style={{paddingTop:16,paddingBottom:"calc(100px + env(safe-area-inset-bottom))"}}>
-      {/* Slim utility row — venue count + view toggle. Replaces the old
-          "Curated Sanctuary / Find your flow" hero so the page can lead
-          with the search bar and get more density above the fold. */}
-      <div style={{maxWidth:1200,margin:"0 auto 10px",padding:"0 clamp(16px,4vw,32px)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
-        <div style={{display:"flex",alignItems:"center",gap:6}}>
-          <span style={{width:7,height:7,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
-          <span style={{fontFamily:F2,fontSize:12,color:"#54584F",fontWeight:500}}>{filtered.length} venues live</span>
-        </div>
+      {/* Slim utility row — view toggle only. We dropped the venue counter
+          ("X venues live · Live sync") and the "Curated Sanctuary / Find
+          your flow" hero so the page can lead with the search bar. */}
+      <div style={{maxWidth:1200,margin:"0 auto 10px",padding:"0 clamp(16px,4vw,32px)",display:"flex",alignItems:"center",justifyContent:"flex-end",gap:10}}>
         <div style={{display:"flex",background:"#EAE8E3",borderRadius:999,padding:3,gap:2}}>
           {[["grid","⊞ Grid"],["map","📍 Map"]].map(([mode,label])=>(
             <button key={mode} onClick={()=>setViewMode(mode)}
