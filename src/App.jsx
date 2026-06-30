@@ -1420,12 +1420,114 @@ function AboutPage({ onSetView }) {
 // ═══════════════════════════════════════════════════════════════
 // PAGE: EXPLORE
 // ═══════════════════════════════════════════════════════════════
-function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds }) {
+// Customer-facing wellness preferences. Each chip maps to a set of category
+// names + tag fragments so the For You algorithm can match listings whose
+// cat / tags overlap. Keeping the user-facing label friendly while the
+// underlying matchers stay flexible means we can re-tune relevance without
+// migrating customers' saved interests.
+const INTEREST_OPTIONS = [
+  { id:"yoga_pilates",  icon:"🧘",  label:"Yoga & Pilates",       cats:["Yoga","Pilates"],                                    tags:["yoga","pilates","reformer","mat"] },
+  { id:"surf_paddle",   icon:"🌊",  label:"Surf & paddle",        cats:["Surfing","Paddle Boarding","Kayaking"],              tags:["surf","beach","ocean","sea"] },
+  { id:"cycling",       icon:"🚴",  label:"Cycling",              cats:["Cycling"],                                           tags:["cycle","bike","road","trail"] },
+  { id:"hiking",        icon:"🥾",  label:"Hiking & trails",      cats:["Hiking","Running"],                                  tags:["hike","trail","mountain","tramuntana"] },
+  { id:"gym_strength",  icon:"🏋️",  label:"Gym & strength",       cats:["Hotel Gym","Fitness Class"],                         tags:["gym","strength","hiit","crossfit"] },
+  { id:"spa_wellness",  icon:"💆",  label:"Spa & wellness",       cats:["Meditation"],                                        tags:["spa","sauna","massage","wellness"] },
+  { id:"pool",          icon:"🏊",  label:"Pool & swim",          cats:["Pool Access"],                                       tags:["pool","swim","infinity","laps"] },
+  { id:"racquet",       icon:"🎾",  label:"Racquet sports",       cats:["Padel","Tennis","Pickleball"],                       tags:["padel","tennis","pickleball","court"] },
+  { id:"meditation",    icon:"🧘‍♂️", label:"Meditation & breathwork", cats:["Meditation"],                                    tags:["meditation","breathwork","mindfulness"] },
+  { id:"private",       icon:"👋",  label:"1-to-1 sessions",       cats:["Private Instructor"],                                tags:["private","1-to-1","personal"] },
+  { id:"morning",       icon:"🌅",  label:"Morning energy",        cats:[],                                                    tags:["morning","sunrise","energy"] },
+  { id:"evening",       icon:"🌙",  label:"Evening winddown",     cats:[],                                                    tags:["evening","sunset","restorative"] },
+];
+
+// Branded preferences picker. Re-used by the soft Explore banner + the
+// profile page edit button.
+function InterestsModal({ initial = [], onCancel, onSave, busy = false }) {
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  const [picked, setPicked] = useState(initial);
+  const toggle = (id) => setPicked(p => p.includes(id) ? p.filter(x => x !== id) : [...p, id]);
+  const canSave = picked.length >= 2;
+  return (
+    <ModalShell onClose={busy ? () => {} : onCancel}>
+      <div style={{padding:"clamp(22px,4vw,28px)"}}>
+        <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,letterSpacing:"-0.4px",margin:"0 0 6px"}}>
+          What kind of wellness lights you up?
+        </h2>
+        <p style={{fontFamily:F2,fontSize:12,color:T.stone,lineHeight:1.65,margin:"0 0 18px",fontWeight:300}}>
+          Pick at least two. We use these to personalize your For You rail and surface venues you'll actually love.
+        </p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(140px, 1fr))",gap:8,marginBottom:18}}>
+          {INTEREST_OPTIONS.map(opt => {
+            const on = picked.includes(opt.id);
+            return (
+              <button key={opt.id} type="button" onClick={()=>toggle(opt.id)} disabled={busy}
+                style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",borderRadius:8,border:`1px solid ${on?T.sage:T.border}`,background:on?"rgba(33,60,24,0.06)":T.paper,color:T.ink,fontFamily:F2,fontSize:12,fontWeight:on?700:500,cursor:busy?"wait":"pointer",textAlign:"left",transition:"all .12s"}}>
+                <span style={{fontSize:16,lineHeight:1}}>{opt.icon}</span>
+                <span style={{flex:1}}>{opt.label}</span>
+                {on && <span style={{color:T.sage,fontWeight:700}}>✓</span>}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+          <p style={{fontFamily:F2,fontSize:11,color:canSave?T.sage:T.stone,fontWeight:600,margin:0}}>
+            {picked.length === 0 ? "Pick a couple to continue" : `${picked.length} selected`}
+          </p>
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={onCancel} disabled={busy}
+              style={{padding:"10px 18px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F2,fontSize:12,fontWeight:300,cursor:busy?"wait":"pointer"}}>
+              Maybe later
+            </button>
+            <button onClick={()=>onSave(picked)} disabled={!canSave || busy}
+              style={{padding:"10px 22px",background:canSave&&!busy?T.sage:T.border,color:"#fff",border:"none",borderRadius:2,fontFamily:F2,fontSize:12,fontWeight:600,cursor:canSave&&!busy?"pointer":"not-allowed"}}>
+              {busy ? "Saving…" : "Save preferences"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, profile, authSession, onSaveInterests }) {
   const [search,setSearch]=useState("");
   const [activeCat,setActiveCat]=useState("All");
   const [activeLoc,setActiveLoc]=useState("All Mallorca");
   const [viewMode,setViewMode]=useState("grid");
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
+
+  // Preferences UX state. We auto-open the modal once per session if the
+  // customer is signed in but has no interests stored — and stash a
+  // localStorage flag so dismissing it doesn't re-prompt forever.
+  const [showInterestsModal, setShowInterestsModal] = useState(false);
+  const [savingInterests, setSavingInterests] = useState(false);
+  const interests = Array.isArray(profile?.interests) ? profile.interests : [];
+  const signedIn = !!authSession?.user?.id;
+  useEffect(() => {
+    if (!signedIn) return;
+    if (interests.length > 0) return;
+    try {
+      if (localStorage.getItem("wello_interests_dismissed") === "1") return;
+    } catch { /* ignore */ }
+    // Small delay so it doesn't fire the instant they hit the page.
+    const t = setTimeout(() => setShowInterestsModal(true), 1200);
+    return () => clearTimeout(t);
+  }, [signedIn, interests.length]);
+  function dismissInterestsPrompt() {
+    setShowInterestsModal(false);
+    try { localStorage.setItem("wello_interests_dismissed", "1"); } catch { /* ignore */ }
+  }
+  async function handleSaveInterests(picked) {
+    if (!onSaveInterests) return;
+    setSavingInterests(true);
+    try {
+      await onSaveInterests(picked);
+      try { localStorage.removeItem("wello_interests_dismissed"); } catch { /* ignore */ }
+      setShowInterestsModal(false);
+    } finally {
+      setSavingInterests(false);
+    }
+  }
 
   // AI search state. When aiResults is non-null we constrain the listing
   // grid to just those venues and surface the AI's one-line "why these"
@@ -1584,6 +1686,33 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
       {/* Compact private-classes chip pinned in the filter row carries the
           same message — the previous fat promo banner doubled with it. */}
 
+      {/* Personalize-me soft banner. Only shown to signed-in customers who
+          haven't told us what they like yet — disappears once they save
+          interests or tap Maybe later. */}
+      {signedIn && interests.length === 0 && (
+        <div style={{maxWidth:920,margin:"0 auto 18px",padding:"0 clamp(16px,4vw,32px)"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,padding:"12px clamp(14px,2.5vw,18px)",background:"rgba(202,236,186,0.18)",border:"1px solid rgba(163,177,138,0.4)",borderRadius:12,flexWrap:"wrap"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,flex:"1 1 auto",minWidth:0}}>
+              <span style={{fontSize:18,lineHeight:1}}>✦</span>
+              <div style={{minWidth:0}}>
+                <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",margin:"0 0 2px",letterSpacing:"-0.2px"}}>Personalize your For You rail</p>
+                <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.5}}>Tell us what you love and we'll surface venues that fit your vibe.</p>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,flexShrink:0}}>
+              <button onClick={dismissInterestsPrompt}
+                style={{padding:"7px 12px",background:"transparent",color:"#54584F",border:"none",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer"}}>
+                Not now
+              </button>
+              <button onClick={()=>setShowInterestsModal(true)}
+                style={{padding:"8px 16px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                ✦ Pick your vibes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Sticky filter bar */}
       <div style={{position:"sticky",top:91,zIndex:40,background:"#FBF9F4",borderBottom:"1px solid rgba(195,200,188,0.4)",padding:"10px clamp(12px,3vw,32px)"}}>
         <div style={{maxWidth:1200,margin:"0 auto"}}>
@@ -1635,17 +1764,44 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
           );
           const pool = sourcePool.filter(matchLocSearch);
 
-          // ── For You ── Personalised carousel built from saved venues:
-          //   - the venues the customer has already favourited
-          //   - non-favourited venues that share a category with their favourites
-          //   - if they have no favourites yet, fall back to the highest-rated
-          //     handful so the "For You" rail still has something
+          // ── For You ── Personalised carousel.
+          //   Score every listing on three signals:
+          //   1. Customer's explicit interests (highest weight)
+          //   2. Saved venues + venues sharing a category with saves (mid)
+          //   3. Star rating (low — used to break ties)
+          //   Sort descending, take top 10.
+          const interestCats = new Set();
+          const interestTags = new Set();
+          for (const id of interests) {
+            const opt = INTEREST_OPTIONS.find(o => o.id === id);
+            if (!opt) continue;
+            opt.cats.forEach(c => interestCats.add(c));
+            opt.tags.forEach(t => interestTags.add(t.toLowerCase()));
+          }
           const savedListings = pool.filter(b => savedIds.includes(b.id));
-          const savedCats = [...new Set(savedListings.map(b => b.cat))];
-          const similar = pool.filter(b => savedCats.includes(b.cat) && !savedIds.includes(b.id));
-          let forYouItems = [...savedListings, ...similar];
+          const savedCats = new Set(savedListings.map(b => b.cat));
+          function scoreFor(b) {
+            let s = 0;
+            if (savedIds.includes(b.id)) s += 30; // already loves it
+            if (interestCats.has(b.cat)) s += 15;
+            if (savedCats.has(b.cat))    s += 6;
+            const tags = (b.tags || []).map(t => String(t).toLowerCase());
+            for (const t of tags) {
+              if (interestTags.has(t)) { s += 4; break; }
+              // partial-word match for things like "sea views" matching "ocean" tag
+              for (const it of interestTags) { if (t.includes(it) || it.includes(t)) { s += 2; break; } }
+            }
+            s += (b.rating || 0) * 0.4;
+            return s;
+          }
+          const scored = pool
+            .map(b => ({ b, s: scoreFor(b) }))
+            .filter(x => x.s > 0)
+            .sort((a,b) => b.s - a.s)
+            .map(x => x.b);
+          let forYouItems = scored.slice(0, 10);
           if (forYouItems.length < 3) {
-            // Fallback: top-rated venues so first-time guests still see a curated rail
+            // Fallback when there are no signals at all
             const topRated = [...pool].sort((a,b) => (b.rating||0) - (a.rating||0));
             const seen = new Set(forYouItems.map(b => b.id));
             for (const b of topRated) {
@@ -1654,7 +1810,6 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
               if (forYouItems.length >= 8) break;
             }
           }
-          forYouItems = forYouItems.slice(0, 10);
 
           // ── Dynamic category sections from live data ──
           // Build a section per unique active category in the pool. Order
@@ -1698,13 +1853,16 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
           // Final ordered rail list — For You first, then dynamic categories.
           const sections = [];
           if (forYouItems.length > 0) {
+            let blurb;
+            if (interests.length > 0 && savedListings.length > 0) blurb = `Tuned to your interests + what you've saved`;
+            else if (interests.length > 0)                         blurb = `Tuned to the activities you picked`;
+            else if (savedListings.length > 0)                     blurb = `Similar to what you've already saved`;
+            else                                                   blurb = `Hand-picked to get you started`;
             sections.push({
               key: "__for_you",
               name: "For You",
               cat: null,
-              blurb: savedListings.length > 0
-                ? `Saved + similar to what you love`
-                : `Hand-picked to get you started`,
+              blurb,
               items: forYouItems,
             });
           }
@@ -1812,6 +1970,17 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
           </div>
         )}
       </div>
+
+      {/* Preferences picker — opens from the soft sage banner above OR the
+          auto-open useEffect for first-time signed-in customers. */}
+      {showInterestsModal && (
+        <InterestsModal
+          initial={interests}
+          busy={savingInterests}
+          onCancel={dismissInterestsPrompt}
+          onSave={handleSaveInterests}
+        />
+      )}
     </div>
   );
 }
@@ -2924,13 +3093,21 @@ CRITICAL: every "credits" value and "total_credits" MUST be a single positive in
               <p style={{fontFamily:F2,fontSize:11,color:"rgba(33,60,24,0.55)",textAlign:"center",margin:"14px 0 0"}}>Secure card payment. Credits valid 6 months. 1 credit = €{PRICE_PER_CREDIT}.</p>
             </div>
 
-            {/* Concierge entry link (subtle, below the selector) */}
-            <div style={{textAlign:"center",padding:"4px 0 8px"}}>
-              <button onClick={()=>setPhase("opener")}
-                style={{background:"transparent",border:"none",color:"#213C18",fontFamily:F2,fontSize:13,fontWeight:600,cursor:"pointer",padding:"6px 12px",textDecoration:"underline"}}>
-                Not sure how many? Let Wello plan your week →
-              </button>
-            </div>
+            {/* AI concierge entry — visually prominent card so first-time
+                guests notice the help, but deliberately below the buy CTA so
+                the credit-buying flow stays the primary path. */}
+            <button onClick={()=>setPhase("opener")}
+              style={{display:"flex",alignItems:"center",gap:14,width:"100%",padding:"clamp(14px,3vw,18px) clamp(16px,3vw,20px)",background:"#fff",border:"1px solid rgba(33,60,24,0.18)",borderRadius:12,cursor:"pointer",textAlign:"left",fontFamily:F2,transition:"all .15s",boxShadow:"0 2px 12px rgba(33,60,24,0.06)"}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor="#213C18";e.currentTarget.style.boxShadow="0 6px 24px rgba(33,60,24,0.12)";}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(33,60,24,0.18)";e.currentTarget.style.boxShadow="0 2px 12px rgba(33,60,24,0.06)";}}>
+              <div style={{flexShrink:0,width:42,height:42,borderRadius:"50%",background:"rgba(202,236,186,0.4)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>✦</div>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{fontFamily:F2,fontSize:9,fontWeight:700,color:"#A3B18A",letterSpacing:"2px",textTransform:"uppercase",margin:"0 0 3px"}}>AI concierge</p>
+                <p style={{fontFamily:F2,fontSize:"clamp(13px,1.6vw,15px)",fontWeight:700,color:"#213C18",margin:"0 0 2px",letterSpacing:"-0.2px",lineHeight:1.25}}>Not sure how many credits you need?</p>
+                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.5}}>Tell us about your trip and we'll build a personalised wellness itinerary with the right credit amount.</p>
+              </div>
+              <span style={{flexShrink:0,fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",whiteSpace:"nowrap"}}>Plan it →</span>
+            </button>
           </div>
         )}
 
@@ -7401,7 +7578,12 @@ export default function App() {
         {/* PAGES — padded for fixed banner+nav */}
         <div style={{paddingTop:headerH}}>
           {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds} onGotoCredits={gotoCredits}/>}
-          {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds}/>}
+          {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds} profile={profile} authSession={authSession} onSaveInterests={async(interests)=>{
+            if(!authSession?.user?.id) return;
+            const{error}=await supabase.from('profiles').update({interests}).eq('id',authSession.user.id);
+            if(error){console.error('save interests failed:',error.message);return;}
+            setProfile(p=>p?{...p,interests}:{id:authSession.user.id,interests});
+          }}/>}
           {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion}/>}
           {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
           {view==="business"   &&<BusinessPage isBiz={true} onSetView={setView} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
