@@ -7584,6 +7584,20 @@ export default function App() {
       // new row shows up immediately (it was rendered from a fetched list).
       setBookingsVersion(v => v + 1);
 
+      // Bump slots.booked so the slot disappears from the marketplace for
+      // everyone else. For private instructors with spots=1 this means once
+      // one customer requests a time, no one else can request the same one.
+      // If the instructor later declines, instructor-booking-response
+      // decrements this back so the slot reopens.
+      try {
+        const newBooked = (slot.booked || 0) + (form.guests || 1);
+        const { error: slotUpdErr } = await supabase
+          .from('slots').update({ booked: newBooked }).eq('id', slot.id);
+        if (slotUpdErr) console.warn('[onConfirm] slots.booked bump failed:', slotUpdErr.message);
+      } catch (e) {
+        console.warn('[onConfirm] slots.booked bump exception:', e?.message);
+      }
+
       // 3. Fire-and-forget downstream signals:
       // - Private instructor bookings → SMS the instructor via Twilio.
       // - Everything else → Acuity sync (writes appointment_id back).

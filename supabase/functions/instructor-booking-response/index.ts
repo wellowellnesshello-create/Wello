@@ -161,6 +161,23 @@ serve(async (req) => {
       .from('bookings').update({ status: 'cancelled' }).eq('id', booking.id)
     if (updErr) return json({ error: 'Could not update booking status. ' + updErr.message }, 500)
 
+    // Free the slot back up so other customers can request the same time.
+    // The booking row carries slot_id as a string; cast for the integer pk.
+    if (booking.slot_id) {
+      const slotIdNum = Number(booking.slot_id)
+      if (Number.isFinite(slotIdNum)) {
+        const { data: slotRow } = await supabase
+          .from('slots').select('id, booked').eq('id', slotIdNum).maybeSingle()
+        if (slotRow) {
+          const newBooked = Math.max(0, (slotRow.booked || 0) - 1)
+          const { error: slotErr } = await supabase
+            .from('slots').update({ booked: newBooked }).eq('id', slotIdNum)
+          if (slotErr) console.warn('Failed to decrement slots.booked on decline:', slotErr.message)
+          else console.log('Decremented slots.booked for slot', slotIdNum, 'to', newBooked)
+        }
+      }
+    }
+
     // Credits were never deducted for pending_instructor, so nothing to refund
     // — but log a note in case future flows change that.
     console.log('Declined booking', booking.id, 'credits_used=', booking.credits_used, '(no refund needed — credits were only held)')
