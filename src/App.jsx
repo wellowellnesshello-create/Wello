@@ -2450,7 +2450,7 @@ function PartnersPage({ onSetView }) {
     },
     {
       title: "On your terms",
-      body:  "You set your own credit price. We agree payout terms with each partner individually so they fit how your venue works. No long contracts and no monthly fee.",
+      body:  "You set your own credit price. Members redeem credits at your venue, and we settle every Friday. No monthly fee, no upfront cost.",
       icon:  "◈",
     },
   ];
@@ -2464,7 +2464,7 @@ function PartnersPage({ onSetView }) {
   const FAQ = [
     {
       q: "How does payment work?",
-      a: "You set your credit price. We agree the payout terms with each partner individually on the call before you go live, based on your category and price point. Members redeem credits at your venue, we settle every Friday.",
+      a: "You set your credit price. Members redeem credits at your venue and we settle every Friday.",
     },
     {
       q: "What booking systems do you integrate with?",
@@ -2472,11 +2472,7 @@ function PartnersPage({ onSetView }) {
     },
     {
       q: "When do I get paid?",
-      a: "Payouts go out every Friday, direct to the IBAN you set in your dashboard. Each payout covers credits redeemed at your venue in the prior week, net of the agreed payout terms. You can download a statement for each payout from your dashboard.",
-    },
-    {
-      q: "Is there a contract?",
-      a: "No long contracts and no exit fees. You can pause your listing or leave at any time. We're building a marketplace that works for partners over the long term, not locking you in.",
+      a: "Payouts go out every Friday, direct to the IBAN you set in your dashboard. Each payout covers credits redeemed at your venue in the prior week. You can download a statement for each payout from your dashboard.",
     },
   ];
 
