@@ -3252,6 +3252,29 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const [upcomingBookings, setUpcomingBookings] = useState(null);
   const [respondingId, setRespondingId] = useState(null); // booking id currently being confirmed/declined
 
+  // Map of which address has just been copied to clipboard. Booking id →
+  // timestamp; we briefly flip the button from "Copy" → "Copied" so partners
+  // get visual confirmation. Times out automatically after 2s.
+  const [copiedBookingId, setCopiedBookingId] = useState(null);
+  async function copyAddress(bookingId, text) {
+    if (!text) return;
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // Fallback for older browsers / non-https environments
+        const el = document.createElement('textarea');
+        el.value = text; document.body.appendChild(el);
+        el.select(); document.execCommand('copy');
+        document.body.removeChild(el);
+      }
+      setCopiedBookingId(bookingId);
+      setTimeout(() => setCopiedBookingId(id => id === bookingId ? null : id), 2000);
+    } catch (e) {
+      console.warn('copyAddress failed:', e?.message);
+    }
+  }
+
   function flashSaveMsg(kind, text) {
     setSaveMsg({ kind, text });
     setTimeout(() => setSaveMsg(m => (m.kind === kind ? { kind:"", text:"" } : m)), 3000);
@@ -3847,7 +3870,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                   )}
                                   <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 2px"}}>{sessionName}</p>
                                   {customerLocation && (
-                                    <p style={{fontFamily:F2,fontSize:11,color:"#766149",margin:0}}>📍 {customerLocation}</p>
+                                    <p style={{fontFamily:F2,fontSize:11,color:"#766149",margin:0,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                                      <span>📍 {customerLocation}</span>
+                                      <button type="button" onClick={()=>copyAddress(b.id, customerLocation)}
+                                        style={{background:"transparent",border:"1px solid rgba(118,97,73,0.4)",color:"#766149",fontFamily:F2,fontSize:9,fontWeight:700,padding:"2px 8px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                                        {copiedBookingId === b.id ? "✓ Copied" : "Copy"}
+                                      </button>
+                                    </p>
                                   )}
                                   {customerNote && (
                                     <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"3px 0 0",fontStyle:"italic"}}>📝 {customerNote}</p>
@@ -3987,7 +4016,15 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                         </div>
                       </div>
                       <div style={{marginBottom:14}}>
-                        <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 3px"}}>Session address</p>
+                        <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:3}}>
+                          <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:0}}>Session address</p>
+                          {customerLocation && customerLocation !== 'Not provided' && (
+                            <button type="button" onClick={()=>copyAddress(req.id, customerLocation)}
+                              style={{background:"transparent",border:"1px solid #213C18",color:"#213C18",fontFamily:F2,fontSize:9,fontWeight:700,padding:"2px 10px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                              {copiedBookingId === req.id ? "✓ Copied" : "Copy"}
+                            </button>
+                          )}
+                        </div>
                         <p style={{fontFamily:F2,fontSize:12,color:"#1B1C19",margin:0,lineHeight:1.5}}>{customerLocation}</p>
                         {customerNote && (
                           <>
