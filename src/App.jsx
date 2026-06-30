@@ -817,10 +817,42 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
 // ─── Business Panel ───────────────────────────────────────────────────────────
 function BizPanel({ biz, onClose, onBook }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
-  const dates = [...new Set(biz.slots.map(s=>s.date))].sort();
+
+  // Compute effective availability — a slot is unavailable if it's directly
+  // booked OR if its time range overlaps with another booked slot on the
+  // same date (e.g. 10:00 Pilates 90-min booked → 10:00 Yoga 60-min and
+  // 11:00 Yoga 60-min also become unavailable, since the instructor is
+  // busy through 11:30). Lets a single 1-to-1 booking sweep every
+  // overlapping offering off the marketplace in one go.
+  function parseDur(d) {
+    const n = parseInt(d, 10);
+    return Number.isFinite(n) && n > 0 ? n : 60;
+  }
+  function slotRange(s) {
+    const [h, m] = (s.time || "00:00").split(":").map(Number);
+    const start = (h || 0) * 60 + (m || 0);
+    return [start, start + parseDur(s.dur)];
+  }
+  const fullySlots = (biz.slots || []).filter(s => (s.booked || 0) >= (s.spots || 1));
+  function isEffectivelyBlocked(slot) {
+    if ((slot.booked || 0) >= (slot.spots || 1)) return true;
+    const [aStart, aEnd] = slotRange(slot);
+    for (const t of fullySlots) {
+      if (t.date !== slot.date) continue;
+      if (t.id === slot.id) continue;
+      const [bStart, bEnd] = slotRange(t);
+      if (aStart < bEnd && bStart < aEnd) return true; // overlaps
+    }
+    return false;
+  }
+  // Slots filtered to ones that are still bookable. Used for the date
+  // pills, the slot list, and the "next slot" preview at the bottom.
+  const bookableSlots = (biz.slots || []).filter(s => !isEffectivelyBlocked(s));
+
+  const dates = [...new Set(bookableSlots.map(s=>s.date))].sort();
   const [selDate, setSel] = useState(dates[0]||null);
   const sys = SYNC[biz.id];
-  const slotsForDate = biz.slots.filter(s=>s.date===selDate);
+  const slotsForDate = bookableSlots.filter(s=>s.date===selDate);
 
   // Build calendar — show 7 days starting from first slot date
   const allDates = dates;
@@ -877,7 +909,7 @@ function BizPanel({ biz, onClose, onBook }) {
           <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>Available dates</p>
           <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4,marginBottom:20,scrollbarWidth:"none"}}>
             {allDates.map(d=>{
-              const hasSlots = biz.slots.filter(s=>s.date===d&&s.booked<s.spots).length>0;
+              const hasSlots = bookableSlots.filter(s=>s.date===d).length>0;
               const isSelected = selDate===d;
               return (
                 <button key={d} onClick={()=>setSel(d)}
