@@ -619,6 +619,11 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
   // special instructions (gate codes, parking, what to bring, etc.).
   const [myLocation, setMyLocation] = useState("");
   const [myLocationNote, setMyLocationNote] = useState("");
+  // Phone number for the partner to reach the customer. Pre-filled from
+  // profiles.phone so a returning customer doesn't have to re-type it,
+  // saved back on confirm. Required for private bookings, optional for
+  // venue group classes (where the studio can fall back to email).
+  const [myPhone, setMyPhone] = useState(profile?.phone || "");
   const isPrivateBooking = biz.cat === "Private Instructor";
   const avail = isPrivateBooking ? 1 : slot.spots - slot.booked;
   const totalPeople = isPrivateBooking ? 1 : (1 + guests.length);
@@ -628,6 +633,9 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
   // Require a usable address for private bookings — at least 6 chars so
   // a typo like 'p' doesn't pass. Notes are optional.
   const locationOk = !isPrivateBooking || myLocation.trim().length >= 6;
+  // Required for private bookings (instructor needs to be able to call
+  // the customer). Loose pattern — just enough digits to be plausible.
+  const phoneOk = !isPrivateBooking || myPhone.replace(/[^\d]/g, '').length >= 7;
 
   // If the profile loads after the modal opens (rare race), pull the prefilled
   // values in. Won't clobber user edits because anon flow doesn't have a profile.
@@ -635,8 +643,9 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
     if (signedIn) {
       if (!myName  && profileName)  setMyName(profileName);
       if (!myEmail && profileEmail) setMyEmail(profileEmail);
+      if (!myPhone && profile?.phone) setMyPhone(profile.phone);
     }
-  }, [signedIn, profileName, profileEmail]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [signedIn, profileName, profileEmail, profile?.phone]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function addNewGuest() {
     if (!newEmail.trim() || !canAddMore) return;
@@ -718,6 +727,25 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                 </>
               )}
 
+              {/* Private-instructor only: phone number — so the instructor
+                  can reach the customer with logistics questions. Required
+                  for private; optional for venue group classes. */}
+              {isPrivateBooking && (
+                <>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>
+                    Your mobile <span style={{color:"#C46A4D"}}>*</span>
+                  </p>
+                  <input type="tel"
+                    placeholder="+34 600 000 000"
+                    value={myPhone} onChange={e=>setMyPhone(e.target.value)}
+                    style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:13,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",marginBottom:6,transition:"border-color .15s"}}
+                    onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 18px"}}>
+                    Stays private from other Wello members. Your instructor can call or text if they need clarification on the day.
+                  </p>
+                </>
+              )}
+
               {/* Private-instructor only: exact session address + optional
                   arrival notes. Both fields composed into bookings.notes so
                   the instructor sees everything in one place. */}
@@ -794,15 +822,36 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                 </div>
               </div>
 
-              <button onClick={()=>{
-                if(myName&&myEmail&&canAfford&&locationOk){
-                  onConfirm({biz,slot,form:{name:myName,email:myEmail,guests:totalPeople,location:isPrivateBooking?myLocation.trim():undefined,locationNote:isPrivateBooking?myLocationNote.trim():undefined},cost});
-                  setSt(2);
-                }}}
-                disabled={!myName||!myEmail||!canAfford||!locationOk}
-                style={{width:"100%",padding:"16px 0",borderRadius:999,background:myName&&myEmail&&canAfford&&locationOk?"#213C18":"#E4E2DD",color:myName&&myEmail&&canAfford&&locationOk?"#fff":"#54584F",border:"none",fontFamily:F2,fontSize:15,fontWeight:700,cursor:myName&&myEmail&&canAfford&&locationOk?"pointer":"not-allowed",transition:"all .15s",boxShadow:myName&&myEmail&&canAfford&&locationOk?"0 4px 14px rgba(33,60,24,0.2)":"none"}}>
-                {!canAfford?"Insufficient Credits":!locationOk?"Add your location to continue":isPrivateBooking?`Request booking · ◈ ${cost} held`:`Confirm · ◈ ${cost} credits`}
-              </button>
+              {(() => {
+                const ok = myName && myEmail && canAfford && locationOk && phoneOk;
+                const cta = !canAfford ? "Insufficient Credits"
+                  : !phoneOk           ? "Add your mobile number to continue"
+                  : !locationOk        ? "Add the session address to continue"
+                  : isPrivateBooking   ? `Request booking · ◈ ${cost} held`
+                  : `Confirm · ◈ ${cost} credits`;
+                return (
+                  <button onClick={()=>{
+                      if (ok) {
+                        onConfirm({
+                          biz, slot, cost,
+                          form: {
+                            name: myName,
+                            email: myEmail,
+                            guests: totalPeople,
+                            phone: isPrivateBooking ? myPhone.trim() : undefined,
+                            location: isPrivateBooking ? myLocation.trim() : undefined,
+                            locationNote: isPrivateBooking ? myLocationNote.trim() : undefined,
+                          },
+                        });
+                        setSt(2);
+                      }
+                    }}
+                    disabled={!ok}
+                    style={{width:"100%",padding:"16px 0",borderRadius:999,background:ok?"#213C18":"#E4E2DD",color:ok?"#fff":"#54584F",border:"none",fontFamily:F2,fontSize:15,fontWeight:700,cursor:ok?"pointer":"not-allowed",transition:"all .15s",boxShadow:ok?"0 4px 14px rgba(33,60,24,0.2)":"none"}}>
+                    {cta}
+                  </button>
+                );
+              })()}
             </div>
           </>
         )}
@@ -3252,7 +3301,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       let profileMap = {};
       if (uids.length > 0) {
         const { data: profs } = await supabase
-          .from('profiles').select('id, full_name, email').in('id', uids);
+          .from('profiles').select('id, full_name, email, phone').in('id', uids);
         for (const p of (profs || [])) profileMap[p.id] = p;
       }
       const enriched = (rows || []).map(r => ({ ...r, _customer: profileMap[r.user_id] || null }));
@@ -3286,7 +3335,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       let profileMap = {};
       if (uids.length > 0) {
         const { data: profs } = await supabase
-          .from('profiles').select('id, full_name, email').in('id', uids);
+          .from('profiles').select('id, full_name, email, phone').in('id', uids);
         for (const p of (profs || [])) profileMap[p.id] = p;
       }
       // Also pull the slot names so we can show "Yoga · 60 min" alongside the time.
@@ -3791,6 +3840,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                     {customerName}
                                     {customerEmail && <span style={{color:"#54584F",fontWeight:400,fontSize:11,marginLeft:6}}>· {customerEmail}</span>}
                                   </p>
+                                  {b._customer?.phone && (
+                                    <p style={{fontFamily:F2,fontSize:11,margin:"0 0 2px"}}>
+                                      <a href={`tel:${b._customer.phone.replace(/\s+/g,'')}`} style={{color:"#213C18",fontWeight:600,textDecoration:"none"}}>📞 {b._customer.phone}</a>
+                                    </p>
+                                  )}
                                   <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 2px"}}>{sessionName}</p>
                                   {customerLocation && (
                                     <p style={{fontFamily:F2,fontSize:11,color:"#766149",margin:0}}>📍 {customerLocation}</p>
@@ -3907,7 +3961,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:10,flexWrap:"wrap"}}>
                         <div>
                           <p style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#1B1C19",margin:"0 0 3px"}}>{customerName}</p>
-                          {customerEmail && <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0}}>{customerEmail}</p>}
+                          {customerEmail && <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 2px"}}>{customerEmail}</p>}
+                          {req._customer?.phone && (
+                            <p style={{fontFamily:F2,fontSize:11,margin:0}}>
+                              <a href={`tel:${req._customer.phone.replace(/\s+/g,'')}`} style={{color:"#213C18",fontWeight:600,textDecoration:"none"}}>📞 {req._customer.phone}</a>
+                            </p>
+                          )}
                         </div>
                         <span style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"0.3px",padding:"4px 10px",borderRadius:999,background:expired?"#FFE1D6":"#FFF7EA",color:expired?"#C46A4D":"#7A5C32"}}>
                           {expired ? 'Expiring now' : `${hoursLeft}h to respond`}
@@ -7555,6 +7614,21 @@ export default function App() {
     // We hold the slot visually but DO NOT deduct credits until the instructor
     // confirms (or auto-confirm hits at the 48h deadline).
     const isPrivateBooking = biz.cat === "Private Instructor";
+
+    // Persist the phone the customer typed into the booking modal onto their
+    // profile so a returning customer won't have to retype it next time, and
+    // so the partner-side queries (which already join profiles for name)
+    // pick up the number for free.
+    if (form?.phone) {
+      try {
+        const { error: phoneErr } = await supabase
+          .from('profiles').update({ phone: form.phone }).eq('id', uid);
+        if (phoneErr) console.warn('[onConfirm] profiles.phone update failed:', phoneErr.message);
+        else setProfile(p => p ? { ...p, phone: form.phone } : { id: uid, phone: form.phone });
+      } catch (e) {
+        console.warn('[onConfirm] profiles.phone update exception:', e?.message);
+      }
+    }
 
     // 1. Instant UI:
     // - regular bookings: deduct credits immediately, mark slot booked
