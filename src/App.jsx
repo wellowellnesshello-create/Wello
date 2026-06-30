@@ -295,6 +295,15 @@ function Cr({ n, size="md" }) {
 function Pill({ label, active, onClick, color }) {
   return <button onClick={onClick} style={{padding:"5px 12px",border:`1px solid ${active?(color||T.sage):T.border}`,borderRadius:2,background:active?(color?T.clayXL:T.sageXL):"transparent",color:active?(color?T.clay:T.sage):T.stone,fontFamily:F.body,fontSize:10,fontWeight:active?600:400,cursor:"pointer",whiteSpace:"nowrap",transition:"all .13s"}}>{label}</button>;
 }
+// Brand checkmark — consistent across browsers (unicode ✓ renders very
+// differently across OSes and weights). Pass size + stroke color.
+function Check({ size = 18, stroke = T.sage, strokeWidth = 2.5 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M5 12.5l4.5 4.5L19 7.5" stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
 function Toast({ t }) {
   if (!t) return null;
   // Welcome variant — full-screen centred celebration overlay. Forest Green on
@@ -327,7 +336,15 @@ function Toast({ t }) {
     );
   }
   const bg = t.type==="gold"?T.ochre:t.type==="success"?T.sage:T.clay;
-  return <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:4000,background:bg,color:"#fff",padding:"9px 20px",borderRadius:3,fontFamily:F.body,fontSize:12,fontWeight:600,boxShadow:"0 6px 22px rgba(0,0,0,.18)",animation:"toastIn .28s ease",whiteSpace:"nowrap"}}>{t.msg}</div>;
+  // Brand toast — soft pill, generous padding, brand inline tick on success.
+  // maxWidth + wrapping so longer messages don't fall off mobile screens.
+  const showTick = t.type === "success" || t.type === "gold";
+  return (
+    <div style={{position:"fixed",bottom:28,left:"50%",transform:"translateX(-50%)",zIndex:4000,background:bg,color:"#FBF9F4",padding:"12px 20px",borderRadius:999,fontFamily:F.body,fontSize:13,fontWeight:600,boxShadow:"0 12px 28px rgba(33,60,24,0.22)",animation:"toastIn .28s ease",display:"inline-flex",alignItems:"center",gap:10,maxWidth:"min(92vw,420px)",lineHeight:1.45,letterSpacing:"-0.1px"}}>
+      {showTick && <Check size={16} stroke="#FBF9F4" strokeWidth={2.6}/>}
+      <span>{t.msg}</span>
+    </div>
+  );
 }
 function Label({ children }) {
   return <div style={{fontFamily:F.body,fontSize:8,letterSpacing:"2.5px",textTransform:"uppercase",color:T.stone2,marginBottom:6,fontWeight:400}}>{children}</div>;
@@ -345,7 +362,8 @@ const INP = {width:"100%",padding:"9px 11px",border:`1px solid ${T.border}`,bord
 // experience; only partners with a row in `businesses` see the portal.
 function AuthModal({ initialMode = "signin", onClose, onSuccess }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
-  const [mode, setMode] = useState(initialMode); // signin | signup | magic | magic_sent | signup_check
+  // signin | signup | magic | magic_sent | signup_check | forgot | forgot_sent | set_password | set_password_done
+  const [mode, setMode] = useState(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -396,6 +414,36 @@ function AuthModal({ initialMode = "signin", onClose, onSuccess }) {
     setMode("magic_sent");
   }
 
+  async function doForgot() {
+    if (!email.trim()) { setErr("Please enter your email."); return; }
+    setBusy(true); setErr("");
+    // ?customer_reset=true flag lets the app know to open this modal in
+    // set_password mode after the recovery hash redirects them back.
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/?customer_reset=true`,
+    });
+    setBusy(false);
+    if (error) { setErr(error.message || "Couldn't send reset email."); return; }
+    setMode("forgot_sent");
+  }
+
+  async function doSetPassword() {
+    if (password.length < 8) { setErr("Password must be at least 8 characters."); return; }
+    setBusy(true); setErr("");
+    const { error } = await supabase.auth.updateUser({ password });
+    setBusy(false);
+    if (error) { setErr(error.message || "Couldn't set password."); return; }
+    setMode("set_password_done");
+    // Strip the recovery hash + flag from the URL so a refresh doesn't reopen
+    // the modal in set_password mode.
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("customer_reset");
+      window.history.replaceState({}, "", url.pathname + url.search);
+    } catch { /* non-critical */ }
+    setTimeout(() => { onSuccess?.(); onClose?.(); }, 1400);
+  }
+
   const INP3 = {
     width:"100%", padding:"11px 13px", border:`1px solid ${T.border}`, borderRadius:4,
     fontSize:13, fontFamily:F2, background:T.paper, color:T.ink, outline:"none",
@@ -409,7 +457,7 @@ function AuthModal({ initialMode = "signin", onClose, onSuccess }) {
   if (mode === "magic_sent") return (
     <ModalShell onClose={onClose}>
       <div style={{textAlign:"center",padding:"32px 8px"}}>
-        <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontSize:22}}>✓</div>
+        <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}><Check size={26} stroke={T.sage} strokeWidth={2.5}/></div>
         <h2 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:T.sage,letterSpacing:"-0.4px",margin:"0 0 8px"}}>Check your email</h2>
         <p style={{fontFamily:F2,fontSize:13,color:T.stone,lineHeight:1.6,margin:0}}>We sent a magic link to <strong style={{color:T.ink,fontWeight:600}}>{email}</strong>. Click it to sign in.</p>
       </div>
@@ -419,23 +467,74 @@ function AuthModal({ initialMode = "signin", onClose, onSuccess }) {
   if (mode === "signup_check") return (
     <ModalShell onClose={onClose}>
       <div style={{textAlign:"center",padding:"32px 8px"}}>
-        <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontSize:22}}>✓</div>
+        <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}><Check size={26} stroke={T.sage} strokeWidth={2.5}/></div>
         <h2 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:T.sage,letterSpacing:"-0.4px",margin:"0 0 8px"}}>Welcome to Wello</h2>
         <p style={{fontFamily:F2,fontSize:13,color:T.stone,lineHeight:1.6,margin:0}}>Confirm your email at <strong style={{color:T.ink,fontWeight:600}}>{email}</strong> to activate your account, then sign in.</p>
       </div>
     </ModalShell>
   );
 
+  if (mode === "forgot_sent") return (
+    <ModalShell onClose={onClose}>
+      <div style={{textAlign:"center",padding:"32px 8px"}}>
+        <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}><Check size={26} stroke={T.sage} strokeWidth={2.5}/></div>
+        <h2 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:T.sage,letterSpacing:"-0.4px",margin:"0 0 8px"}}>Check your email</h2>
+        <p style={{fontFamily:F2,fontSize:13,color:T.stone,lineHeight:1.6,margin:0}}>We sent a reset link to <strong style={{color:T.ink,fontWeight:600}}>{email}</strong>. Click it to set a new password.</p>
+      </div>
+    </ModalShell>
+  );
+
+  if (mode === "set_password_done") return (
+    <ModalShell onClose={onClose}>
+      <div style={{textAlign:"center",padding:"32px 8px"}}>
+        <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px"}}><Check size={26} stroke={T.sage} strokeWidth={2.5}/></div>
+        <h2 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:T.sage,letterSpacing:"-0.4px",margin:"0 0 8px"}}>Password updated</h2>
+        <p style={{fontFamily:F2,fontSize:13,color:T.stone,lineHeight:1.6,margin:0}}>You're signed in. Welcome back to Wello.</p>
+      </div>
+    </ModalShell>
+  );
+
+  const heading = mode==="signin" ? "Sign in"
+    : mode==="signup" ? "Create your account"
+    : mode==="magic"  ? "Email me a magic link"
+    : mode==="forgot" ? "Reset your password"
+    : mode==="set_password" ? "Set a new password"
+    : "Sign in";
+  const subhead = mode==="signin" ? "Welcome back."
+    : mode==="signup" ? "Wello members buy credits and book wellness across Mallorca."
+    : mode==="magic"  ? "We'll send a one-tap sign-in link."
+    : mode==="forgot" ? "Enter your email and we'll send a reset link."
+    : mode==="set_password" ? "Choose a new password for your account."
+    : "";
+  // The primary button label varies per mode.
+  const primaryLabel = mode==="signin" ? "Sign in →"
+    : mode==="signup" ? "Create account →"
+    : mode==="magic"  ? "Send magic link →"
+    : mode==="forgot" ? "Send reset link →"
+    : mode==="set_password" ? "Set password →"
+    : "Sign in →";
+  const primaryAction = mode==="signin" ? doSignIn
+    : mode==="signup" ? doSignUp
+    : mode==="magic"  ? doMagic
+    : mode==="forgot" ? doForgot
+    : mode==="set_password" ? doSetPassword
+    : doSignIn;
+  // Email input shown for everything except set_password (already authenticated by then).
+  const showEmail    = mode !== "set_password";
+  // Password input shown when we need a password (signin / signup / set_password).
+  const showPassword = mode==="signin" || mode==="signup" || mode==="set_password";
+  const primaryDisabled = busy
+    || (showEmail && !email.trim())
+    || (mode==="signup" && (!fullName.trim() || password.length<8))
+    || (mode==="signin" && !password)
+    || (mode==="set_password" && password.length<8);
+
   return (
     <ModalShell onClose={onClose}>
       <div style={{padding:"28px 28px 24px"}}>
         <div style={{fontFamily:F2,fontSize:22,fontWeight:800,color:T.sage,letterSpacing:"-0.8px",marginBottom:4}}>wello</div>
-        <h2 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:T.ink,letterSpacing:"-0.4px",margin:"0 0 4px"}}>
-          {mode==="signin" ? "Sign in" : mode==="signup" ? "Create your account" : "Email me a magic link"}
-        </h2>
-        <p style={{fontFamily:F2,fontSize:12,color:T.stone,fontWeight:400,margin:"0 0 22px"}}>
-          {mode==="signin" ? "Welcome back." : mode==="signup" ? "Wello members buy credits and book wellness across Mallorca." : "We'll send a one-tap sign-in link."}
-        </p>
+        <h2 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:T.ink,letterSpacing:"-0.4px",margin:"0 0 4px"}}>{heading}</h2>
+        <p style={{fontFamily:F2,fontSize:12,color:T.stone,fontWeight:400,margin:"0 0 22px"}}>{subhead}</p>
 
         <div style={{display:"flex",flexDirection:"column",gap:12}}>
           {mode==="signup" && (
@@ -446,59 +545,65 @@ function AuthModal({ initialMode = "signin", onClose, onSuccess }) {
             </div>
           )}
 
-          <div>
-            <label style={{fontFamily:F2,fontSize:9,letterSpacing:"1.5px",textTransform:"uppercase",color:T.stone,display:"block",marginBottom:5}}>Email address</label>
-            <input type="email" value={email} onChange={e=>{setEmail(e.target.value);clearErr();}} placeholder="you@email.com"
-              style={{...INP3, borderColor: err ? T.clay : T.border}} onFocus={onF} onBlur={onB}/>
-          </div>
-
-          {mode !== "magic" && (
+          {showEmail && (
             <div>
-              <label style={{fontFamily:F2,fontSize:9,letterSpacing:"1.5px",textTransform:"uppercase",color:T.stone,display:"block",marginBottom:5}}>Password</label>
-              <input type="password" value={password} onChange={e=>{setPassword(e.target.value);clearErr();}}
-                placeholder={mode==="signup" ? "At least 8 characters" : "••••••••"}
+              <label style={{fontFamily:F2,fontSize:9,letterSpacing:"1.5px",textTransform:"uppercase",color:T.stone,display:"block",marginBottom:5}}>Email address</label>
+              <input type="email" value={email} onChange={e=>{setEmail(e.target.value);clearErr();}} placeholder="you@email.com"
                 style={{...INP3, borderColor: err ? T.clay : T.border}} onFocus={onF} onBlur={onB}
-                onKeyDown={e=>{ if(e.key==="Enter") mode==="signin" ? doSignIn() : doSignUp(); }}/>
+                onKeyDown={e=>{ if(e.key==="Enter" && mode==="forgot") doForgot(); }}/>
+            </div>
+          )}
+
+          {showPassword && (
+            <div>
+              <label style={{fontFamily:F2,fontSize:9,letterSpacing:"1.5px",textTransform:"uppercase",color:T.stone,display:"block",marginBottom:5}}>
+                {mode==="set_password" ? "New password" : "Password"}
+              </label>
+              <input type="password" value={password} onChange={e=>{setPassword(e.target.value);clearErr();}}
+                placeholder={mode==="signup" || mode==="set_password" ? "At least 8 characters" : "••••••••"}
+                style={{...INP3, borderColor: err ? T.clay : T.border}} onFocus={onF} onBlur={onB}
+                onKeyDown={e=>{ if(e.key==="Enter") primaryAction(); }}/>
             </div>
           )}
 
           {err && <div style={{fontFamily:F2,fontSize:11,color:T.clay}}>{err}</div>}
 
-          <button
-            onClick={mode==="signin" ? doSignIn : mode==="signup" ? doSignUp : doMagic}
-            disabled={busy || !email.trim() || (mode==="signup" && (!fullName.trim() || password.length<8)) || (mode==="signin" && !password)}
-            style={{
-              padding:"12px",
-              background: busy ? T.border : T.sage,
-              color: busy ? T.stone : "#fff",
-              border:"none", borderRadius:4, fontFamily:F2, fontSize:13, fontWeight:700,
-              cursor: busy ? "not-allowed" : "pointer", marginTop:4, letterSpacing:"0.2px",
-            }}>
-            {busy ? "Please wait…"
-              : mode==="signin" ? "Sign in →"
-              : mode==="signup" ? "Create account →"
-              : "Send magic link →"}
+          <button onClick={primaryAction} disabled={primaryDisabled}
+            style={{padding:"12px",background:busy?T.border:T.sage,color:busy?T.stone:"#fff",border:"none",borderRadius:4,fontFamily:F2,fontSize:13,fontWeight:700,cursor:busy?"not-allowed":"pointer",marginTop:4,letterSpacing:"0.2px"}}>
+            {busy ? "Please wait…" : primaryLabel}
           </button>
 
           {mode==="signin" && (
-            <button onClick={()=>{setMode("magic");setErr("");}} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",padding:"4px 0",marginTop:2}}>
-              Or email me a magic link
-            </button>
+            <>
+              <button onClick={()=>{setMode("forgot");setErr("");}} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",padding:"4px 0",marginTop:2,textAlign:"left"}}>
+                Forgot password?
+              </button>
+              <button onClick={()=>{setMode("magic");setErr("");}} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",padding:"4px 0",textAlign:"left"}}>
+                Or email me a magic link
+              </button>
+            </>
           )}
           {mode==="magic" && (
             <button onClick={()=>{setMode("signin");setErr("");}} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",padding:"4px 0",marginTop:2}}>
               ← Back to password sign-in
             </button>
           )}
+          {mode==="forgot" && (
+            <button onClick={()=>{setMode("signin");setErr("");}} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",padding:"4px 0",marginTop:2}}>
+              ← Back to sign-in
+            </button>
+          )}
         </div>
 
-        {/* Mode switch footer */}
-        <div style={{marginTop:18,paddingTop:14,borderTop:`1px solid ${T.border}`,textAlign:"center"}}>
-          {mode==="signup"
-            ? <span style={{fontFamily:F2,fontSize:12,color:T.stone}}>Already a member? <button onClick={()=>{setMode("signin");setErr("");}} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",padding:0}}>Sign in</button></span>
-            : <span style={{fontFamily:F2,fontSize:12,color:T.stone}}>New to Wello? <button onClick={()=>{setMode("signup");setErr("");}} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",padding:0}}>Create your account</button></span>
-          }
-        </div>
+        {/* Mode switch footer — hidden during set_password since the user is already signed in via the recovery link */}
+        {mode !== "set_password" && (
+          <div style={{marginTop:18,paddingTop:14,borderTop:`1px solid ${T.border}`,textAlign:"center"}}>
+            {mode==="signup"
+              ? <span style={{fontFamily:F2,fontSize:12,color:T.stone}}>Already a member? <button onClick={()=>{setMode("signin");setErr("");}} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",padding:0}}>Sign in</button></span>
+              : <span style={{fontFamily:F2,fontSize:12,color:T.stone}}>New to Wello? <button onClick={()=>{setMode("signup");setErr("");}} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",padding:0}}>Create your account</button></span>
+            }
+          </div>
+        )}
       </div>
     </ModalShell>
   );
@@ -939,7 +1044,7 @@ function BizPanel({ biz, onClose, onBook }) {
           <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(27,28,25,0.88) 0%,rgba(27,28,25,0.05) 55%)"}}/>
           <button onClick={onClose} aria-label="Close" style={{position:"absolute",top:12,right:12,zIndex:10,background:"rgba(255,255,255,0.95)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",border:"1px solid rgba(195,200,188,0.4)",color:"#1B1C19",width:40,height:40,borderRadius:"50%",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,boxShadow:"0 4px 12px rgba(0,0,0,0.18)"}}>×</button>
           {sys&&<div style={{position:"absolute",top:14,left:14,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(8px)",borderRadius:999,padding:"4px 10px",display:"flex",alignItems:"center",gap:5}}>
-            <span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
+            <span style={{width:6,height:6,borderRadius:"50%",background:"#A3B18A",display:"inline-block"}}/>
             <span style={{fontFamily:F2,fontSize:10,color:"#fff",fontWeight:500}}>Live · {sys}</span>
           </div>}
           <div style={{position:"absolute",bottom:16,left:20,right:20}}>
@@ -1100,7 +1205,7 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave, compact = false }) 
         </button>
         {syncing&&(
           <div style={{position:"absolute",bottom:10,left:10,display:"flex",alignItems:"center",gap:4,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(6px)",borderRadius:999,padding:"3px 8px"}}>
-            <span style={{width:5,height:5,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
+            <span style={{width:5,height:5,borderRadius:"50%",background:"#A3B18A",display:"inline-block"}}/>
             <span style={{fontFamily:F2,fontSize:9,color:"#fff",fontWeight:500}}>Live</span>
           </div>
         )}
@@ -2046,6 +2151,29 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
   const [editingInterests, setEditingInterests] = useState(false);
   const [savingInterests, setSavingInterests] = useState(false);
 
+  // Account Details form — hydrated from the profile prop and the auth user.
+  // Email is read-only here because changing it goes through Supabase auth.
+  const [acctForm, setAcctForm] = useState({ full_name: "", phone: "" });
+  const [acctSaving, setAcctSaving] = useState(false);
+  const [acctMsg, setAcctMsg] = useState(""); // "" | "saved" | "error"
+  useEffect(() => {
+    setAcctForm({
+      full_name: profile?.full_name || authSession?.user?.user_metadata?.full_name || "",
+      phone:     profile?.phone     || "",
+    });
+  }, [profile?.full_name, profile?.phone, authSession?.user?.user_metadata?.full_name]);
+  async function saveAccount() {
+    if (!authSession?.user?.id) return;
+    setAcctSaving(true); setAcctMsg("");
+    const { error } = await supabase.from('profiles').update({
+      full_name: acctForm.full_name.trim() || null,
+      phone:     acctForm.phone.trim()     || null,
+    }).eq('id', authSession.user.id);
+    setAcctSaving(false);
+    setAcctMsg(error ? "error" : "saved");
+    setTimeout(() => setAcctMsg(""), 2600);
+  }
+
   // Source-of-truth bookings: Supabase rows for signed-in members; in-memory
   // prop for the anonymous demo state (used only when this page is reached
   // without auth, which we now redirect away from below).
@@ -2221,21 +2349,47 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
           </div>
         )}
 
-        {/* Settings */}
+        {/* Settings — two-column grid on desktop so cards aren't squeezed into a thin left rail. */}
         {tab==="settings"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:520}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,320px),1fr))",gap:16,alignItems:"start"}}>
             {[{title:"Account Details",content:(
               <div style={{padding:"20px"}}>
-                <div style={{display:"flex",flexDirection:"column",gap:14,marginBottom:16}}>
-                  {[{l:"Full Name",v:"Jane Smith"},{l:"Email",v:"jane@example.com"},{l:"Location",v:"Mallorca"}].map(f=>(
-                    <div key={f.l}>
-                      <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:6}}>{f.l}</label>
-                      <input defaultValue={f.v} style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"12px 16px",fontFamily:F2,fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s"}}
-                        onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
-                    </div>
-                  ))}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,200px),1fr))",gap:14,marginBottom:16}}>
+                  <div>
+                    <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:6}}>Full name</label>
+                    <input value={acctForm.full_name} onChange={e=>setAcctForm(f=>({...f,full_name:e.target.value}))} placeholder="Your name"
+                      style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"12px 16px",fontFamily:F2,fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s"}}
+                      onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  </div>
+                  <div>
+                    <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:6}}>Phone</label>
+                    <input value={acctForm.phone} onChange={e=>setAcctForm(f=>({...f,phone:e.target.value}))} placeholder="+34 ..." type="tel"
+                      style={{width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"12px 16px",fontFamily:F2,fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s"}}
+                      onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  </div>
                 </div>
-                <button style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"10px 24px",fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer"}}>Save changes</button>
+                <div style={{marginBottom:16}}>
+                  <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:6}}>Email</label>
+                  <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                    <input value={authSession?.user?.email || ""} readOnly
+                      style={{flex:"1 1 220px",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"12px 16px",fontFamily:F2,fontSize:14,color:"#54584F",outline:"none",boxSizing:"border-box",background:"#F5F3EE",cursor:"not-allowed"}}/>
+                    <span style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>Contact us to change your sign-in email.</span>
+                  </div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                  <button onClick={saveAccount} disabled={acctSaving}
+                    style={{background:acctSaving?"#E4E2DD":"#213C18",color:acctSaving?"#54584F":"#fff",border:"none",borderRadius:999,padding:"10px 24px",fontFamily:F2,fontSize:13,fontWeight:700,cursor:acctSaving?"not-allowed":"pointer"}}>
+                    {acctSaving ? "Saving" : "Save changes"}
+                  </button>
+                  {acctMsg === "saved" && (
+                    <span style={{display:"inline-flex",alignItems:"center",gap:6,fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600}}>
+                      <Check size={14} stroke="#213C18" strokeWidth={2.6}/> Saved.
+                    </span>
+                  )}
+                  {acctMsg === "error" && (
+                    <span style={{fontFamily:F2,fontSize:12,color:"#C46A4D",fontWeight:600}}>Couldn't save. Please try again.</span>
+                  )}
+                </div>
               </div>
             )},{title:"Account Type",content:(
               <div style={{padding:"20px"}}>
@@ -3767,12 +3921,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const stats = isPreview ? [
     {label:"Bookings this month",value:"24",   sub:"April 2026",       accent:"#CAECBA"},
     {label:"Credits redeemed",   value:"◈ 86", sub:"this month",       accent:"rgba(255,255,255,0.25)"},
-    {label:"Payout due",         value:"€619", sub:"paid this Friday", accent:"#4ade80"},
+    {label:"Payout due",         value:"€619", sub:"paid this Friday", accent:"#A3B18A"},
     {label:"Avg rating",         value:"4.9",  sub:"38 reviews",       accent:"#D6B47C"},
   ] : [
     {label:"Bookings this month",value:String(monthlyBookings),       sub:monthLabel,                                                accent:"#CAECBA"},
     {label:"Credits redeemed",   value:"◈ "+monthlyCredits,           sub:"this month",                                              accent:"rgba(255,255,255,0.25)"},
-    {label:"Payout due",         value:payoutAmt,                     sub:monthlyCredits>0?"paid this Friday":"no payout yet",       accent:"#4ade80"},
+    {label:"Payout due",         value:payoutAmt,                     sub:monthlyCredits>0?"paid this Friday":"no payout yet",       accent:"#A3B18A"},
     {label:"Avg rating",         value:bizData.rating?String(bizData.rating):"—", sub:bizData.reviews?`${bizData.reviews} reviews`:"no reviews yet", accent:"#D6B47C"},
   ];
   const overviewCards = isPreview ? [
@@ -3804,7 +3958,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               <span style={{fontFamily:F2,fontSize:9,color:"rgba(255,255,255,0.4)",letterSpacing:"1.5px",textTransform:"uppercase",marginRight:4}}>Venues</span>
               {venues.map(v => {
                 const active = v.id === activeVenueId;
-                const dot = v.status === 'approved' ? '#4ade80'
+                const dot = v.status === 'approved' ? '#A3B18A'
                           : v.status === 'submitted' ? '#D6B47C'
                           : v.status === 'setting_up' ? '#FFB07A'
                           : 'rgba(255,255,255,0.4)';
@@ -3836,7 +3990,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               </div>
               <h1 style={{fontFamily:F2,fontSize:24,fontWeight:700,color:"#fff",letterSpacing:"-0.5px",margin:"0 0 6px"}}>{bizData.name}</h1>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
+                <span style={{width:6,height:6,borderRadius:"50%",background:"#A3B18A",display:"inline-block"}}/>
                 <span style={{fontFamily:F2,fontSize:11,color:"rgba(255,255,255,0.6)"}}>Live on marketplace</span>
               </div>
             </div>
@@ -3901,7 +4055,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 </div>
                 {upcomingBookings && upcomingBookings.length > 0 && (
                   <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 11px",borderRadius:999,background:"#CAECBA",border:"1px solid #A3B18A",fontFamily:F2,fontSize:11,fontWeight:600,color:"#213C18"}}>
-                    <span style={{width:7,height:7,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
+                    <span style={{width:7,height:7,borderRadius:"50%",background:"#A3B18A",display:"inline-block"}}/>
                     Confirmed
                   </span>
                 )}
@@ -4387,7 +4541,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 miss after pressing Save. */}
             {saveMsg.kind === "settings" && (
               <div style={{padding:"12px 16px",background:"#CAECBA",border:"1px solid #A3B18A",borderRadius:8,marginBottom:18,display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:18,lineHeight:1}}>✓</span>
+                <Check size={18} stroke="#213C18" strokeWidth={2.6}/>
                 <p style={{fontFamily:F2,fontSize:13,color:"#213C18",fontWeight:600,margin:0}}>{saveMsg.text}</p>
               </div>
             )}
@@ -4412,7 +4566,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 </div>
                 {dbSlots && dbSlots.length > 0 && (
                   <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 11px",borderRadius:999,background:"#CAECBA",border:"1px solid #A3B18A",fontFamily:F2,fontSize:11,fontWeight:600,color:"#213C18"}}>
-                    <span style={{width:7,height:7,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
+                    <span style={{width:7,height:7,borderRadius:"50%",background:"#A3B18A",display:"inline-block"}}/>
                     Live
                   </span>
                 )}
@@ -4646,11 +4800,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                 return (
                                   <div key={cr} onClick={()=>setNewSlot(s=>({...s,credits:cr}))}
                                     style={{borderRadius:10,border:sel?"2px solid #213C18":"1px solid rgba(195,200,188,0.5)",background:sel?"#213C18":"#fff",cursor:"pointer",padding:"12px 10px",textAlign:"center",transition:"all .15s",position:"relative"}}>
-                                    {isLower&&<div style={{position:"absolute",top:-8,left:"50%",transform:"translateX(-50%)",background:"#4ade80",color:"#1B1C19",fontFamily:F2,fontSize:7,fontWeight:700,letterSpacing:"0.5px",padding:"2px 8px",borderRadius:999,whiteSpace:"nowrap"}}>RECOMMENDED</div>}
+                                    {isLower&&<div style={{position:"absolute",top:-8,left:"50%",transform:"translateX(-50%)",background:"#A3B18A",color:"#1B1C19",fontFamily:F2,fontSize:7,fontWeight:700,letterSpacing:"0.5px",padding:"2px 8px",borderRadius:999,whiteSpace:"nowrap"}}>RECOMMENDED</div>}
                                     <p style={{fontFamily:F2,fontSize:20,fontWeight:800,color:sel?"#fff":"#213C18",margin:"4px 0 2px",letterSpacing:"-0.5px"}}>◈ {cr}</p>
                                     <p style={{fontFamily:F2,fontSize:10,color:sel?"rgba(255,255,255,0.65)":"#54584F",margin:"0 0 8px"}}>{valueNote}</p>
                                     <div style={{height:3,borderRadius:999,background:sel?"rgba(255,255,255,0.2)":"#E4E2DD",overflow:"hidden",margin:"0 0 5px"}}>
-                                      <div style={{width:`${demand}%`,height:"100%",background:sel?"rgba(255,255,255,0.7)":isLower?"#4ade80":"#A3B18A",borderRadius:999}}/>
+                                      <div style={{width:`${demand}%`,height:"100%",background:sel?"rgba(255,255,255,0.7)":isLower?"#A3B18A":"#A3B18A",borderRadius:999}}/>
                                     </div>
                                     <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:sel?"rgba(255,255,255,0.8)":isLower?"#213C18":"#54584F",margin:0}}>{demand}% fill rate</p>
                                     <p style={{fontFamily:F2,fontSize:8,color:sel?"rgba(255,255,255,0.5)":"#A3B18A",margin:"2px 0 0"}}>{rounded} · platform avg</p>
@@ -7313,7 +7467,7 @@ function BusinessPortal({ onSetView }) {
               <span style={{fontFamily:F.body,fontSize:9,color:"rgba(255,255,255,0.4)",letterSpacing:"1.5px",textTransform:"uppercase",marginRight:4}}>Venues</span>
               {venues.map(v => {
                 const active = v.id === activeVenueId;
-                const dot = v.status === 'approved' ? '#4ade80'
+                const dot = v.status === 'approved' ? '#A3B18A'
                           : v.status === 'submitted' ? '#D6B47C'
                           : v.status === 'setting_up' ? '#FFB07A'
                           : 'rgba(255,255,255,0.4)';
@@ -7329,7 +7483,7 @@ function BusinessPortal({ onSetView }) {
           </div>
         )}
         <div style={{maxWidth:520,margin:"80px auto",padding:"0 28px",textAlign:"center"}}>
-          <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:22}}>✓</div>
+          <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px"}}><Check size={26} stroke={T.sage} strokeWidth={2.5}/></div>
           <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 10px"}}>Listing submitted</h1>
           <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 24px"}}>We've received your listing for <strong style={{fontWeight:600,color:T.ink}}>{bizData?.name}</strong>. We'll review it and be in touch within 2 working days.</p>
           <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
@@ -7571,12 +7725,20 @@ export default function App() {
     const portalParam = params.get("portal") === "business";
     const customerConfirmed = params.get("confirmed") === "true";
     const creditsAdded      = params.get("credits") === "added";
+    const customerReset     = params.get("customer_reset") === "true";
 
     // Partner-specific signals: explicit ?portal=business, or Supabase invite
     // / recovery URL hashes (used only by the partner setting-up + reset flow).
     // type=signup and type=magiclink are NOT partner-specific — customers also
     // use them, so we route only on the truly partner-specific markers.
-    if (hash.includes("type=recovery") || hash.includes("type=invite")) {
+    // ?customer_reset=true wins over portal-routing: the customer-side Forgot
+    // Password flow tags its redirectTo with that flag so we open the new
+    // password modal instead of bouncing them into the partner portal.
+    if (customerReset && hash.includes("type=recovery")) {
+      // Open the AuthModal in set_password mode. The hash carries a valid
+      // session, so supabase.auth.updateUser({password}) will succeed.
+      setAuthModal({ mode: "set_password" });
+    } else if (hash.includes("type=recovery") || hash.includes("type=invite")) {
       setRecovering(true);
       setView("biz-portal");
       portalRouted.current = true;
@@ -7633,13 +7795,18 @@ export default function App() {
       // fires SIGNED_IN again on tab focus / token refresh, and we don't
       // want every refocus to snap the customer back to the portal if
       // they've navigated away to a different view since.
+      const customerResetFlag = new URLSearchParams(window.location.search).get("customer_reset") === "true";
       if(event==="PASSWORD_RECOVERY") {
-        if(h.includes("type=invite") || h.includes("type=recovery")) {
+        if (customerResetFlag) {
+          setAuthModal({ mode: "set_password" });
+        } else if(h.includes("type=invite") || h.includes("type=recovery")) {
           setRecovering(true);
           setView("biz-portal");
         }
       } else if (event === "SIGNED_IN") {
-        if (h.includes("type=invite") || h.includes("type=recovery")) {
+        if (customerResetFlag && h.includes("type=recovery")) {
+          setAuthModal({ mode: "set_password" });
+        } else if (h.includes("type=invite") || h.includes("type=recovery")) {
           setRecovering(true);
           setView("biz-portal");
         } else if (p && !portalRouted.current) {
