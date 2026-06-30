@@ -3103,18 +3103,39 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const bizData = bizDataProp || { name:"Demo Studio", cat:"Yoga", loc:"Sóller", monthlyBookings:24, monthlyCredits:86 };
   // Persist the active tab across remounts (navigate-away-and-back snaps the
   // dashboard back to overview otherwise). Stored per-tab not per-venue so a
-  // partner who likes the Schedule tab can come back to it on any venue.
+  // partner who likes the Manage tab can come back to it on any venue.
+  // Also migrates the legacy flat tab values (requests/schedule/listing) onto
+  // the new Manage sub-tab structure so partners coming back after this
+  // refactor land where they expect to.
   const [tab, setTab] = useState(() => {
     try {
       const saved = localStorage.getItem("wello_dash_tab");
       if (!saved) return "overview";
-      const allowed = ["overview","requests","schedule","payouts","listing","settings"];
-      return allowed.includes(saved) ? saved : "overview";
+      const allowed = ["overview","manage","payouts","settings"];
+      if (allowed.includes(saved)) return saved;
+      if (["requests","schedule","listing"].includes(saved)) return "manage";
+      return "overview";
     } catch { return "overview"; }
   });
   useEffect(() => {
     try { localStorage.setItem("wello_dash_tab", tab); } catch { /* non-critical */ }
   }, [tab]);
+  // Sub-tab within Manage. Defaults to Requests for private instructors
+  // (most actionable), Schedule for everyone else.
+  const [manageSubTab, setManageSubTab] = useState(() => {
+    try {
+      const saved = localStorage.getItem("wello_dash_subtab");
+      const allowed = ["requests","schedule","listing"];
+      if (saved && allowed.includes(saved)) return saved;
+      // Migrate the legacy main-tab value to a sub-tab
+      const legacy = localStorage.getItem("wello_dash_tab");
+      if (legacy && allowed.includes(legacy)) return legacy;
+    } catch { /* fall through */ }
+    return dashIsPrivate ? "requests" : "schedule";
+  });
+  useEffect(() => {
+    try { localStorage.setItem("wello_dash_subtab", manageSubTab); } catch { /* non-critical */ }
+  }, [manageSubTab]);
   const [selDay, setSelDay] = useState(0);
   const [showAddSlot, setShowAddSlot] = useState(false);
   const [newSlot, setNewSlot] = useState({name:"",time:"09:00",spots:10,credits:3,dur:"60 min"});
@@ -3160,6 +3181,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // below doesn't trip over a TDZ when it reads it on initial render.
   const dashIsPrivate = bizData?.business_type === 'private_instructor'
     || (!bizData?.business_type && bizData?.category === 'Private Instructor');
+
+  // Keep the Manage sub-tab valid when the venue type flips. Requests only
+  // exists for private instructors, so a non-private venue stuck on Requests
+  // would render an empty pane.
+  useEffect(() => {
+    if (!dashIsPrivate && manageSubTab === "requests") setManageSubTab("schedule");
+  }, [dashIsPrivate, manageSubTab]);
 
   // Private-instructor specific editable state. We hydrate from bizData on
   // mount and the dashboard's key={activeVenueId} prop ensures these reset
@@ -3624,12 +3652,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     setDbSlots(s => (s || []).filter(x => x.id !== slotId));
   }
 
-  // Private-instructor dashboards get an extra "Requests" tab for pending
-  // booking requests (where they have 48 hours to confirm or decline).
-  // Confirmed bookings appear inline in the Schedule tab (Live bookings panel).
-  const TABS = dashIsPrivate
-    ? [["overview","Overview"],["requests","Requests"],["schedule","Schedule"],["payouts","Payouts"],["listing","My Listing"],["settings","Settings"]]
-    : [["overview","Overview"],["schedule","Schedule"],["payouts","Payouts"],["listing","My Listing"],["settings","Settings"]];
+  // Manage groups Requests (private only), Schedule and My Listing so partners
+  // see one place for all day-to-day operations. Confirmed bookings still show
+  // inline on Overview in the Live bookings panel.
+  const TABS = [["overview","Overview"],["manage","Manage"],["payouts","Payouts"],["settings","Settings"]];
+  // Sub-tabs inside Manage. Private instructors get Requests; everyone has Schedule and Listing.
+  const MANAGE_SUBTABS = dashIsPrivate
+    ? [["requests","Requests"],["schedule","Schedule"],["listing","My Listing"]]
+    : [["schedule","Schedule"],["listing","My Listing"]];
 
   const WEEK_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   // Compute the current Mon→Sun week as "14 Apr"-style labels — always live so dates never go stale.
@@ -3776,7 +3806,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               </div>
             </div>
             <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>setTab("listing")} style={{padding:"8px 16px",background:"rgba(255,255,255,0.12)",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer"}}>Edit listing</button>
+              <button onClick={()=>{ setTab("manage"); setManageSubTab("listing"); }} style={{padding:"8px 16px",background:"rgba(255,255,255,0.12)",color:"#fff",border:"1px solid rgba(255,255,255,0.2)",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer"}}>Edit listing</button>
               <button onClick={onExit} style={{padding:"8px 16px",background:"transparent",color:"rgba(255,255,255,0.45)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:999,fontFamily:F2,fontSize:11,cursor:"pointer"}}>{isPreview ? "✕ Exit preview" : "Sign out →"}</button>
             </div>
           </div>
@@ -3962,8 +3992,22 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           </div>
         )}
 
+        {/* ── MANAGE sub-tab navigation ── */}
+        {tab==="manage" && (
+          <div style={{marginBottom:18,padding:4,background:"rgba(33,60,24,0.06)",border:"1px solid rgba(33,60,24,0.08)",borderRadius:14,display:"flex",gap:4,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+            {MANAGE_SUBTABS.map(([id,label])=>{
+              const active = manageSubTab===id;
+              return (
+                <button key={id} onClick={()=>setManageSubTab(id)} style={{flex:"1 1 auto",minWidth:96,padding:"10px 14px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:F2,fontSize:13,fontWeight:600,whiteSpace:"nowrap",background:active?"#213C18":"transparent",color:active?"#FBF9F4":"#213C18",transition:"background 120ms ease"}}>
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* ── REQUESTS (private instructors only) ── */}
-        {tab==="requests"&&(
+        {tab==="manage" && manageSubTab==="requests" && dashIsPrivate && (
           <div>
             <div style={{marginBottom:18}}>
               <h2 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#1B1C19",margin:"0 0 4px"}}>Pending requests</h2>
@@ -4059,7 +4103,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         )}
 
         {/* ── SCHEDULE ── */}
-        {tab==="schedule" && dashIsPrivate && (
+        {tab==="manage" && manageSubTab==="schedule" && dashIsPrivate && (
           <div>
             <div style={{marginBottom:18}}>
               <h2 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#1B1C19",margin:"0 0 4px"}}>Your weekly availability</h2>
@@ -4102,24 +4146,24 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
 
               {showAddOffering && (
                 <div style={{padding:"12px 14px",background:"#F5F3EE",borderRadius:8}}>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 110px 110px",gap:8,alignItems:"center",marginBottom:10}}>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:10}}>
                     <input value={newOff.type}
                       onChange={e=>setNewOff(p=>({...p,type:e.target.value}))}
                       onKeyDown={e=>{ if (e.key === 'Enter') commitNewOffering(); }}
                       placeholder="Class type (e.g. Yoga)"
                       autoFocus
-                      style={{...INP,marginBottom:0}}/>
+                      style={{...INP,marginBottom:0,flex:"2 1 180px",minWidth:0}}/>
                     <select value={newOff.length_min}
                       onChange={e=>setNewOff(p=>({...p,length_min:parseInt(e.target.value,10)}))}
-                      style={{...INP,marginBottom:0}}>
+                      style={{...INP,marginBottom:0,flex:"1 1 110px",minWidth:90}}>
                       {DASH_LENGTH_OPTIONS.map(m => <option key={m} value={m}>{m} min</option>)}
                     </select>
-                    <div style={{position:"relative"}}>
+                    <div style={{position:"relative",flex:"1 1 110px",minWidth:90}}>
                       <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
                       <input type="number" min="1" value={newOff.price_eur}
                         onChange={e=>setNewOff(p=>({...p,price_eur:parseInt(e.target.value,10)||0}))}
                         onKeyDown={e=>{ if (e.key === 'Enter') commitNewOffering(); }}
-                        style={{...INP,paddingLeft:22,marginBottom:0}}/>
+                        style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
                     </div>
                   </div>
                   <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
@@ -4361,7 +4405,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           </div>
         )}
 
-        {tab==="schedule" && !dashIsPrivate && (
+        {tab==="manage" && manageSubTab==="schedule" && !dashIsPrivate && (
           <div>
             {/* Day selector */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
@@ -4617,7 +4661,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         )}
 
         {/* ── MY LISTING ── */}
-        {tab==="listing"&&(
+        {tab==="manage" && manageSubTab==="listing" && (
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,300px),1fr))",gap:16,alignItems:"start"}}>
             {/* Listing preview */}
             <div style={{background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
