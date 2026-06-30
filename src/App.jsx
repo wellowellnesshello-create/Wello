@@ -2998,7 +2998,20 @@ CRITICAL: every "credits" value and "total_credits" MUST be a single positive in
 function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = true, venues = [], activeVenueId = null, onSwitchVenue, onAddVenue, addingVenue = false, onDeleteVenue, onChangeType }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   const bizData = bizDataProp || { name:"Demo Studio", cat:"Yoga", loc:"Sóller", monthlyBookings:24, monthlyCredits:86 };
-  const [tab, setTab] = useState("overview");
+  // Persist the active tab across remounts (navigate-away-and-back snaps the
+  // dashboard back to overview otherwise). Stored per-tab not per-venue so a
+  // partner who likes the Schedule tab can come back to it on any venue.
+  const [tab, setTab] = useState(() => {
+    try {
+      const saved = localStorage.getItem("wello_dash_tab");
+      if (!saved) return "overview";
+      const allowed = ["overview","requests","schedule","payouts","listing","settings"];
+      return allowed.includes(saved) ? saved : "overview";
+    } catch { return "overview"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("wello_dash_tab", tab); } catch { /* non-critical */ }
+  }, [tab]);
   const [selDay, setSelDay] = useState(0);
   const [showAddSlot, setShowAddSlot] = useState(false);
   const [newSlot, setNewSlot] = useState({name:"",time:"09:00",spots:10,credits:3,dur:"60 min"});
