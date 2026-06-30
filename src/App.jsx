@@ -1674,12 +1674,13 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
           };
           const pool = listings.filter(matchLocSearch);
 
-          // ── For You ── Personalised carousel.
-          //   Score every listing on three signals:
-          //   1. Customer's explicit interests (highest weight)
-          //   2. Saved venues + venues sharing a category with saves (mid)
-          //   3. Star rating (low — used to break ties)
-          //   Sort descending, take top 10.
+          // ── For You ── Strict personalisation.
+          //   1. If the customer has interests: only consider listings whose
+          //      category OR tags overlap an interest. No rating bleed-in.
+          //   2. Always include their saved venues + venues sharing a category
+          //      with what they've saved.
+          //   3. If neither signal yields anything, fall back to top-rated
+          //      so first-time guests still see a curated rail.
           const interestCats = new Set();
           const interestTags = new Set();
           for (const id of interests) {
@@ -1690,35 +1691,69 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
           }
           const savedListings = pool.filter(b => savedIds.includes(b.id));
           const savedCats = new Set(savedListings.map(b => b.cat));
+
+          function matchesInterest(b) {
+            if (interestCats.has(b.cat)) return true;
+            const tags = (b.tags || []).map(t => String(t).toLowerCase());
+            for (const t of tags) {
+              if (interestTags.has(t)) return true;
+              for (const it of interestTags) {
+                if (t.includes(it) || it.includes(t)) return true;
+              }
+            }
+            return false;
+          }
+
+          // Build a candidate set rather than scoring everything.
+          const candidateIds = new Set();
+          const candidates = [];
+          function addCandidate(b) {
+            if (candidateIds.has(b.id)) return;
+            candidateIds.add(b.id);
+            candidates.push(b);
+          }
+          // Tier A: saved venues themselves (always)
+          for (const b of savedListings) addCandidate(b);
+          // Tier B: interest-matching venues (only when interests are set)
+          if (interests.length > 0) {
+            for (const b of pool) {
+              if (matchesInterest(b)) addCandidate(b);
+            }
+          }
+          // Tier C: same-category as saved
+          if (savedCats.size > 0) {
+            for (const b of pool) {
+              if (savedCats.has(b.cat)) addCandidate(b);
+            }
+          }
+
+          // Score within the candidate set for ordering only.
           function scoreFor(b) {
             let s = 0;
-            if (savedIds.includes(b.id)) s += 30; // already loves it
+            if (savedIds.includes(b.id)) s += 30;
             if (interestCats.has(b.cat)) s += 15;
             if (savedCats.has(b.cat))    s += 6;
             const tags = (b.tags || []).map(t => String(t).toLowerCase());
             for (const t of tags) {
               if (interestTags.has(t)) { s += 4; break; }
-              // partial-word match for things like "sea views" matching "ocean" tag
               for (const it of interestTags) { if (t.includes(it) || it.includes(t)) { s += 2; break; } }
             }
             s += (b.rating || 0) * 0.4;
             return s;
           }
-          const scored = pool
+          let forYouItems = candidates
             .map(b => ({ b, s: scoreFor(b) }))
-            .filter(x => x.s > 0)
             .sort((a,b) => b.s - a.s)
-            .map(x => x.b);
-          let forYouItems = scored.slice(0, 10);
-          if (forYouItems.length < 3) {
-            // Fallback when there are no signals at all
-            const topRated = [...pool].sort((a,b) => (b.rating||0) - (a.rating||0));
-            const seen = new Set(forYouItems.map(b => b.id));
-            for (const b of topRated) {
-              if (seen.has(b.id)) continue;
-              forYouItems.push(b); seen.add(b.id);
-              if (forYouItems.length >= 8) break;
-            }
+            .map(x => x.b)
+            .slice(0, 10);
+
+          // No signals at all? Top-rated fallback so first-timers still see
+          // something curated. We only hit this branch when the customer
+          // has no interests AND no saves AND no saved-category siblings.
+          if (forYouItems.length === 0) {
+            forYouItems = [...pool]
+              .sort((a,b) => (b.rating||0) - (a.rating||0))
+              .slice(0, 8);
           }
 
           // ── Dynamic category sections from live data ──
