@@ -3801,35 +3801,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 )}
               </div>
 
-              {/* Live bookings */}
-              <div style={{background:"#fff",borderRadius:12,padding:"22px 24px",boxShadow:"0 1px 8px rgba(0,0,0,0.04)"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-                  <p style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:0,letterSpacing:"-0.3px"}}>Live bookings</p>
-                  <div style={{display:"flex",alignItems:"center",gap:5}}>
-                    <span style={{width:6,height:6,borderRadius:"50%",background:"#4ade80",display:"inline-block"}}/>
-                    <span style={{fontFamily:F2,fontSize:10,color:"#213C18",fontWeight:600}}>Live</span>
-                  </div>
-                </div>
-                {RECENT.length===0 ? (
-                  <div style={{padding:"40px 0",textAlign:"center"}}>
-                    <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 4px"}}>No bookings yet.</p>
-                    <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:0}}>New bookings will show up here in real time.</p>
-                  </div>
-                ) : (
-                <div style={{display:"flex",flexDirection:"column",gap:0}}>
-                  {RECENT.map((b,i)=>(
-                    <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:i<RECENT.length-1?"1px solid rgba(195,200,188,0.2)":"none"}}>
-                      <div style={{width:32,height:32,borderRadius:"50%",background:b.status==="Confirmed"?"#CAECBA":"#FADEC0",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:10,color:b.status==="Confirmed"?"#213C18":"#766149",fontWeight:700,flexShrink:0}}>{b.initials}</div>
-                      <div style={{flex:1,minWidth:0}}>
-                        <p style={{fontFamily:F2,fontSize:12,color:"#1B1C19",fontWeight:600,margin:"0 0 1px",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{b.name}</p>
-                        <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>{b.cls} · {b.when}</p>
-                      </div>
-                      <span style={{fontFamily:F2,fontSize:10,color:b.status==="Confirmed"?"#213C18":"#B8925C",fontWeight:700,flexShrink:0,background:b.status==="Confirmed"?"#CAECBA":"#FADEC0",padding:"2px 8px",borderRadius:999}}>{b.status}</span>
-                    </div>
-                  ))}
-                </div>
-                )}
-              </div>
+              {/* The old hardcoded "Live bookings" panel that lived here was
+                  removed when the real-data "Your live bookings" panel got
+                  pinned to the top of Overview. RECENT is preview-only mock
+                  data and no longer rendered. */}
             </div>
           </div>
         )}
