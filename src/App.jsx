@@ -1933,12 +1933,15 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
 // ═══════════════════════════════════════════════════════════════
 // PAGE: PROFILE
 // ═══════════════════════════════════════════════════════════════
-function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetView, isBiz, onToggleBiz, onPreviewDashboard, profile, authSession, onSignOut, onOpenSignIn, bookingsVersion = 0 }) {
+function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetView, isBiz, onToggleBiz, onPreviewDashboard, profile, authSession, onSignOut, onOpenSignIn, bookingsVersion = 0, onSaveInterests }) {
   const [tab,setTab]=useState("reservations");
   const saved=listings.filter(b=>savedIds.includes(b.id));
   const [friends]=useState(FRIENDS);
   const TABS=[["reservations","Reservations"],["saved","Saved"],["friends","Friends"],["settings","Settings"]];
   const F2="'Manrope','Jost',system-ui,sans-serif";
+  // Interests editor (Settings tab → Your preferences card)
+  const [editingInterests, setEditingInterests] = useState(false);
+  const [savingInterests, setSavingInterests] = useState(false);
 
   // Source-of-truth bookings: Supabase rows for signed-in members; in-memory
   // prop for the anonymous demo state (used only when this page is reached
@@ -2145,6 +2148,46 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                 {isBiz&&<button onClick={()=>onSetView("biz-portal")} style={{background:"#FADEC0",color:"#766149",border:"none",borderRadius:999,padding:"8px 18px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",marginRight:8}}>Manage Business →</button>}
                 {isBiz&&<button onClick={onPreviewDashboard} style={{background:"transparent",color:"#54584F",border:"1px solid rgba(195,200,188,0.6)",borderRadius:999,padding:"8px 18px",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer"}}>Preview dashboard →</button>}
               </div>
+            )},{title:"Your preferences",content:(
+              <div style={{padding:"20px"}}>
+                {(() => {
+                  const interests = Array.isArray(profile?.interests) ? profile.interests : [];
+                  if (interests.length === 0) {
+                    return (
+                      <>
+                        <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>
+                          Tell us what kind of wellness you love and we'll personalize your For You rail on Explore.
+                        </p>
+                        <button onClick={()=>setEditingInterests(true)}
+                          style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"10px 22px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                          ✦ Pick your vibes
+                        </button>
+                      </>
+                    );
+                  }
+                  return (
+                    <>
+                      <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 10px"}}>You picked</p>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+                        {interests.map(id => {
+                          const opt = INTEREST_OPTIONS.find(o => o.id === id);
+                          if (!opt) return null;
+                          return (
+                            <span key={id} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 11px",borderRadius:999,background:"rgba(33,60,24,0.08)",border:"1px solid rgba(33,60,24,0.18)",fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600}}>
+                              <span style={{fontSize:13,lineHeight:1}}>{opt.icon}</span>
+                              {opt.label}
+                            </span>
+                          );
+                        })}
+                      </div>
+                      <button onClick={()=>setEditingInterests(true)}
+                        style={{background:"transparent",color:"#213C18",border:"1px solid #213C18",borderRadius:999,padding:"8px 18px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                        Edit preferences
+                      </button>
+                    </>
+                  );
+                })()}
+              </div>
             )},{title:"Notifications",content:(
               <div style={{padding:"20px",display:"flex",flexDirection:"column",gap:14}}>
                 {["Booking confirmations","Availability reminders","Weekly recommendations","New venues nearby"].map(l=>(
@@ -2195,6 +2238,20 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
           </div>
         </div>
       </div>
+      {/* Preferences editor — opens from Settings tab → Your preferences */}
+      {editingInterests && (
+        <InterestsModal
+          initial={Array.isArray(profile?.interests) ? profile.interests : []}
+          busy={savingInterests}
+          onCancel={()=>setEditingInterests(false)}
+          onSave={async (picked) => {
+            if (!onSaveInterests) { setEditingInterests(false); return; }
+            setSavingInterests(true);
+            try { await onSaveInterests(picked); setEditingInterests(false); }
+            finally { setSavingInterests(false); }
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -2267,40 +2324,12 @@ function printInvoice({ invoiceNo, date, businessName, businessAddress, vatNo, i
 }
 
 // ═══════════════════════════════════════════════════════════════
-// PAGE: BUSINESS  (full registration + dashboard)
+// PAGE: PARTNERS  (public partner landing)
 // ═══════════════════════════════════════════════════════════════
-// ── Extracted to avoid re-mount on every keystroke ──────────────
-function RegStepBar({ regStep, steps }) {
-  return (
-    <div style={{display:"flex",alignItems:"center",gap:0,marginBottom:28,overflowX:"auto",paddingBottom:2}}>
-      {steps.map((label,i)=>{
-        const n=i+1, done=regStep>n, active=regStep===n;
-        return (
-          <div key={n} style={{display:"flex",alignItems:"center",flexShrink:0}}>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <div style={{width:22,height:22,borderRadius:"50%",background:done?T.sage:active?T.sage:T.border,color:done||active?"#fff":T.stone2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontFamily:F.body,fontWeight:600,flexShrink:0,transition:"background .2s"}}>{done?"✓":n}</div>
-              <span style={{fontFamily:F.body,fontSize:10,color:active?T.sage:done?T.stone:T.stone2,fontWeight:active?600:300,whiteSpace:"nowrap"}}>{label}</span>
-            </div>
-            {i<steps.length-1&&<div style={{width:20,height:1,background:done?T.sage:T.border,margin:"0 8px",transition:"background .2s",flexShrink:0}}/>}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function RegCard({ children, title, subtitle }) {
-  return (
-    <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,overflow:"hidden",marginBottom:14}}>
-      {title&&<div style={{padding:"12px 16px",borderBottom:`1px solid ${T.border}`,display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-        <div style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:600}}>{title}</div>
-        {subtitle&&<div style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300}}>{subtitle}</div>}
-      </div>}
-      <div style={{padding:"16px"}}>{children}</div>
-    </div>
-  );
-}
-
+// Note: a much larger legacy BUSINESS page (registration wizard + dashboard)
+// used to live here, along with the unused RegStepBar + RegCard helpers
+// that supported it. All removed when BusinessPortal + PartnerOnboarding
+// replaced that flow.
 function PartnersPage({ onSetView }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   const [openFaq, setOpenFaq] = useState(0);
@@ -2456,244 +2485,6 @@ function PartnersPage({ onSetView }) {
   );
 }
 
-function BusinessPage({ isBiz, onSetView, onToggleBiz }) {
-  // Registration wizard state
-  const [registered, setRegistered] = useState(false);
-  const [duplicate, setDuplicate] = useState(false);
-  const [regStep, setRegStep] = useState(1); // 1–5
-  const REG_STEPS = ["Your venue","Classes & photos","Availability","Calendar & integration","Payment & launch"];
-
-  // Listing form
-  const [listing, setListing] = useState({
-    name:"", category:"Yoga Studio", location:"Palma", description:"", shortDesc:"",
-    address:"", website:"", instagram:"", phone:"", email:"", notes:"",
-    creditPrice:"2", cancellationPolicy:"24h", languages:"English, Spanish",
-  });
-  const [photos, setPhotos] = useState([]); // simulated photo slots
-  const [photoAdded, setPhotoAdded] = useState(false);
-
-  // Classes / slots
-  const [classes, setClasses] = useState([
-    { id:1, name:"", type:"", duration:"60", maxSpots:"10", credits:"2", description:"" }
-  ]);
-
-  // Availability
-  const [slots, setSlots] = useState([
-    { id:1, day:"Monday", time:"09:00", recurring:true, spots:"10" }
-  ]);
-
-  // Integrations
-  const [connected, setConn] = useState({});
-  const [keys, setKeys] = useState({});
-  const [connecting, setConnecting] = useState(null);
-  const [skipIntegration, setSkipIntegration] = useState(false);
-
-  // Payment
-  const [payout, setPayout] = useState({ accountName:"", iban:"", bic:"", vatNumber:"", commissionTier:"standard", commissionAccepted:false });
-
-  // Dashboard tab (post-registration)
-  const [tab, setTab] = useState("overview");
-  const DASH_TABS = [["overview","Overview"],["listing","Listing"],["classes","Classes"],["availability","Availability"],["integrations","Integrations"],["payments","Payments"],["analytics","Analytics"]];
-
-  const INP3 = {width:"100%",padding:"9px 11px",border:`1px solid ${T.border}`,borderRadius:2,fontSize:11,fontFamily:F.body,background:T.paper,color:T.ink,outline:"none",boxSizing:"border-box",transition:"border-color .18s"};
-  const onF = e => e.target.style.borderColor = T.sage;
-  const onB = e => e.target.style.borderColor = T.border;
-
-  // ── Not a business account: gate ──────────────────────────────
-  if (!isBiz) return (
-    <div style={{maxWidth:560,margin:"0 auto",padding:"60px 28px",textAlign:"center"}}>
-      <div style={{width:72,height:72,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>🏢</div>
-      <h1 style={{fontFamily:F.display,fontSize:26,color:T.ink,fontWeight:400,margin:"0 0 10px"}}>List your business</h1>
-      <p style={{fontFamily:F.body,color:T.stone,fontSize:13,lineHeight:1.75,margin:"0 0 8px",fontWeight:300}}>Join the island's premier wellness marketplace. Reach thousands of travellers and locals looking for exactly what you offer.</p>
-      <p style={{fontFamily:F.body,color:T.stone2,fontSize:11,marginBottom:28,fontWeight:300}}>You'll need to enable a Business account first — it only takes a moment.</p>
-      <div style={{display:"flex",gap:14,justifyContent:"center",flexWrap:"wrap",marginBottom:36}}>
-        {[["◈","Credit-based, no monthly fee"],["⟳","Live sync with your booking system"],["✦","AI-powered listing optimisation"],["★","Reach 10,000+ monthly visitors"]].map(([icon,text])=>(
-          <div key={text} style={{display:"flex",alignItems:"center",gap:8,background:T.paper,border:`1px solid ${T.border}`,borderRadius:3,padding:"9px 13px",flex:"1 1 180px"}}>
-            <span style={{fontSize:14,color:T.sage,flexShrink:0}}>{icon}</span>
-            <span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.4}}>{text}</span>
-          </div>
-        ))}
-      </div>
-      <button onClick={()=>{onToggleBiz();}} style={{padding:"11px 28px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontWeight:600,cursor:"pointer",fontSize:13,letterSpacing:".4px",display:"block",width:"100%",marginBottom:10,transition:"background .15s"}} onMouseEnter={e=>e.target.style.background=T.sage2} onMouseLeave={e=>e.target.style.background=T.sage}>
-        Enable Business Account & Get Started →
-      </button>
-      <button onClick={()=>onSetView("home")} style={{background:"transparent",border:"none",color:T.stone2,fontFamily:F.body,fontSize:11,cursor:"pointer",fontWeight:300}}>← Back to home</button>
-    </div>
-  );
-
-  // Integration connect helper
-  async function connect(intg) {
-    if (!keys[intg.id]?.trim()) return;
-    setConnecting(intg.id);
-    await new Promise(r=>setTimeout(r,1400));
-    setConn(p=>({...p,[intg.id]:true}));
-    setConnecting(null);
-  }
-
-  // ── Duplicate account screen ────────────────────────────────
-  if (duplicate) {
-    return (
-      <div style={{maxWidth:560,margin:"0 auto",padding:"52px 28px 80px"}}>
-        <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:4,padding:"32px 28px",textAlign:"center"}}>
-          <div style={{width:44,height:44,borderRadius:"50%",background:T.sageXL,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px"}}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={T.sage} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-          </div>
-          <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:20,fontWeight:700,color:T.ink,margin:"0 0 10px"}}>You already have an account</h2>
-          <p style={{fontFamily:F.body,fontSize:13,color:T.stone,lineHeight:1.75,margin:"0 0 24px"}}>
-            There's already a Wello listing registered to <strong style={{color:T.ink}}>{listing.email}</strong>. Sign in to access your partner dashboard.
-          </p>
-          <button
-            onClick={()=>onSetView("biz-portal")}
-            style={{display:"inline-block",padding:"11px 24px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:13,fontWeight:600,cursor:"pointer",letterSpacing:"0.2px"}}
-          >
-            Sign in to your dashboard →
-          </button>
-          <div style={{marginTop:16}}>
-            <button onClick={()=>setDuplicate(false)} style={{background:"none",border:"none",fontFamily:F.body,fontSize:12,color:T.stone,cursor:"pointer",textDecoration:"underline"}}>
-              Use a different email
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Registration Interest Form ──────────────────────────────
-  if (!registered) {
-    const canSubmit = listing.name.trim() && listing.email.trim() && listing.phone.trim();
-
-    async function handleSubmit() {
-      // Check for existing account with this email
-      const { data: existing } = await supabase
-        .from('businesses')
-        .select('id')
-        .ilike('email', listing.email.trim())
-        .limit(1);
-      if (existing && existing.length > 0) {
-        setDuplicate(true);
-        return;
-      }
-
-      const { error } = await supabase.from('businesses').insert({
-        name: listing.name,
-        category: listing.category,
-        location: listing.location,
-        email: listing.email,
-        phone: listing.phone,
-        notes: listing.notes || '',
-        status: 'pending',
-      });
-      if (error) {
-        console.error('Registration error:', error);
-        alert('Something went wrong. Please try again or email hello@wello-wellness.com');
-        return;
-      }
-      setRegistered(true);
-    }
-
-    return (
-      <div style={{maxWidth:560,margin:"0 auto",padding:"52px 28px 80px"}}>
-
-        {/* Header */}
-        <div style={{marginBottom:32}}>
-          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
-            <button onClick={()=>onSetView("biz-portal")} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:"pointer",padding:0}}>Already a partner? Sign in →</button>
-          </div>
-          <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:26,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 12px"}}>Register your interest</h1>
-          <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:0}}>Tell us about your venue and we'll be in touch within 2 working days to discuss how Wello works and agree the right setup for you. No commitment required.</p>
-        </div>
-
-        {/* Form */}
-        <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:4,padding:"24px"}}>
-          <div style={{display:"flex",flexDirection:"column",gap:16}}>
-
-            <div>
-              <FieldLabel>Business name *</FieldLabel>
-              <input placeholder="e.g. My Wellness Studio" value={listing.name}
-                onChange={e=>setListing(p=>({...p,name:e.target.value}))}
-                style={INP3} onFocus={onF} onBlur={onB}/>
-            </div>
-
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              <div>
-                <FieldLabel>Category *</FieldLabel>
-                <select value={listing.category} onChange={e=>setListing(p=>({...p,category:e.target.value}))} style={INP3}>
-                  {CATS.filter(c=>c!=="All").map(c=><option key={c}>{c}</option>)}
-                </select>
-              </div>
-              <div>
-                <FieldLabel>Address *</FieldLabel>
-                <input placeholder="e.g. Carrer de la Rosa 12, 07001 Palma" value={listing.location}
-                  onChange={e=>setListing(p=>({...p,location:e.target.value}))}
-                  style={INP3} onFocus={onF} onBlur={onB}/>
-              </div>
-            </div>
-
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              <div>
-                <FieldLabel>Email address *</FieldLabel>
-                <input type="email" placeholder="hello@yourbusiness.com" value={listing.email}
-                  onChange={e=>setListing(p=>({...p,email:e.target.value}))}
-                  style={INP3} onFocus={onF} onBlur={onB}/>
-              </div>
-              <div>
-                <FieldLabel>Phone number *</FieldLabel>
-                <input type="tel" placeholder="+34 971 000 000" value={listing.phone}
-                  onChange={e=>setListing(p=>({...p,phone:e.target.value}))}
-                  style={INP3} onFocus={onF} onBlur={onB}/>
-              </div>
-            </div>
-
-            <div>
-              <FieldLabel>Anything else you'd like us to know? <span style={{color:T.stone2,fontWeight:300}}>(optional)</span></FieldLabel>
-              <textarea placeholder="e.g. we run 6 classes a week, have 20 spots per class, and would love help filling our quieter Monday mornings..."
-                value={listing.notes||""}
-                onChange={e=>setListing(p=>({...p,notes:e.target.value}))}
-                style={{...INP3,minHeight:90,resize:"vertical"}} onFocus={onF} onBlur={onB}/>
-            </div>
-
-            <button onClick={handleSubmit} disabled={!canSubmit}
-              style={{padding:"12px",background:canSubmit?T.sage:T.border,color:canSubmit?"#fff":T.stone,border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:canSubmit?"pointer":"not-allowed",letterSpacing:".4px",transition:"background .15s",marginTop:4}}
-              onMouseEnter={e=>{if(canSubmit)e.target.style.background=T.sage2}} onMouseLeave={e=>{if(canSubmit)e.target.style.background=T.sage}}>
-              Register interest →
-            </button>
-          </div>
-        </div>
-
-        {/* Reassurance */}
-        <div style={{marginTop:16,display:"flex",gap:16,flexWrap:"wrap"}}>
-          {["No monthly fee","No commitment","We'll be in touch within 2 working days"].map(t=>(
-            <div key={t} style={{display:"flex",alignItems:"center",gap:5}}>
-              <span style={{fontSize:10,color:T.sage}}>✓</span>
-              <span style={{fontFamily:F.body,fontSize:10,color:T.stone,fontWeight:300}}>{t}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-
-  // ── Post-registration: Confirmation ──────────────────────────
-  return (
-    <div style={{maxWidth:520,margin:"80px auto",padding:"0 28px",textAlign:"center"}}>
-      <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:24}}>✓</div>
-      <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:24,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 12px"}}>Thanks, we'll be in touch!</h1>
-      <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 6px"}}>We've received your interest for <strong style={{color:T.ink,fontWeight:600}}>{listing.name}</strong>.</p>
-      <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 28px"}}>Someone from the Wello team will be in touch within 2 working days to have a conversation about how it all works and agree the right setup for your venue.</p>
-      <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:3,padding:"16px 20px",textAlign:"left",marginBottom:24}}>
-        <div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600,marginBottom:10}}>What happens next</div>
-        {["We review your registration","We call or email to introduce Wello and walk you through how it works","You receive your onboarding details and set up your full listing","Your listing goes live on the marketplace"].map((s,i)=>(
-          <div key={i} style={{display:"flex",gap:10,marginBottom:8}}>
-            <div style={{width:18,height:18,borderRadius:"50%",background:T.sage,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:700,flexShrink:0,marginTop:1}}>{i+1}</div>
-            <span style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.5}}>{s}</span>
-          </div>
-        ))}
-      </div>
-      <p style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300}}>Questions? Email us at <span style={{color:T.sage}}>hello@wello-wellness.com</span></p>
-    </div>
-  );
-}
 
 function CreditsPage({ credits, listings=[] }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
@@ -3184,10 +2975,10 @@ CRITICAL: every "credits" value and "total_credits" MUST be a single positive in
             {reco.membership_nudge && (
               <div style={{background:"#FFF5E6",border:"1px solid #DCC2A6",borderRadius:14,padding:"16px 18px"}}>
                 <p style={{fontFamily:F2,fontSize:14,color:"#766149",margin:"0 0 10px",lineHeight:1.5,fontWeight:600}}>Sounds like you're here for a while. A monthly membership might work out better.</p>
-                <button onClick={()=>{ alert("Membership info coming soon. Drop us a line at hello@wello-wellness.com for now."); }}
-                  style={{background:"transparent",border:"1px solid #6F5B44",color:"#6F5B44",borderRadius:999,padding:"7px 16px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>
-                  Tell me more
-                </button>
+                <a href="mailto:hello@wello-wellness.com?subject=Tell%20me%20about%20Wello%20membership&body=Hi%20Wello%20team%2C%0A%0AI'd%20love%20to%20hear%20more%20about%20the%20monthly%20membership%20option.%0A%0AThanks%21"
+                  style={{display:"inline-block",background:"transparent",border:"1px solid #6F5B44",color:"#6F5B44",borderRadius:999,padding:"7px 16px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",textDecoration:"none"}}>
+                  Tell me more →
+                </a>
               </div>
             )}
 
@@ -7222,6 +7013,35 @@ export default function App() {
     if (!authSession) { setAuthModal({ mode: "signup" }); return; }
     setView("credits");
   }
+
+  // Shared interests-save handler — used by both the Explore modal and the
+  // Profile Settings tab's Edit preferences button. Persists to
+  // profiles.interests, detects the RLS silent-zero-rows case, and surfaces
+  // clear feedback toasts.
+  async function saveInterests(interests) {
+    if (!authSession?.user?.id) {
+      showToast("Please sign in to save your preferences.", "info");
+      throw new Error("not signed in");
+    }
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ interests })
+      .eq('id', authSession.user.id)
+      .select('id, interests');
+    if (error) {
+      console.error('save interests failed:', error.message);
+      showToast("Couldn't save preferences. " + error.message, "error");
+      throw error;
+    }
+    if (!data || data.length === 0) {
+      console.warn('save interests: 0 rows updated — RLS probably blocking. Add an UPDATE policy on profiles.');
+      showToast("Saved locally, but your account didn't accept the update — check your profile RLS policy.", "error");
+      setProfile(p => p ? { ...p, interests } : { id: authSession.user.id, interests });
+      return;
+    }
+    setProfile(p => p ? { ...p, interests } : { ...data[0] });
+    showToast("Preferences saved. Refreshing For You…", "success");
+  }
   async function onConfirm({biz,slot,form,cost}){
     console.log('[onConfirm] start', {
       listing_id: biz.id,
@@ -7523,37 +7343,9 @@ export default function App() {
         {/* PAGES — padded for fixed banner+nav */}
         <div style={{paddingTop:headerH}}>
           {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds} onGotoCredits={gotoCredits}/>}
-          {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds} profile={profile} authSession={authSession} onSaveInterests={async(interests)=>{
-            if(!authSession?.user?.id) {
-              showToast("Please sign in to save your preferences.","info");
-              throw new Error("not signed in");
-            }
-            // .select() so RLS-silent-zero-rows is detected (same pattern as
-            // the delete-venue bug). Without it, an update blocked by a
-            // missing UPDATE policy returns success with 0 rows affected and
-            // the partner sees no change.
-            const{data,error} = await supabase
-              .from('profiles')
-              .update({interests})
-              .eq('id',authSession.user.id)
-              .select('id, interests');
-            if(error){
-              console.error('save interests failed:',error.message);
-              showToast("Couldn't save preferences. "+error.message,"error");
-              throw error;
-            }
-            if(!data || data.length===0){
-              console.warn('save interests: 0 rows updated — RLS probably blocking. Add an UPDATE policy on profiles.');
-              showToast("Saved locally, but your account didn't accept the update — check your profile RLS policy.","error");
-              setProfile(p=>p?{...p,interests}:{id:authSession.user.id,interests});
-              return;
-            }
-            setProfile(p=>p?{...p,interests}:{...data[0]});
-            showToast("Preferences saved. Refreshing For You…","success");
-          }}/>}
-          {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion}/>}
+          {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds} profile={profile} authSession={authSession} onSaveInterests={saveInterests}/>}
+          {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion} onSaveInterests={saveInterests}/>}
           {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
-          {view==="business"   &&<BusinessPage isBiz={true} onSetView={setView} onToggleBiz={()=>setIsBiz(v=>!v)}/>}
           {view==="credits"    &&<CreditsPage credits={credits} listings={listings}/>}
           {view==="about"      &&<AboutPage onSetView={setView}/>}
           {view==="partners"   &&<PartnersPage onSetView={setView}/>}
