@@ -1441,25 +1441,32 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
     if (!q) return;
     setAiLoading(true); setAiError("");
     try {
-      // Serialize every listing as a compact tagged line. Includes coverage
-      // areas for private instructors so semantic matches like "instructor
-      // in Pollença" surface the right rows.
       const ls = listings.map(b => {
         const tags = (b.tags || []).join(",");
         const cov  = Array.isArray(b.coverage_areas) && b.coverage_areas.length ? ` covers:${b.coverage_areas.join(",")}` : "";
         return `ID:${b.id} "${b.name}" ${b.cat} ${b.loc}${cov} €${b.cr}${tags ? ` tags:${tags}` : ""}`;
       }).join("\n");
       const r = await aiJSON(
-        `You are a Wello wellness search. Interpret the user's intent loosely — return UP TO 8 listings that capture similar mood, activity, vibe, or location. Do NOT require exact word matches. Return ONLY JSON: {"ids":[<listing-ids>],"explanation":"short reason max 14 words"}`,
+        `You are a generous Wello wellness search. The user describes intent in their OWN words — match loosely to similar mood, vibe, category, activity type, or location. Treat synonyms and near-matches as valid (e.g. "1-to-1" matches "Private Instructor", "ocean" matches "beachfront" tag, "morning energy" matches early-time slots or HIIT). Return AT LEAST 3 listings (8 max) if anything could plausibly fit — never return an empty list when there's any reasonable interpretation. Return ONLY JSON: {"ids":[<listing-ids>],"explanation":"short reason max 14 words"}`,
         `User query: "${q}"\nListings:\n${ls}`,
         900
       );
       if (r?.ids && Array.isArray(r.ids)) {
         const matched = listings.filter(b => r.ids.includes(b.id));
-        setAiResults(matched);
-        setAiNote(r.explanation || "");
+        if (matched.length === 0) {
+          // AI parsed but found nothing it was willing to suggest. Fall back
+          // to showing every listing so the page isn't empty, and surface a
+          // gentle note rather than a hard error.
+          setAiResults(null);
+          setAiNote("No close matches — here's everything we have. Try a different angle?");
+        } else {
+          setAiResults(matched);
+          setAiNote(r.explanation || `Showing ${matched.length} match${matched.length === 1 ? '' : 'es'}.`);
+        }
       } else {
-        setAiError("Couldn't interpret that one. Try rephrasing or browse the categories below.");
+        // Couldn't parse the AI's JSON. Treat as a soft note, not a blocker.
+        setAiResults(null);
+        setAiNote("Couldn't quite read that — try a feel like 'calm beach session' or 'energy boost morning'.");
       }
     } catch (e) {
       console.error('Explore AI search error:', e);
@@ -1572,31 +1579,10 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
         {aiError && (
           <p style={{fontFamily:F2,fontSize:12,color:"#C46A4D",margin:"10px 4px 0"}}>{aiError}</p>
         )}
-        {!aiResults && !aiLoading && !aiError && (
-          <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"8px 4px 0",fontWeight:300}}>
-            Try a feel, not just a category — Wello understands "morning energy" or "quiet practice near the sea".
-          </p>
-        )}
       </div>
 
-      {/* Private classes promo banner — keeps the new instructor-booking
-          flow front-and-center even when the partner pool is still small. */}
-      <div style={{maxWidth:1200,margin:"0 auto 18px",padding:"0 clamp(16px,4vw,32px)"}}>
-        <div onClick={()=>setActiveCat("Private Instructor")}
-          style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,padding:"clamp(14px,2.5vw,18px) clamp(16px,3vw,22px)",background:"#213C18",borderRadius:14,cursor:"pointer",position:"relative",overflow:"hidden"}}>
-          <div style={{position:"absolute",top:-30,right:-30,width:160,height:160,borderRadius:"50%",background:"rgba(214,180,124,0.12)",pointerEvents:"none"}}/>
-          <div style={{position:"relative",zIndex:1,flex:"1 1 auto",minWidth:0}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-              <span style={{fontFamily:F2,fontSize:9,fontWeight:700,color:"#213C18",background:"#D6B47C",padding:"2px 8px",borderRadius:999,letterSpacing:"1px",textTransform:"uppercase"}}>New</span>
-              <span style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#D6B47C",letterSpacing:"2px",textTransform:"uppercase"}}>Private Classes</span>
-            </div>
-            <p style={{fontFamily:F2,fontSize:"clamp(13px,2vw,16px)",fontWeight:700,color:"#fff",margin:0,letterSpacing:"-0.3px",lineHeight:1.3}}>
-              Book a private instructor who comes to you →
-            </p>
-          </div>
-          <span style={{position:"relative",zIndex:1,fontFamily:F2,fontSize:11,fontWeight:700,color:"#D6B47C",letterSpacing:"-0.2px",whiteSpace:"nowrap"}}>Browse</span>
-        </div>
-      </div>
+      {/* Compact private-classes chip pinned in the filter row carries the
+          same message — the previous fat promo banner doubled with it. */}
 
       {/* Sticky filter bar */}
       <div style={{position:"sticky",top:91,zIndex:40,background:"#FBF9F4",borderBottom:"1px solid rgba(195,200,188,0.4)",padding:"10px clamp(12px,3vw,32px)"}}>
@@ -1640,12 +1626,90 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
       {/* Grid */}
       <div style={{maxWidth:1200,margin:"24px auto 0",padding:"0 clamp(16px,4vw,32px)"}}>
         {viewMode==="grid" && activeCat==="All" && (()=>{
-          // Themed carousels — each filtered by the active location/search.
-          const matchLocSearch = b => (activeLoc==="All Mallorca"||b.loc===activeLoc) &&
-            (!search||b.name.toLowerCase().includes(search.toLowerCase())||b.loc.toLowerCase().includes(search.toLowerCase())||b.cat.toLowerCase().includes(search.toLowerCase()));
-          const sections = THEMES
-            .map(theme => ({ theme, items: listings.filter(b => theme.cats.includes(b.cat) && matchLocSearch(b)) }))
-            .filter(s => s.items.length > 0);
+          // Source of truth respects the AI search override AND the location chip.
+          const sourcePool = aiResults ?? listings;
+          const matchLocSearch = b => (
+            activeLoc === "All Mallorca"
+              || (b.cat === "Private Instructor" && Array.isArray(b.coverage_areas) && b.coverage_areas.includes(activeLoc))
+              || b.loc === activeLoc
+          );
+          const pool = sourcePool.filter(matchLocSearch);
+
+          // ── For You ── Personalised carousel built from saved venues:
+          //   - the venues the customer has already favourited
+          //   - non-favourited venues that share a category with their favourites
+          //   - if they have no favourites yet, fall back to the highest-rated
+          //     handful so the "For You" rail still has something
+          const savedListings = pool.filter(b => savedIds.includes(b.id));
+          const savedCats = [...new Set(savedListings.map(b => b.cat))];
+          const similar = pool.filter(b => savedCats.includes(b.cat) && !savedIds.includes(b.id));
+          let forYouItems = [...savedListings, ...similar];
+          if (forYouItems.length < 3) {
+            // Fallback: top-rated venues so first-time guests still see a curated rail
+            const topRated = [...pool].sort((a,b) => (b.rating||0) - (a.rating||0));
+            const seen = new Set(forYouItems.map(b => b.id));
+            for (const b of topRated) {
+              if (seen.has(b.id)) continue;
+              forYouItems.push(b); seen.add(b.id);
+              if (forYouItems.length >= 8) break;
+            }
+          }
+          forYouItems = forYouItems.slice(0, 10);
+
+          // ── Dynamic category sections from live data ──
+          // Build a section per unique active category in the pool. Order
+          // by number of venues (densest categories first). Each section
+          // contains all of that category's matching venues.
+          const catCounts = {};
+          for (const b of pool) {
+            if (!b.cat) continue;
+            catCounts[b.cat] = (catCounts[b.cat] || 0) + 1;
+          }
+          // Pre-canned per-category blurbs; fall back to a generic line
+          // for categories Wello hasn't curated copy for yet.
+          const BLURBS = {
+            "Yoga":           "Find your flow",
+            "Pilates":        "Reformer and mat",
+            "Private Instructor": "1-to-1 with a local pro",
+            "Padel":          "Court time on the island",
+            "Tennis":         "Court time on the island",
+            "Pickleball":     "Court time on the island",
+            "Pool Access":    "Resort-style days",
+            "Hotel Gym":      "Train your way",
+            "Fitness Class":  "Train your way",
+            "Surfing":        "Catch a wave",
+            "Paddle Boarding":"Glide the bay",
+            "Kayaking":       "Sea and coves",
+            "Cycling":        "Spin the island",
+            "Hiking":         "Tramuntana trails",
+            "Running":        "Path and shoreline",
+            "Meditation":     "Stillness and breath",
+          };
+          const dynamicSections = Object.entries(catCounts)
+            .sort((a,b) => b[1] - a[1])
+            .map(([cat]) => ({
+              key: cat,
+              name: catLabel(cat),
+              cat,
+              blurb: BLURBS[cat] || "Discover local picks",
+              items: pool.filter(b => b.cat === cat),
+            }));
+
+          // Final ordered rail list — For You first, then dynamic categories.
+          const sections = [];
+          if (forYouItems.length > 0) {
+            sections.push({
+              key: "__for_you",
+              name: "For You",
+              cat: null,
+              blurb: savedListings.length > 0
+                ? `Saved + similar to what you love`
+                : `Hand-picked to get you started`,
+              items: forYouItems,
+            });
+          }
+          for (const s of dynamicSections) sections.push(s);
+
           if (sections.length === 0) {
             return (
               <div style={{textAlign:"center",padding:"96px 20px"}}>
@@ -1657,15 +1721,17 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds })
           }
           return (
             <div style={{display:"flex",flexDirection:"column",gap:18}}>
-              {sections.map(({theme,items}) => (
-                <section key={theme.name}>
+              {sections.map(({key, name, cat, blurb, items}) => (
+                <section key={key}>
                   <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6,gap:12}}>
                     <div>
-                      <h2 style={{fontFamily:F2,fontSize:"clamp(15px,1.8vw,18px)",fontWeight:800,color:"#213C18",letterSpacing:"-0.5px",margin:"0 0 1px",lineHeight:1.1}}>{theme.name}</h2>
-                      <p style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:400,margin:0}}>{theme.blurb} · {items.length} {items.length===1?"venue":"venues"}</p>
+                      <h2 style={{fontFamily:F2,fontSize:"clamp(15px,1.8vw,18px)",fontWeight:800,color:"#213C18",letterSpacing:"-0.5px",margin:"0 0 1px",lineHeight:1.1}}>
+                        {key === "__for_you" ? "✦ " : ""}{name}
+                      </h2>
+                      <p style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:400,margin:0}}>{blurb} · {items.length} {items.length===1?"venue":"venues"}</p>
                     </div>
-                    {theme.cats.length===1 && (
-                      <button onClick={()=>setActiveCat(theme.cats[0])}
+                    {cat && (
+                      <button onClick={()=>setActiveCat(cat)}
                         style={{background:"transparent",border:"none",color:"#213C18",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",padding:0,whiteSpace:"nowrap"}}>
                         View all →
                       </button>
@@ -6753,6 +6819,12 @@ export default function App() {
   const [contactForm,setContactForm] = useState({name:"",email:"",message:""});
   const [contactSent,setContactSent] = useState(false);
   const [recovering,setRecovering] = useState(false);
+  // Tracks whether we've already routed the user to the partner portal via
+  // the ?portal=business URL signal. Supabase fires SIGNED_IN repeatedly
+  // (mount, token refresh, tab focus); without this ref every tab-back
+  // would snap the partner back to /business no matter where they'd
+  // navigated to in the meantime.
+  const portalRouted = useRef(false);
   const [newPw,setNewPw]       = useState("");
   const [newPwErr,setNewPwErr] = useState("");
   const [newPwDone,setNewPwDone] = useState(false);
@@ -6839,8 +6911,18 @@ export default function App() {
     if (hash.includes("type=recovery") || hash.includes("type=invite")) {
       setRecovering(true);
       setView("biz-portal");
+      portalRouted.current = true;
     } else if (portalParam) {
       setView("biz-portal");
+      portalRouted.current = true;
+      // Strip the param now that we've consumed it — otherwise the URL stays
+      // ?portal=business after the partner navigates to a different view,
+      // and any later refresh / token-refresh SIGNED_IN snaps them back.
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("portal");
+        window.history.replaceState({}, "", url.toString());
+      } catch { /* non-critical: ignore */ }
     }
 
     // Customer email-confirmation landing: clear the flag from the URL and toast.
@@ -6877,13 +6959,23 @@ export default function App() {
       if(event==="SIGNED_OUT") setAuthSession(null);
       const h = window.location.hash;
       const p = new URLSearchParams(window.location.search).get("portal") === "business";
-      if(event==="PASSWORD_RECOVERY" || event==="SIGNED_IN") {
+      // Recovery / invite hashes always force the partner-portal view because
+      // those flows are partner-specific. The plain ?portal=business URL
+      // param, however, is only honored the FIRST time we see it — Supabase
+      // fires SIGNED_IN again on tab focus / token refresh, and we don't
+      // want every refocus to snap the customer back to the portal if
+      // they've navigated away to a different view since.
+      if(event==="PASSWORD_RECOVERY") {
         if(h.includes("type=invite") || h.includes("type=recovery")) {
           setRecovering(true);
           setView("biz-portal");
-        } else if(p) {
-          // Only ?portal=business is a partner signal here. type=magiclink and
-          // type=signup belong to the customer flow and should stay on home.
+        }
+      } else if (event === "SIGNED_IN") {
+        if (h.includes("type=invite") || h.includes("type=recovery")) {
+          setRecovering(true);
+          setView("biz-portal");
+        } else if (p && !portalRouted.current) {
+          portalRouted.current = true;
           setView("biz-portal");
         }
       }
