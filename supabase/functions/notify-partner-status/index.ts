@@ -12,6 +12,8 @@ const CATEGORY_TAGS: Record<string, string[]> = {
   'Pilates':    ['Pilates', 'Fitness'],
   'Gym':        ['Gym', 'Fitness'],
   'Spa':        ['Spa', 'Wellness'],
+  'Massage':    ['Massage', 'Spa', 'Wellness'],
+  'Sound Bath': ['Sound Bath', 'Wellness'],
   'Pool':       ['Pool', 'Swimming'],
   'Surf':       ['Surf', 'Outdoor'],
   'Meditation': ['Meditation', 'Wellness'],

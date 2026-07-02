@@ -218,7 +218,7 @@ const THEMES = [
   { name: "Yoga",           cats: ["Yoga"],                                                            blurb: "Find your flow"          },
   { name: "Pilates",        cats: ["Pilates"],                                                         blurb: "Reformer and mat"        },
   { name: "Racquet sports", cats: ["Padel","Tennis","Pickleball"],                                     blurb: "Court time on the island"},
-  { name: "Pools & Spa",    cats: ["Pool Access"],                                                     blurb: "Resort-style days"       },
+  { name: "Pools & Spa",    cats: ["Pool Access","Spa","Massage","Sound Bath"],                        blurb: "Resort-style days"       },
   { name: "Gym & Fitness",  cats: ["Hotel Gym","Fitness Class"],                                       blurb: "Train your way"          },
   { name: "Outdoor",        cats: ["Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking"], blurb: "Sea and mountains"     },
   { name: "Meditation",     cats: ["Meditation"],                                                      blurb: "Stillness and breath"    },
@@ -3947,10 +3947,17 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       cr:         Number.isFinite(crNum) && crNum > 0 ? crNum : null,
       price_mode: listingForm.price_mode || 'flat',
     }).eq('id', bizData.id);
-    // Mirror cr onto the live listings row so the marketplace card updates
-    // immediately (rather than waiting for the next approval cycle).
-    if (!error && Number.isFinite(crNum) && crNum > 0) {
-      await supabase.from('listings').update({ cr: crNum }).eq('business_id', bizData.id);
+    // Mirror customer-visible fields onto the live listings row so the
+    // marketplace card + Explore filters update immediately rather than
+    // waiting for the next admin approval cycle.
+    if (!error) {
+      const listingPatch = {};
+      if (listingForm.category) listingPatch.category = listingForm.category;
+      if (listingForm.location) listingPatch.location = listingForm.location;
+      if (Number.isFinite(crNum) && crNum > 0) listingPatch.cr = crNum;
+      if (Object.keys(listingPatch).length > 0) {
+        await supabase.from('listings').update(listingPatch).eq('business_id', bizData.id);
+      }
     }
     setSaving(false);
     if (error) flashSaveMsg("err", "Couldn't save. " + error.message);
@@ -7336,6 +7343,23 @@ function BusinessPortal({ onSetView }) {
       alert(`Can't remove "${v.name || 'this venue'}" — it has ${bookingCount} active booking${bookingCount === 1 ? '' : 's'}. Cancel them first, then try again.`);
       return;
     }
+    // Explicit cascade — belt-and-braces so this works whether or not the DB
+    // has ON DELETE CASCADE set on listings.business_id and slots.listing_id.
+    // Order matters: slots refer to listings, listings refer to businesses.
+    // Any failure below just logs and continues so the businesses row still
+    // gets deleted at the end (worst case leaves an orphan listings row we
+    // can clean up with a nightly job).
+    const { data: linkedListings } = await supabase
+      .from('listings').select('id').eq('business_id', id);
+    const listingIds = (linkedListings || []).map(l => l.id);
+    if (listingIds.length > 0) {
+      const { error: slotsDelErr } = await supabase
+        .from('slots').delete().in('listing_id', listingIds);
+      if (slotsDelErr) console.warn('deleteVenue: slot cleanup failed', slotsDelErr.message);
+      const { error: listingsDelErr } = await supabase
+        .from('listings').delete().eq('business_id', id);
+      if (listingsDelErr) console.warn('deleteVenue: listing cleanup failed', listingsDelErr.message);
+    }
     // .select() so we can detect the silent-zero-rows case (RLS blocking
     // the DELETE without throwing). Without it, Supabase returns success
     // even when no rows match the policy — and the venue stays in the DB.
@@ -7344,7 +7368,7 @@ function BusinessPortal({ onSetView }) {
     if (bizErr) {
       console.error('deleteVenue error:', bizErr.message);
       const msg = /foreign key|fkey|referenced/i.test(bizErr.message)
-        ? "This venue has linked data (listings or bookings) that can't be removed yet. Make sure ON DELETE CASCADE is set on listings.business_id and slots.listing_id, and bookings.business_id is ON DELETE SET NULL."
+        ? "This venue has linked data that can't be removed yet. Check your ON DELETE CASCADE / SET NULL setup on listings, slots and bookings."
         : "Couldn't remove the venue. " + bizErr.message;
       alert(msg);
       return;
