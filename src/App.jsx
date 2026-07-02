@@ -2102,6 +2102,20 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
             "Running":        "Path and shoreline",
             "Meditation":     "Stillness and breath",
           };
+          // Every category rail uses the same scoring pass as For You. That
+          // way a saved venue floats to the top of its category rail (not
+          // just the personalized rail), and demo seeds always rank below
+          // real partners within any category. Falls back to rating + newness
+          // gracefully when no personal signals exist.
+          function sortWithinCategory(items) {
+            return items
+              .map(b => ({ b, s: scoreFor(b) }))
+              .sort((a, z) => {
+                if (z.s !== a.s) return z.s - a.s;
+                return (z.b.id || 0) - (a.b.id || 0); // newer wins ties
+              })
+              .map(x => x.b);
+          }
           const dynamicSections = Object.entries(catCounts)
             .sort((a,b) => b[1] - a[1])
             .map(([cat]) => ({
@@ -2109,7 +2123,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
               name: catLabel(cat),
               cat,
               blurb: BLURBS[cat] || "Discover local picks",
-              items: pool.filter(b => b.cat === cat),
+              items: sortWithinCategory(pool.filter(b => b.cat === cat)),
             }));
 
           // Final ordered rail list — For You first, then dynamic categories.
