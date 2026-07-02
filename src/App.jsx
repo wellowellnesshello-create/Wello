@@ -8380,7 +8380,7 @@ export default function App() {
   const fetchListings = useCallback(async ({ skipCache = false } = {}) => {
     if (!skipCache) {
       try {
-        const cached = localStorage.getItem("wello_listings");
+        const cached = localStorage.getItem("wello_listings_v2");
         if (cached) {
           setListings(JSON.parse(cached));
           setListingsLoading(false);
@@ -8399,7 +8399,7 @@ export default function App() {
       .order("id");
     if (error) {
       console.error("Error fetching listings:", error);
-      if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
+      if (!localStorage.getItem("wello_listings_v2")) setListings(LISTINGS);
     } else if (listingRows && listingRows.length > 0) {
       const transformed = listingRows.map(row => ({
         id: row.id,
@@ -8437,16 +8437,19 @@ export default function App() {
       }));
       // Ordering: real partners first, demo seeds last. Real partners are
       // anyone whose parent business email doesn't start with "demo-" (the
-      // convention used by the seed script). Within each group we sort by
-      // id ASC so the display order stays stable across refreshes.
+      // convention used by the seed script). Tiebreak by id DESC — the
+      // newest real signup rises to the top so recently-onboarded partners
+      // get prominence. If the businesses join was blocked by RLS we still
+      // end up with newest-first ordering across the board, which is a
+      // sensible fallback until the anon read policy is in place.
       const sorted = transformed.slice().sort((a, b) => {
         if (a._isDemo !== b._isDemo) return a._isDemo ? 1 : -1;
-        return (a.id || 0) - (b.id || 0);
+        return (b.id || 0) - (a.id || 0);
       });
       setListings(sorted);
-      try { localStorage.setItem("wello_listings", JSON.stringify(sorted)); } catch { /* non-critical: ignore */ }
+      try { localStorage.setItem("wello_listings_v2", JSON.stringify(sorted)); } catch { /* non-critical: ignore */ }
     } else {
-      if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
+      if (!localStorage.getItem("wello_listings_v2")) setListings(LISTINGS);
     }
     setListingsLoading(false);
   }, []);
