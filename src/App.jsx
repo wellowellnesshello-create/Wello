@@ -1062,7 +1062,12 @@ function BizPanel({ biz, onClose, onBook }) {
         {/* Hero image carousel — primary + gallery in a horizontal scroll.
             Scroll-snap makes it swipeable on mobile; prev/next arrows appear
             on hover for desktop. Dots at the bottom indicate position. */}
-        <div style={{position:"relative",height:200}}>
+        {/* aspect-ratio scales the height with modal width, so mobile stays
+            in a compact 16:9 (~200px tall) and desktop opens up to a
+            landscape 5:3 (~380px tall) where object-fit: cover no longer
+            crops the top and bottom off portrait-ish photos. Clamp above
+            keeps it from getting absurdly tall on huge screens. */}
+        <div style={{position:"relative",aspectRatio:"5 / 3",maxHeight:420}}>
           <div
             ref={photoTrackRef}
             onScroll={onPhotoScroll}
