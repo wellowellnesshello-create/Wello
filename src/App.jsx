@@ -187,6 +187,88 @@ const BUSINESS_TYPES = [
   { id:"other",             icon:"❓",   label:"Something else",       desc:"Doesn't fit the categories above — tell us more",       defaultCategory:"Yoga",        suggestedCats: CATS.filter(c=>c!=="All") },
 ];
 function businessTypeFor(typeId) { return BUSINESS_TYPES.find(t=>t.id===typeId) ?? BUSINESS_TYPES[0]; }
+
+// ─── Partner Agreement ────────────────────────────────────────────────────
+// Bump this string whenever the agreement body changes. Partners keep the
+// version they accepted on their businesses row so we can tell if they need
+// to re-accept an updated document.
+const TERMS_VERSION = 'v1.0-2026-07';
+// Body of the Wello Partner Agreement. Placeholder sections below — paste the
+// approved copy into each `body` (array of paragraphs). Schedule 1 is rendered
+// separately from live partner data and does not live in this array.
+const AGREEMENT_SECTIONS = [
+  {
+    id: '1',
+    title: 'Parties and background',
+    body: [
+      '[Paste clause 1 copy here.]',
+    ],
+  },
+  {
+    id: '2',
+    title: 'Definitions',
+    body: [
+      '[Paste clause 2 copy here.]',
+    ],
+  },
+  {
+    id: '3',
+    title: 'Wello services',
+    body: [
+      '[Paste clause 3 copy here.]',
+    ],
+  },
+  {
+    id: '4',
+    title: 'Partner obligations',
+    body: [
+      '[Paste clause 4 copy here.]',
+    ],
+  },
+  {
+    id: '5',
+    title: 'Commercial terms',
+    body: [
+      'The commercial terms of this Agreement are set out in Schedule 1 above and are individually agreed between Wello and the Partner. No standard rate applies.',
+      '[Paste any additional clause 5 copy here.]',
+    ],
+  },
+  {
+    id: '6',
+    title: 'Payment and payouts',
+    body: [
+      '[Paste clause 6 copy here.]',
+    ],
+  },
+  {
+    id: '7',
+    title: 'Term and termination',
+    body: [
+      '[Paste clause 7 copy here.]',
+    ],
+  },
+  {
+    id: '8',
+    title: 'Data protection',
+    body: [
+      '[Paste clause 8 copy here.]',
+    ],
+  },
+  {
+    id: '9',
+    title: 'Liability and indemnity',
+    body: [
+      '[Paste clause 9 copy here.]',
+    ],
+  },
+  {
+    id: '10',
+    title: 'General',
+    body: [
+      '[Paste clause 10 copy here.]',
+    ],
+  },
+];
 // Customer-facing label override. Most chips render their category name as-is,
 // but "Private Instructor" reads more naturally as "Private Classes" on the
 // explore filter. The underlying DB value stays "Private Instructor".
@@ -3752,7 +3834,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     try {
       const saved = localStorage.getItem("wello_dash_tab");
       if (!saved) return "overview";
-      const allowed = ["overview","manage","payouts","settings"];
+      const allowed = ["overview","manage","payouts","agreement","settings"];
       if (allowed.includes(saved)) return saved;
       if (["requests","schedule","listing"].includes(saved)) return "manage";
       return "overview";
@@ -4361,6 +4443,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
 
   async function goLive() {
     if (isPreview || !bizData?.id) return;
+    // Gate: partner has to accept the current Partner Agreement before we
+    // let their venue go live. Route them to the Agreement tab so they can.
+    if (!bizData?.terms_accepted_at) {
+      alert("Please review and accept the Wello Partner Agreement before submitting. You'll find it on the Agreement tab.");
+      setTab("agreement");
+      return;
+    }
     if (!confirm("Submit your listing for review? The Wello team will email you within 2 working days.")) return;
     setSaving(true);
     const { error } = await supabase.from('businesses').update({ status: 'submitted' }).eq('id', bizData.id);
@@ -4388,6 +4477,95 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     setSaving(false);
     if (error) flashSaveMsg("err", "Couldn't resume. " + error.message);
     else { setStatusLive(true); flashSaveMsg("golive", "Listing resumed. Back live on the marketplace."); }
+  }
+
+  // ─── Partner Agreement handlers ─────────────────────────────────────
+  // Derived agreement state — computed from bizData so it stays in sync.
+  const hasCommission          = bizData?.commission_rate != null && bizData?.commission_rate !== "";
+  const commissionRateNum      = Number(bizData?.commission_rate);
+  const commissionRateDisplay  = hasCommission && Number.isFinite(commissionRateNum)
+    ? (Number.isInteger(commissionRateNum) ? `${commissionRateNum}%` : `${commissionRateNum}%`)
+    : null;
+  const agreementAccepted      = !!bizData?.terms_accepted_at;
+  const acceptedCommission     = bizData?.terms_accepted_commission == null ? null : Number(bizData.terms_accepted_commission);
+  // Needs re-acceptance when the commission rate has changed since acceptance.
+  const needsReacceptance      = agreementAccepted && hasCommission && Number.isFinite(acceptedCommission)
+    && Number(commissionRateNum) !== Number(acceptedCommission);
+  const [agreementSaving, setAgreementSaving] = useState(false);
+  const [agreementChecked, setAgreementChecked] = useState(false);
+  const [agreementErr,     setAgreementErr]     = useState("");
+  async function acceptAgreement() {
+    if (isPreview || !bizData?.id) return;
+    if (!hasCommission) { setAgreementErr("Your commercial terms haven't been set yet — please wait for the Wello team to confirm your commission rate."); return; }
+    if (!agreementChecked) { setAgreementErr("Please tick the box to confirm you've read the agreement."); return; }
+    setAgreementSaving(true); setAgreementErr("");
+    const payload = {
+      terms_accepted_at:         new Date().toISOString(),
+      terms_version:             TERMS_VERSION,
+      terms_accepted_commission: commissionRateNum,
+    };
+    const { error } = await supabase.from('businesses').update(payload).eq('id', bizData.id);
+    setAgreementSaving(false);
+    if (error) { setAgreementErr("Couldn't save your acceptance. " + error.message); return; }
+    setBizData(prev => ({ ...prev, ...payload }));
+    setAgreementChecked(false);
+  }
+  function printAgreement() {
+    if (!bizData) return;
+    const win = window.open('', '_blank');
+    if (!win) return;
+    const legalName = bizData.legal_name || bizData.name || "";
+    const tradingName = bizData.name || "";
+    const businessType = bizData.business_type || bizData.category || "";
+    const address = bizData.address || "";
+    const email = bizData.email || "";
+    const phone = bizData.phone || "";
+    const foundingLine = bizData.founding_partner
+      ? `Yes${bizData.founding_incentive_bookings ? ` — no commission payable on your first ${bizData.founding_incentive_bookings} completed bookings` : ''}`
+      : 'No';
+    const coverageLine = Array.isArray(bizData.coverage_areas) && bizData.coverage_areas.length > 0
+      ? bizData.coverage_areas.join(', ')
+      : '—';
+    const acceptedAt = bizData.terms_accepted_at
+      ? new Date(bizData.terms_accepted_at).toLocaleString('en-GB', { dateStyle: 'long', timeStyle: 'short' })
+      : 'Not yet accepted';
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Wello Partner Agreement — ${tradingName}</title>
+      <style>
+        @page { margin: 20mm; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Manrope', system-ui, sans-serif; color: #1B1C19; line-height: 1.65; font-size: 13px; max-width: 720px; margin: 0 auto; padding: 24px; }
+        h1 { font-size: 22px; color: #213C18; letter-spacing: -0.5px; margin: 0 0 6px; }
+        h2 { font-size: 16px; color: #213C18; margin: 26px 0 10px; letter-spacing: -0.2px; }
+        h3 { font-size: 13px; color: #54584F; text-transform: uppercase; letter-spacing: 1.5px; margin: 20px 0 8px; }
+        p  { margin: 0 0 10px; }
+        table { width: 100%; border-collapse: collapse; margin: 6px 0 18px; }
+        td { padding: 6px 10px; font-size: 12px; border-bottom: 1px solid #E4E2DD; vertical-align: top; }
+        td.k { color: #54584F; width: 42%; }
+        .meta { color: #54584F; font-size: 11px; margin-bottom: 20px; }
+        .accepted { padding: 12px 14px; background: #F5F3EE; border: 1px solid #A3B18A; border-radius: 6px; margin: 20px 0; font-size: 12px; }
+      </style></head><body>
+      <h1>Wello Partner Agreement</h1>
+      <p class="meta">Version ${TERMS_VERSION} · Rendered ${new Date().toLocaleString('en-GB')}</p>
+      <h3>Schedule 1 — Commercial terms</h3>
+      <table>
+        <tr><td class="k">Partner legal name</td><td>${legalName}</td></tr>
+        <tr><td class="k">Trading name</td><td>${tradingName}</td></tr>
+        <tr><td class="k">Business type</td><td>${businessType}</td></tr>
+        <tr><td class="k">Address</td><td>${address}</td></tr>
+        <tr><td class="k">Email</td><td>${email}</td></tr>
+        <tr><td class="k">Phone</td><td>${phone}</td></tr>
+        <tr><td class="k">Commission rate</td><td>${commissionRateDisplay ? `${commissionRateDisplay} of the Session Value of each completed Booking (as individually agreed)` : 'To be confirmed by Wello before you go live'}</td></tr>
+        <tr><td class="k">Founding Partner</td><td>${foundingLine}</td></tr>
+        <tr><td class="k">Payout method</td><td>Stripe Connect transfer in EUR</td></tr>
+        <tr><td class="k">Payout frequency</td><td>Weekly</td></tr>
+        <tr><td class="k">Coverage areas</td><td>${coverageLine}</td></tr>
+      </table>
+      ${AGREEMENT_SECTIONS.map(s => `<h2>${s.id}. ${s.title}</h2>${s.body.map(p => `<p>${p.replace(/</g,'&lt;')}</p>`).join('')}`).join('')}
+      <div class="accepted"><strong>Accepted:</strong> ${acceptedAt}${bizData.terms_version ? ` · Version ${bizData.terms_version}` : ''}${acceptedCommission != null ? ` · Commission ${acceptedCommission}%` : ''}</div>
+    </body></html>`;
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { try { win.print(); } catch { /* ignore */ } }, 200);
   }
 
   // For Add slot: convert a 0-6 weekday index (Mon=0) to an ISO date string for THIS week.
@@ -4440,7 +4618,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // Manage groups Requests (private only), Schedule and My Listing so partners
   // see one place for all day-to-day operations. Confirmed bookings still show
   // inline on Overview in the Live bookings panel.
-  const TABS = [["overview","Overview"],["manage","Manage"],["payouts","Payouts"],["settings","Settings"]];
+  const TABS = [["overview","Overview"],["manage","Manage"],["payouts","Payouts"],["agreement","Agreement"],["settings","Settings"]];
   // Sub-tabs inside Manage. Private instructors get Requests; everyone has Schedule and Listing.
   const MANAGE_SUBTABS = dashIsPrivate
     ? [["requests","Requests"],["schedule","Schedule"],["listing","My Listing"]]
@@ -4636,6 +4814,26 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         {/* ── OVERVIEW ── */}
         {tab==="overview"&&(
           <div style={{display:"flex",flexDirection:"column",gap:20}}>
+            {/* Agreement banner — surfaces at the top of Overview when the
+                partner needs to accept or re-accept the Partner Agreement.
+                Clicking jumps them straight to the Agreement tab. */}
+            {!isPreview && (!agreementAccepted || needsReacceptance) && (
+              <div onClick={()=>setTab("agreement")}
+                style={{background:needsReacceptance?"#FFE6D9":"#F7EDD8",border:`1px solid ${needsReacceptance?"#C46A4D":"#D6B47C"}`,borderRadius:12,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",cursor:"pointer"}}>
+                <div>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:needsReacceptance?"#C46A4D":"#6F5B44",margin:"0 0 4px"}}>
+                    {needsReacceptance ? "Re-acceptance required" : "Partner agreement pending"}
+                  </p>
+                  <p style={{fontFamily:F2,fontSize:13,color:"#1B1C19",margin:0,lineHeight:1.55}}>
+                    {needsReacceptance
+                      ? "Your commission rate has changed since you last accepted. Review and re-accept the updated agreement to keep your listing live."
+                      : "Please review and accept the Wello Partner Agreement before your venue can go live."}
+                  </p>
+                </div>
+                <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",whiteSpace:"nowrap"}}>Open agreement →</span>
+              </div>
+            )}
+
             {/* Live bookings panel — confirmed sessions sorted soonest first.
                 Pinned at the top of Overview so it's the first thing partners
                 see when they open the dashboard. */}
@@ -5478,10 +5676,15 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",margin:"0 0 2px"}}>Commission rate</p>
                 <p style={{fontFamily:F2,fontSize:16,fontWeight:700,color:"#CAECBA",margin:0}}>
                   {(() => {
-                    const c = bizData?.commission;
-                    if (c === null || c === undefined || c === "") return "Agreed with Wello";
+                    // Prefer commission_rate (numeric, allows decimals). Fall
+                    // back to the older commission column so pre-migration
+                    // partners still render correctly.
+                    const c = bizData?.commission_rate != null && bizData?.commission_rate !== ""
+                      ? bizData.commission_rate
+                      : bizData?.commission;
+                    if (c === null || c === undefined || c === "") return "To be confirmed";
                     const n = Number(c);
-                    if (!Number.isFinite(n) || n < 0) return "Agreed with Wello";
+                    if (!Number.isFinite(n) || n < 0) return "To be confirmed";
                     return `${n}%`;
                   })()}
                 </p>
@@ -5674,6 +5877,111 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   <button onClick={saveCoverageAreas} disabled={saving||isPreview||coverageAreas.length===0}
                     style={{padding:"10px 22px",background:(saving||isPreview||coverageAreas.length===0)?"#E4E2DD":"#213C18",color:(saving||isPreview||coverageAreas.length===0)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview||coverageAreas.length===0)?"not-allowed":"pointer"}}>
                     {saving ? "Saving" : "Save coverage areas"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── AGREEMENT ── */}
+        {tab==="agreement"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:820}}>
+            {/* Status banner */}
+            {!hasCommission ? (
+              <div style={{background:"#F7EDD8",border:"1px solid #D6B47C",borderRadius:12,padding:"14px 18px"}}>
+                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#6F5B44",margin:"0 0 4px"}}>Pending — commercial terms</p>
+                <p style={{fontFamily:F2,fontSize:13,color:"#1B1C19",margin:0,lineHeight:1.6}}>Your commission rate will be confirmed by Wello before you go live. You can review the agreement below, but acceptance is disabled until your Schedule 1 is complete.</p>
+              </div>
+            ) : agreementAccepted && !needsReacceptance ? (
+              <div style={{background:"#CAECBA",border:"1px solid #A3B18A",borderRadius:12,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+                <div>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#213C18",margin:"0 0 4px"}}>Accepted</p>
+                  <p style={{fontFamily:F2,fontSize:13,color:"#213C18",margin:0,lineHeight:1.6}}>You accepted this agreement on <strong>{new Date(bizData.terms_accepted_at).toLocaleString('en-GB',{dateStyle:'long',timeStyle:'short'})}</strong>{bizData.terms_version ? <> (version {bizData.terms_version})</> : null}.</p>
+                </div>
+                <button onClick={printAgreement}
+                  style={{background:"#213C18",color:"#FBF9F4",border:"none",borderRadius:999,padding:"10px 20px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                  Download agreement
+                </button>
+              </div>
+            ) : needsReacceptance ? (
+              <div style={{background:"#FFE6D9",border:"1px solid #C46A4D",borderRadius:12,padding:"14px 18px"}}>
+                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#C46A4D",margin:"0 0 4px"}}>Re-acceptance required</p>
+                <p style={{fontFamily:F2,fontSize:13,color:"#1B1C19",margin:0,lineHeight:1.6}}>Your commission rate has changed since you last accepted this agreement (accepted at {acceptedCommission != null ? `${acceptedCommission}%` : "—"}, now {commissionRateDisplay}). Please review Schedule 1 below and re-accept the updated terms.</p>
+              </div>
+            ) : (
+              <div style={{background:"#F5F3EE",border:"1px solid rgba(195,200,188,0.5)",borderRadius:12,padding:"14px 18px"}}>
+                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 4px"}}>Ready to review</p>
+                <p style={{fontFamily:F2,fontSize:13,color:"#1B1C19",margin:0,lineHeight:1.6}}>Your commercial terms are set out in Schedule 1 below. Please read the full agreement, then tick the confirmation box and accept.</p>
+              </div>
+            )}
+
+            {/* Schedule 1 — live partner data */}
+            <div style={{background:"#fff",borderRadius:12,padding:"20px 22px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",margin:"0 0 4px"}}>Schedule 1</p>
+              <h2 style={{fontFamily:F2,fontSize:20,fontWeight:800,color:"#213C18",letterSpacing:"-0.4px",margin:"0 0 16px"}}>Commercial terms</h2>
+              {(() => {
+                const rows = [
+                  ["Partner legal name",    bizData?.legal_name || bizData?.name || "—"],
+                  ["Trading name",          bizData?.name || "—"],
+                  ["Business type",         bizData?.business_type || bizData?.category || "—"],
+                  ["Address",               bizData?.address || "—"],
+                  ["Email",                 bizData?.email || "—"],
+                  ["Phone",                 bizData?.phone || "—"],
+                  ["Commission rate",       hasCommission
+                    ? <span>{commissionRateDisplay} of the Session Value of each completed Booking (as individually agreed)</span>
+                    : <span style={{color:"#6F5B44"}}>Your commission rate will be confirmed by Wello before you go live</span>],
+                  ["Founding Partner",      bizData?.founding_partner ? "Yes" : "No"],
+                  ...(bizData?.founding_partner && bizData?.founding_incentive_bookings ? [["Founding incentive", `No commission payable on your first ${bizData.founding_incentive_bookings} completed bookings`]] : []),
+                  ["Payout method",         "Stripe Connect transfer in EUR"],
+                  ["Payout frequency",      "Weekly"],
+                  ...(dashIsPrivate ? [["Coverage areas",   Array.isArray(bizData?.coverage_areas) && bizData.coverage_areas.length > 0 ? bizData.coverage_areas.join(", ") : "—"]] : []),
+                ];
+                return (
+                  <div style={{display:"flex",flexDirection:"column"}}>
+                    {rows.map(([k, v], i) => (
+                      <div key={i} style={{display:"grid",gridTemplateColumns:"minmax(140px,220px) 1fr",gap:14,padding:"10px 0",borderTop:i===0?"none":"1px solid #E4E2DD"}}>
+                        <span style={{fontFamily:F2,fontSize:12,color:"#54584F"}}>{k}</span>
+                        <span style={{fontFamily:F2,fontSize:13,color:"#1B1C19",fontWeight:500,lineHeight:1.55}}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Agreement body — reads from AGREEMENT_SECTIONS constant */}
+            <div style={{background:"#fff",borderRadius:12,padding:"20px 22px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",margin:"0 0 4px"}}>Full agreement</p>
+              <h2 style={{fontFamily:F2,fontSize:20,fontWeight:800,color:"#213C18",letterSpacing:"-0.4px",margin:"0 0 16px"}}>Wello Partner Agreement</h2>
+              <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:"0 0 20px",fontWeight:600}}>Version {TERMS_VERSION}</p>
+              {AGREEMENT_SECTIONS.map(sec => (
+                <div key={sec.id} style={{marginBottom:20}}>
+                  <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 8px"}}>{sec.id}. {sec.title}</h3>
+                  {sec.body.map((para, i) => (
+                    <p key={i} style={{fontFamily:F2,fontSize:13,color:"#1B1C19",lineHeight:1.7,margin:"0 0 8px"}}>{para}</p>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            {/* Accept card — hidden once accepted and no re-acceptance needed */}
+            {!isPreview && (!agreementAccepted || needsReacceptance) && (
+              <div style={{background:"#fff",borderRadius:12,padding:"20px 22px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
+                <label style={{display:"flex",alignItems:"flex-start",gap:10,cursor:hasCommission?"pointer":"not-allowed"}}>
+                  <input type="checkbox" checked={agreementChecked} onChange={e=>setAgreementChecked(e.target.checked)} disabled={!hasCommission}
+                    style={{marginTop:3,width:16,height:16,accentColor:"#213C18",cursor:hasCommission?"pointer":"not-allowed"}}/>
+                  <span style={{fontFamily:F2,fontSize:13,color:"#1B1C19",lineHeight:1.6}}>I have read and agree to the Wello Partner Agreement including the commercial terms in Schedule 1.</span>
+                </label>
+                {agreementErr && <p style={{fontFamily:F2,fontSize:12,color:"#C46A4D",margin:"12px 0 0"}}>{agreementErr}</p>}
+                <div style={{display:"flex",gap:10,marginTop:16,flexWrap:"wrap"}}>
+                  <button onClick={acceptAgreement} disabled={!hasCommission || !agreementChecked || agreementSaving}
+                    style={{padding:"12px 24px",background:(!hasCommission||!agreementChecked||agreementSaving)?"#E4E2DD":"#213C18",color:(!hasCommission||!agreementChecked||agreementSaving)?"#54584F":"#FBF9F4",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:(!hasCommission||!agreementChecked||agreementSaving)?"not-allowed":"pointer",letterSpacing:"0.2px"}}>
+                    {agreementSaving ? "Saving" : needsReacceptance ? "Re-accept agreement" : "Accept agreement"}
+                  </button>
+                  <button onClick={printAgreement}
+                    style={{padding:"12px 20px",background:"transparent",color:"#213C18",border:"1px solid #213C18",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                    Print / preview
                   </button>
                 </div>
               </div>
