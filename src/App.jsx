@@ -3800,13 +3800,24 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const [integration, setIntegration] = useState(null);
 
   // ─── Real-data persistence (non-preview only) ───────────────────────────
-  // Listing edit form: category, location, credit price, price_mode.
+  // Listing edit form: everything customer-facing lives here now so partners
+  // have one place to change how their listing looks on the marketplace.
   const [listingForm, setListingForm] = useState({
-    category:   bizData.category || bizData.cat || "",
-    location:   bizData.location || bizData.loc || "",
-    cr:         bizData.cr != null ? String(bizData.cr) : "",
-    price_mode: bizData.price_mode || "flat",
+    category:    bizData.category || bizData.cat || "",
+    location:    bizData.location || bizData.loc || "",
+    cr:          bizData.cr != null ? String(bizData.cr) : "",
+    price_mode:  bizData.price_mode || "flat",
+    description: bizData.description || bizData.desc || "",
+    bio:         bizData.bio || "",
+    tags:        Array.isArray(bizData.tags) ? bizData.tags.join(", ") : (bizData.tags || ""),
   });
+  // Photos live separately because they need upload state to render optimistic
+  // previews (localBlobUrl → remote url) and per-slot busy flags.
+  const [primaryImg,        setPrimaryImg]        = useState(bizData.img || "");
+  const [galleryImgs,       setGalleryImgs]       = useState(Array.isArray(bizData.gallery) ? bizData.gallery.filter(Boolean) : []);
+  const [uploadingPrimary,  setUploadingPrimary]  = useState(false);
+  const [uploadingGallery,  setUploadingGallery]  = useState(false);
+  const [photoErr,          setPhotoErr]          = useState("");
   // Settings edit form: profile / contact fields.
   const [settingsForm, setSettingsForm] = useState({
     name:        bizData.name || "",
@@ -4114,19 +4125,29 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     if (isPreview || !bizData?.id) return;
     setSaving(true);
     const crNum = parseInt(listingForm.cr);
+    const tagsArr = (listingForm.tags || "")
+      .split(",").map(t => t.trim()).filter(Boolean).slice(0, 8);
     const { error } = await supabase.from('businesses').update({
-      category:   listingForm.category || null,
-      location:   listingForm.location || null,
-      cr:         Number.isFinite(crNum) && crNum > 0 ? crNum : null,
-      price_mode: listingForm.price_mode || 'flat',
+      category:    listingForm.category    || null,
+      location:    listingForm.location    || null,
+      cr:          Number.isFinite(crNum) && crNum > 0 ? crNum : null,
+      price_mode:  listingForm.price_mode  || 'flat',
+      description: listingForm.description || null,
+      bio:         listingForm.bio         || null,
+      tags:        tagsArr.length > 0 ? tagsArr : null,
+      img:         primaryImg || null,
+      gallery:     galleryImgs.length > 0 ? galleryImgs : null,
     }).eq('id', bizData.id);
     // Mirror customer-visible fields onto the live listings row so the
     // marketplace card + Explore filters update immediately rather than
     // waiting for the next admin approval cycle.
     if (!error) {
       const listingPatch = {};
-      if (listingForm.category) listingPatch.category = listingForm.category;
-      if (listingForm.location) listingPatch.location = listingForm.location;
+      if (listingForm.category)    listingPatch.category    = listingForm.category;
+      if (listingForm.location)    listingPatch.location    = listingForm.location;
+      if (listingForm.description) listingPatch.description = listingForm.description;
+      if (tagsArr.length > 0)      listingPatch.tags        = tagsArr;
+      if (primaryImg)              listingPatch.img         = primaryImg;
       if (Number.isFinite(crNum) && crNum > 0) listingPatch.cr = crNum;
       if (Object.keys(listingPatch).length > 0) {
         await supabase.from('listings').update(listingPatch).eq('business_id', bizData.id);
@@ -4135,6 +4156,66 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     setSaving(false);
     if (error) flashSaveMsg("err", "Couldn't save. " + error.message);
     else flashSaveMsg("listing", "Listing saved.");
+  }
+
+  // Photo upload helpers reused by the My Listing photo editor. Storage
+  // path convention matches the wizard so the delete-venue cleanup in
+  // deleteVenue continues to find and remove these files.
+  async function uploadPhotoFile(file, slot) {
+    if (isPreview || !bizData?.id) return { url: null, error: "Preview mode" };
+    if (!/^image\//.test(file.type)) return { url: null, error: "That's not an image file." };
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) return { url: null, error: "Not signed in." };
+    const path = `${uid}/${bizData.id}-${slot}-${Date.now()}.jpg`;
+    const { error } = await supabase.storage.from('venue-photos').upload(path, file, { contentType: file.type, upsert: true });
+    if (error) return { url: null, error: error.message };
+    const url = supabase.storage.from('venue-photos').getPublicUrl(path).data.publicUrl;
+    return { url, error: null };
+  }
+  async function handlePrimaryPhotoChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoErr(""); setUploadingPrimary(true);
+    const { url, error } = await uploadPhotoFile(file, 'primary');
+    setUploadingPrimary(false);
+    if (error) { setPhotoErr("Couldn't upload primary photo. " + error); return; }
+    setPrimaryImg(url);
+    // Persist immediately so a partner who edits then navigates away doesn't
+    // lose the upload. Also mirror to listings so Explore updates.
+    await supabase.from('businesses').update({ img: url }).eq('id', bizData.id);
+    await supabase.from('listings').update({ img: url }).eq('business_id', bizData.id);
+    setBizData(prev => ({ ...prev, img: url }));
+  }
+  async function handleAddGalleryPhoto(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (galleryImgs.length >= 4) { setPhotoErr("Up to 4 gallery photos."); return; }
+    setPhotoErr(""); setUploadingGallery(true);
+    const { url, error } = await uploadPhotoFile(file, `gallery-${galleryImgs.length}`);
+    setUploadingGallery(false);
+    if (error) { setPhotoErr("Couldn't upload gallery photo. " + error); return; }
+    const next = [...galleryImgs, url];
+    setGalleryImgs(next);
+    await supabase.from('businesses').update({ gallery: next }).eq('id', bizData.id);
+    setBizData(prev => ({ ...prev, gallery: next }));
+  }
+  async function removeGalleryPhoto(idx) {
+    const url = galleryImgs[idx];
+    const next = galleryImgs.filter((_, i) => i !== idx);
+    setGalleryImgs(next);
+    // Save the change to DB immediately so the removal persists.
+    await supabase.from('businesses').update({ gallery: next }).eq('id', bizData.id);
+    setBizData(prev => ({ ...prev, gallery: next }));
+    // Best-effort storage cleanup — don't block on failure.
+    try {
+      const marker = "/venue-photos/";
+      const idxMark = url.indexOf(marker);
+      if (idxMark >= 0) {
+        const path = url.slice(idxMark + marker.length);
+        await supabase.storage.from('venue-photos').remove([path]);
+      }
+    } catch { /* non-critical */ }
   }
 
   // Private-instructor only. Saves coverage areas to businesses and mirrors
@@ -5497,6 +5578,33 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     <option value="per_slot">Different price per slot</option>
                   </select>
                 </div>
+                <div>
+                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Description</label>
+                  <textarea value={listingForm.description}
+                    onChange={e=>setListingForm(p=>({...p,description:e.target.value.slice(0,600)}))}
+                    placeholder="What guests should know about your venue, atmosphere and style."
+                    style={{...INP,resize:"vertical",minHeight:90,fontFamily:F2}}/>
+                  <p style={{fontFamily:F2,fontSize:10,color:"#A3B18A",margin:"4px 0 0",textAlign:"right"}}>{(listingForm.description || "").length}/600</p>
+                </div>
+                {dashIsPrivate && (
+                  <div>
+                    <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Instructor bio</label>
+                    <textarea value={listingForm.bio}
+                      onChange={e=>setListingForm(p=>({...p,bio:e.target.value.slice(0,600)}))}
+                      placeholder="Your background, style and what guests can expect from a session with you."
+                      style={{...INP,resize:"vertical",minHeight:90,fontFamily:F2}}/>
+                    <p style={{fontFamily:F2,fontSize:10,color:"#A3B18A",margin:"4px 0 0",textAlign:"right"}}>{(listingForm.bio || "").length}/600</p>
+                  </div>
+                )}
+                <div>
+                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Tags</label>
+                  <input type="text" value={listingForm.tags}
+                    onChange={e=>setListingForm(p=>({...p,tags:e.target.value}))}
+                    placeholder="e.g. Luxury, Sea View, Beginner Friendly"
+                    style={{...INP}}
+                    onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  <p style={{fontFamily:F2,fontSize:10,color:"#A3B18A",margin:"4px 0 0"}}>Comma-separated, up to 8. Shown as pills on your venue popup.</p>
+                </div>
                 <button onClick={saveListing} disabled={saving||isPreview}
                   style={{padding:"12px 0",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer"}}>
                   {saving ? "Saving" : "Save changes"}
@@ -5505,6 +5613,43 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 {saveMsg.kind === "err"     && <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:0,textAlign:"center"}}>{saveMsg.text}</p>}
               </div>
             </div>
+
+            {/* Photos card — spans both columns so partners have room to
+                manage the primary hero and up to 4 gallery photos here.
+                Uploads persist immediately (no need to click Save first). */}
+            {!isPreview && (
+              <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",gridColumn:"1 / -1"}}>
+                <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Photos</h3>
+                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 16px",lineHeight:1.6}}>Your primary photo shows on the marketplace card. Add up to 4 gallery photos and guests can swipe through them on your venue popup.</p>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,180px),1fr))",gap:14}}>
+                  {/* Primary */}
+                  <label style={{position:"relative",aspectRatio:"1",borderRadius:12,overflow:"hidden",cursor:"pointer",border:"2px solid #213C18",display:"block"}}>
+                    {primaryImg
+                      ? <img src={primaryImg} alt="Primary" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
+                      : <div style={{position:"absolute",inset:0,background:"#F5F3EE",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:600}}>Add primary photo</div>
+                    }
+                    <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"6px 10px",background:"linear-gradient(to top,rgba(27,28,25,0.7),transparent)",fontFamily:F2,fontSize:10,fontWeight:700,color:"#fff",letterSpacing:"1px",textTransform:"uppercase"}}>{uploadingPrimary?"Uploading…":"Primary · click to change"}</div>
+                    <input type="file" accept="image/*" onChange={handlePrimaryPhotoChange} style={{display:"none"}} disabled={uploadingPrimary}/>
+                  </label>
+                  {/* Gallery slots */}
+                  {galleryImgs.map((url, i) => (
+                    <div key={i} style={{position:"relative",aspectRatio:"1",borderRadius:12,overflow:"hidden",border:"1px solid rgba(195,200,188,0.5)"}}>
+                      <img src={url} alt={`Gallery ${i+1}`} style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
+                      <button onClick={()=>removeGalleryPhoto(i)}
+                        style={{position:"absolute",top:6,right:6,background:"rgba(196,106,77,0.95)",border:"none",color:"#fff",width:26,height:26,borderRadius:"50%",cursor:"pointer",fontFamily:F2,fontSize:14,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>
+                    </div>
+                  ))}
+                  {/* Add gallery button */}
+                  {galleryImgs.length < 4 && (
+                    <label style={{position:"relative",aspectRatio:"1",borderRadius:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",background:"#F5F3EE",border:"1px dashed rgba(33,60,24,0.35)",fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:600,textAlign:"center",padding:12}}>
+                      {uploadingGallery ? "Uploading…" : `+ Add photo (${galleryImgs.length}/4)`}
+                      <input type="file" accept="image/*" onChange={handleAddGalleryPhoto} style={{display:"none"}} disabled={uploadingGallery}/>
+                    </label>
+                  )}
+                </div>
+                {photoErr && <p style={{fontFamily:F2,fontSize:12,color:"#C46A4D",margin:"12px 0 0"}}>{photoErr}</p>}
+              </div>
+            )}
 
             {/* Coverage areas — private instructors only. Spans both columns. */}
             {dashIsPrivate && (
