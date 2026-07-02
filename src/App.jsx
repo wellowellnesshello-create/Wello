@@ -4444,10 +4444,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   async function goLive() {
     if (isPreview || !bizData?.id) return;
     // Gate: partner has to accept the current Partner Agreement before we
-    // let their venue go live. Route them to the Agreement tab so they can.
+    // let their venue go live. Force-open the agreement modal so they can.
     if (!bizData?.terms_accepted_at) {
-      alert("Please review and accept the Wello Partner Agreement before submitting. You'll find it on the Agreement tab.");
-      setTab("agreement");
+      setShowAgreementRef(true);
       return;
     }
     if (!confirm("Submit your listing for review? The Wello team will email you within 2 working days.")) return;
@@ -4494,6 +4493,15 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const [agreementSaving, setAgreementSaving] = useState(false);
   const [agreementChecked, setAgreementChecked] = useState(false);
   const [agreementErr,     setAgreementErr]     = useState("");
+  // Blocker fires whenever an approved venue hasn't accepted the current
+  // agreement yet — modal is non-dismissible. Reference-mode is opened from
+  // Settings ("View partner agreement") and IS dismissible.
+  const [showAgreementRef, setShowAgreementRef] = useState(false);
+  const agreementBlocker = !isPreview
+    && bizData?.status === 'approved'
+    && (!agreementAccepted || needsReacceptance);
+  const agreementModalOpen = agreementBlocker || showAgreementRef;
+  const agreementCanDismiss = !agreementBlocker && agreementAccepted && !needsReacceptance;
   async function acceptAgreement() {
     if (isPreview || !bizData?.id) return;
     if (!hasCommission) { setAgreementErr("Your commercial terms haven't been set yet — please wait for the Wello team to confirm your commission rate."); return; }
@@ -4507,8 +4515,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     const { error } = await supabase.from('businesses').update(payload).eq('id', bizData.id);
     setAgreementSaving(false);
     if (error) { setAgreementErr("Couldn't save your acceptance. " + error.message); return; }
+    // Now that the agreement is accepted, activate the marketplace listing.
+    // (notify-partner-status intentionally leaves it inactive on approval
+    // until acceptance lands, so this is where the venue actually goes live.)
+    await supabase.from('listings').update({ status: 'active' }).eq('business_id', bizData.id);
     setBizData(prev => ({ ...prev, ...payload }));
     setAgreementChecked(false);
+    setShowAgreementRef(false);
   }
   function printAgreement() {
     if (!bizData) return;
@@ -4618,7 +4631,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // Manage groups Requests (private only), Schedule and My Listing so partners
   // see one place for all day-to-day operations. Confirmed bookings still show
   // inline on Overview in the Live bookings panel.
-  const TABS = [["overview","Overview"],["manage","Manage"],["payouts","Payouts"],["agreement","Agreement"],["settings","Settings"]];
+  const TABS = [["overview","Overview"],["manage","Manage"],["payouts","Payouts"],["settings","Settings"]];
   // Sub-tabs inside Manage. Private instructors get Requests; everyone has Schedule and Listing.
   const MANAGE_SUBTABS = dashIsPrivate
     ? [["requests","Requests"],["schedule","Schedule"],["listing","My Listing"]]
@@ -4818,7 +4831,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 partner needs to accept or re-accept the Partner Agreement.
                 Clicking jumps them straight to the Agreement tab. */}
             {!isPreview && (!agreementAccepted || needsReacceptance) && (
-              <div onClick={()=>setTab("agreement")}
+              <div onClick={()=>setShowAgreementRef(true)}
                 style={{background:needsReacceptance?"#FFE6D9":"#F7EDD8",border:`1px solid ${needsReacceptance?"#C46A4D":"#D6B47C"}`,borderRadius:12,padding:"14px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",cursor:"pointer"}}>
                 <div>
                   <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:needsReacceptance?"#C46A4D":"#6F5B44",margin:"0 0 4px"}}>
@@ -5884,9 +5897,16 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           </div>
         )}
 
-        {/* ── AGREEMENT ── */}
-        {tab==="agreement"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:820}}>
+        {/* ── AGREEMENT MODAL ── Blocks the dashboard when acceptance is
+             needed, or opens as a dismissible reference from Settings. */}
+        {agreementModalOpen && (
+          <div style={{position:"fixed",inset:0,zIndex:2000,background:"rgba(27,28,25,0.72)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"clamp(12px,3vw,32px)",overflowY:"auto"}}>
+          <div style={{background:"#FBF9F4",borderRadius:16,maxWidth:820,width:"100%",padding:"clamp(20px,3.5vw,32px)",boxShadow:"0 24px 60px rgba(0,0,0,0.35)",position:"relative"}}>
+          {agreementCanDismiss && (
+            <button onClick={()=>setShowAgreementRef(false)} aria-label="Close"
+              style={{position:"absolute",top:14,right:14,background:"#fff",border:"1px solid rgba(195,200,188,0.4)",width:34,height:34,borderRadius:"50%",cursor:"pointer",fontSize:18,color:"#1B1C19",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,boxShadow:"0 2px 8px rgba(0,0,0,0.08)"}}>×</button>
+          )}
+          <div style={{display:"flex",flexDirection:"column",gap:16}}>
             {/* Status banner */}
             {!hasCommission ? (
               <div style={{background:"#F7EDD8",border:"1px solid #D6B47C",borderRadius:12,padding:"14px 18px"}}>
@@ -5986,6 +6006,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 </div>
               </div>
             )}
+          </div>
+          </div>
           </div>
         )}
 
@@ -6131,6 +6153,25 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 <button onClick={onChangeType}
                   style={{padding:"8px 14px",background:"transparent",color:"#213C18",border:"1px solid #213C18",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer"}}>
                   Change listing type
+                </button>
+              </div>
+            )}
+
+            {/* Partner agreement — post-acceptance reference. Opens the
+                agreement modal in dismissible mode. */}
+            {!isPreview && (
+              <div style={{marginTop:8,background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+                <div>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 4px"}}>Partner agreement</p>
+                  <p style={{fontFamily:F2,fontSize:13,color:"#1B1C19",margin:0,lineHeight:1.55}}>
+                    {agreementAccepted
+                      ? <>Accepted on {new Date(bizData.terms_accepted_at).toLocaleDateString('en-GB',{dateStyle:'long'})} · Version {bizData.terms_version || TERMS_VERSION}</>
+                      : "Not yet accepted"}
+                  </p>
+                </div>
+                <button onClick={()=>setShowAgreementRef(true)}
+                  style={{padding:"9px 18px",background:"transparent",color:"#213C18",border:"1px solid #213C18",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                  View agreement
                 </button>
               </div>
             )}

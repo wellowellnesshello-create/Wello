@@ -175,6 +175,15 @@ serve(async (req) => {
       : (record.location ?? record.address ?? null)
 
     let listingId: number | string | null = existing?.id ?? null
+    // Agreement gate: the listing only goes live once the partner has
+    // accepted the current Partner Agreement. If terms_accepted_at is null
+    // (or the accepted commission doesn't match the current one) we create /
+    // update the row but leave it inactive. The client-side accept handler
+    // flips it to active once the partner ticks the box in the modal.
+    const acceptedCommission = record.terms_accepted_commission == null ? null : Number(record.terms_accepted_commission)
+    const currentCommission  = record.commission_rate == null ? null : Number(record.commission_rate)
+    const agreementValid = !!record.terms_accepted_at
+      && (acceptedCommission == null || currentCommission == null || acceptedCommission === currentCommission)
     const baseFields = {
       name: record.name,
       cat: record.category ?? null,
@@ -184,7 +193,7 @@ serve(async (req) => {
       cr: record.cr ?? 3,
       tags,
       coverage_areas: isPrivate ? coverageAreas : [],
-      status: 'active',
+      status: agreementValid ? 'active' : 'inactive',
     }
 
     // ── Builds the slot rows for this listing ────────────────────
