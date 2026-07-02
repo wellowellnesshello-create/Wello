@@ -188,6 +188,32 @@ const BUSINESS_TYPES = [
 ];
 function businessTypeFor(typeId) { return BUSINESS_TYPES.find(t=>t.id===typeId) ?? BUSINESS_TYPES[0]; }
 
+// ─── Cancellation policy ──────────────────────────────────────────────────
+// Windows apply to confirmed bookings only. Private-instructor sessions get
+// a longer 48-hour window because the instructor's slot is exclusively held
+// for one member. Group / venue sessions use the standard 24-hour window.
+const CANCEL_WINDOW_STANDARD_HOURS = 24;
+const CANCEL_WINDOW_PRIVATE_HOURS  = 48;
+function cancelWindowHoursFor(cat) {
+  return cat === 'Private Instructor' ? CANCEL_WINDOW_PRIVATE_HOURS : CANCEL_WINDOW_STANDARD_HOURS;
+}
+// Combines booking_date (YYYY-MM-DD) + start_time (HH:MM) into a Date.
+function sessionDateTime(dateStr, timeStr) {
+  if (!dateStr) return null;
+  const t = (timeStr || '00:00').slice(0, 5);
+  return new Date(`${dateStr}T${t}:00`);
+}
+// Whether the member can still cancel this booking under the cancellation
+// policy. Returns { canCancel: bool, hoursLeft: number, windowHours: number }.
+function cancelStatusFor(booking, cat) {
+  const windowHours = cancelWindowHoursFor(cat);
+  const sessionStart = sessionDateTime(booking?.booking_date, booking?.start_time);
+  if (!sessionStart) return { canCancel: false, hoursLeft: 0, windowHours };
+  const msLeft = sessionStart.getTime() - Date.now();
+  const hoursLeft = msLeft / (1000 * 60 * 60);
+  return { canCancel: hoursLeft >= windowHours, hoursLeft, windowHours };
+}
+
 // ─── Partner Agreement ────────────────────────────────────────────────────
 // Bump this string whenever the agreement body changes. Partners keep the
 // version they accepted on their businesses row so we can tell if they need
@@ -249,8 +275,8 @@ const AGREEMENT_SECTIONS = [
     id: '5',
     title: 'Cancellations and No-Shows',
     body: [
-      '5.1  Members may cancel a Booking through the Platform in accordance with the cancellation policy displayed at the time of booking. Where a Member cancels within the permitted window, credits are returned to the Member and no Commission or payout arises.',
-      '5.2  Where a Member fails to attend a confirmed Session without cancelling (a no-show), the Booking is treated as a Completed Booking. The Member\'s credits are deducted and the Partner is paid in full for that Booking. The Partner does not bear the cost of Member no-shows. This clause applies to confirmed Bookings only, and does not apply to private instructor requests that are automatically declined under clause 4.4, for which credits are returned to the Member.',
+      '5.1  Members may cancel a confirmed Booking through the Platform up to 24 hours before the scheduled Session start time. For private instructor Sessions, the cancellation window is 48 hours before the scheduled Session start time, reflecting that the instructor holds the slot exclusively for one Member. Cancellations made within these windows result in the Member\'s credits being returned in full, and no Commission or payout arises. Cancellations made after these windows have closed are not permitted through the Platform, and the Booking is treated as a Completed Booking under clause 5.2.',
+      '5.2  Where a Member fails to attend a confirmed Session without cancelling within the applicable window (a no-show), the Booking is treated as a Completed Booking. The Member\'s credits are deducted and the Partner is paid in full for that Booking. The Partner does not bear the cost of Member no-shows. This clause applies to confirmed Bookings only, and does not apply to private instructor requests that are automatically declined under clause 4.4, for which credits are returned to the Member.',
       '5.3  If the Partner cancels a confirmed Booking, the Member\'s credits are returned in full. Repeated Partner cancellations may result in reduced visibility on the Platform or suspension under clause 11.',
       '5.4  If the Partner needs to cancel a Session, it will give Wello and affected Members as much notice as reasonably possible through the partner portal or by contacting Wello directly.',
     ],
@@ -1087,7 +1113,15 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                   : !locationOk        ? "Add the session address to continue"
                   : isPrivateBooking   ? `Request booking · ◈ ${cost} held`
                   : `Confirm · ◈ ${cost} credits`;
+                const cancelWindow = cancelWindowHoursFor(biz.cat);
                 return (
+                  <>
+                  <div style={{background:"#F5F3EE",border:"1px solid rgba(195,200,188,0.5)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
+                    <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 3px"}}>Cancellation policy</p>
+                    <p style={{fontFamily:F2,fontSize:12,color:"#1B1C19",margin:0,lineHeight:1.55}}>
+                      Cancel up to <strong>{cancelWindow} hours before</strong> the session and your credits come back in full. Cancellations after that aren't refundable.
+                    </p>
+                  </div>
                   <button onClick={()=>{
                       if (ok) {
                         onConfirm({
@@ -1108,6 +1142,7 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                     style={{width:"100%",padding:"16px 0",borderRadius:999,background:ok?"#213C18":"#E4E2DD",color:ok?"#fff":"#54584F",border:"none",fontFamily:F2,fontSize:15,fontWeight:700,cursor:ok?"pointer":"not-allowed",transition:"all .15s",boxShadow:ok?"0 4px 14px rgba(33,60,24,0.2)":"none"}}>
                     {cta}
                   </button>
+                  </>
                 );
               })()}
             </div>
@@ -1321,6 +1356,15 @@ function BizPanel({ biz, onClose, onBook }) {
               </div>
             </div>
           )}
+
+          {/* Cancellation policy — shown before slot selection so members
+              know the refund window before they pick a session. */}
+          <div style={{background:"#F5F3EE",border:"1px solid rgba(195,200,188,0.4)",borderRadius:10,padding:"10px 14px",marginBottom:20,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <span style={{fontSize:15,lineHeight:1}}>↻</span>
+            <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.55,flex:"1 1 200px"}}>
+              Free cancellation up to <strong style={{color:"#213C18"}}>{cancelWindowHoursFor(biz.cat)} hours</strong> before the session. Credits are returned in full.
+            </p>
+          </div>
 
           {/* Calendar date pills */}
           <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>Available dates</p>
@@ -2422,7 +2466,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
 // ═══════════════════════════════════════════════════════════════
 // PAGE: PROFILE
 // ═══════════════════════════════════════════════════════════════
-function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetView, isBiz, onToggleBiz, onPreviewDashboard, profile, authSession, onSignOut, onOpenSignIn, bookingsVersion = 0, onSaveInterests, onProfilePatch }) {
+function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetView, isBiz, onToggleBiz, onPreviewDashboard, profile, authSession, onSignOut, onOpenSignIn, bookingsVersion = 0, onSaveInterests, onProfilePatch, onCancelBooking }) {
   const [tab,setTab]=useState("reservations");
   const saved=listings.filter(b=>savedIds.includes(b.id));
   const [friends]=useState(FRIENDS);
@@ -2577,9 +2621,42 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
         </div>
 
         {/* Reservations */}
-        {tab==="reservations"&&(
-          bookings.length===0
-            ? <div style={{background:"#F5F3EE",borderRadius:16,padding:"80px 20px",textAlign:"center"}}>
+        {tab==="reservations"&&(() => {
+          // Normalise either the local in-memory bookings shape ({biz, slot, cost, ...})
+          // OR the remote Supabase shape ({business_id, booking_date, credits_used, ...})
+          // into one common form so the render loop stays simple.
+          const listById = new Map(listings.map(l => [String(l.business_id ?? l.id), l]));
+          function normalize(bk) {
+            if (bk?.biz && bk?.slot) {
+              // Already in local shape — just carry through.
+              return {
+                key: `local-${bk.id}`,
+                dbId: bk.dbId || null,
+                biz:  bk.biz,
+                sessionName: bk.slot.name,
+                date: bk.slot.date,
+                time: bk.slot.time,
+                cost: bk.cost,
+                status: bk.status,
+              };
+            }
+            // Remote shape — look up the listing so we can render the venue name/photo.
+            const l = listById.get(String(bk.business_id)) || {};
+            return {
+              key: `remote-${bk.id}`,
+              dbId: bk.id,
+              biz:  l,
+              sessionName: l.name || "Session",
+              date: bk.booking_date,
+              time: bk.start_time,
+              cost: bk.credits_used ?? 0,
+              status: bk.status,
+            };
+          }
+          const items = shownBookings.map(normalize).filter(b => b.status !== 'cancelled' && b.status !== 'declined');
+          if (items.length === 0) {
+            return (
+              <div style={{background:"#F5F3EE",borderRadius:16,padding:"80px 20px",textAlign:"center"}}>
                 <div style={{fontSize:40,marginBottom:16}}>📅</div>
                 <h3 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:"#213C18",marginBottom:12}}>No reservations yet</h3>
                 <button onClick={()=>onSetView("explore")}
@@ -2587,37 +2664,56 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                   Explore Classes
                 </button>
               </div>
-            : <div>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
-                  <h2 style={{fontFamily:F2,fontSize:22,fontWeight:700,color:"#213C18",letterSpacing:"-0.5px",margin:0}}>Upcoming Bookings</h2>
-                </div>
-                <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                  {bookings.map(bk=>(
-                    <div key={bk.id} style={{display:"flex",flexWrap:"wrap",background:"#F5F3EE",borderRadius:12,overflow:"hidden",transition:"background .2s"}}
-                      onMouseEnter={e=>e.currentTarget.style.background="#EAE8E3"}
-                      onMouseLeave={e=>e.currentTarget.style.background="#F5F3EE"}>
+            );
+          }
+          return (
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
+                <h2 style={{fontFamily:F2,fontSize:22,fontWeight:700,color:"#213C18",letterSpacing:"-0.5px",margin:0}}>Upcoming Bookings</h2>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                {items.map(bk=>{
+                  const cancelState = cancelStatusFor({ booking_date: bk.date, start_time: bk.time }, bk.biz?.cat);
+                  const canCancel = bk.dbId && cancelState.canCancel && bk.status !== 'cancelled';
+                  return (
+                    <div key={bk.key} style={{display:"flex",flexWrap:"wrap",background:"#F5F3EE",borderRadius:12,overflow:"hidden",transition:"background .2s"}}>
                       <div style={{width:"clamp(80px,30vw,160px)",minHeight:100,flexShrink:0,overflow:"hidden"}}>
-                        <img src={bk.biz.img} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                        <img src={bk.biz?.img || "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&q=80"} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
                       </div>
                       <div style={{flex:1,padding:"20px 24px",display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"center",gap:16}}>
                         <div>
-                          <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#6F5B44",letterSpacing:"2px",textTransform:"uppercase",display:"block",marginBottom:6}}>{bk.biz.cat}</span>
-                          <h3 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>{bk.slot.name}</h3>
-                          <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 4px"}}>📅 {fd(bk.slot.date)} · {bk.slot.time}</p>
-                          <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:0}}>📍 {bk.biz.name}, {bk.biz.loc}</p>
+                          <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#6F5B44",letterSpacing:"2px",textTransform:"uppercase",display:"block",marginBottom:6}}>{bk.biz?.cat}</span>
+                          <h3 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>{bk.sessionName}</h3>
+                          <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 4px"}}>📅 {fd(bk.date)} · {bk.time}</p>
+                          <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:0}}>📍 {bk.biz?.name}{bk.biz?.loc ? `, ${bk.biz.loc}` : ""}</p>
                         </div>
                         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:10}}>
                           <span style={{display:"flex",alignItems:"center",gap:6,background:"#CAECBA",color:"#213C18",padding:"6px 14px",borderRadius:999,fontSize:11,fontWeight:700}}>
                             <span style={{width:6,height:6,borderRadius:"50%",background:"#213C18",display:"inline-block"}}/>Confirmed
                           </span>
                           <span style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18"}}>◈ {bk.cost} credits</span>
+                          {bk.dbId && (
+                            canCancel ? (
+                              <button onClick={async () => {
+                                if (!confirm(`Cancel this booking? Your ${bk.cost} credits will be refunded.`)) return;
+                                await onCancelBooking?.(bk.dbId);
+                              }}
+                                style={{background:"transparent",border:"1px solid rgba(196,106,77,0.6)",color:"#C46A4D",padding:"6px 14px",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:"0.3px"}}>
+                                Cancel booking
+                              </button>
+                            ) : (
+                              <span style={{fontFamily:F2,fontSize:10,color:"#A3B18A",fontStyle:"italic"}}>Cancellation window closed</span>
+                            )
+                          )}
                         </div>
                       </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-        )}
+            </div>
+          );
+        })()}
 
         {/* Saved */}
         {tab==="saved"&&(
@@ -9179,6 +9275,29 @@ export default function App() {
     }
   }, [authSession, pendingCheckoutQty, doCheckout]);
 
+  // Customer-initiated booking cancellation. Enforces the 24h/48h window on
+  // the server side; here we just fire the call and update local state on
+  // success. Bumps bookingsVersion so ProfilePage refetches the reservation
+  // list, and credits balance so the refund shows immediately.
+  async function cancelBooking(bookingId) {
+    if (!authSession?.user?.id) {
+      showToast("Please sign in to cancel a booking.", "info");
+      return { ok: false, error: "not signed in" };
+    }
+    const { data, error } = await supabase.functions.invoke('cancel-booking', { body: { booking_id: bookingId } });
+    if (error || !data?.success) {
+      const msg = data?.error || error?.message || "Couldn't cancel this booking.";
+      showToast(msg, "error", 4200);
+      return { ok: false, error: msg };
+    }
+    if (data.credits_refunded > 0) {
+      setCredits(c => c + data.credits_refunded);
+    }
+    setBookingsVersion(v => v + 1);
+    showToast(`Booking cancelled. ${data.credits_refunded || 0} credits refunded.`, "success", 3200);
+    return { ok: true, refund: data.credits_refunded };
+  }
+
   // Shared interests-save handler — used by both the Explore modal and the
   // Profile Settings tab's Edit preferences button. Persists to
   // profiles.interests, detects the RLS silent-zero-rows case, and surfaces
@@ -9543,7 +9662,7 @@ export default function App() {
         <div style={{paddingTop:headerH}}>
           {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds} onGotoCredits={gotoCredits}/>}
           {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds} profile={profile} authSession={authSession} onSaveInterests={saveInterests}/>}
-          {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion} onSaveInterests={saveInterests} onProfilePatch={(patch)=>setProfile(p => p ? { ...p, ...patch } : { id: authSession?.user?.id, ...patch })}/>}
+          {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion} onSaveInterests={saveInterests} onCancelBooking={cancelBooking} onProfilePatch={(patch)=>setProfile(p => p ? { ...p, ...patch } : { id: authSession?.user?.id, ...patch })}/>}
           {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
           {view==="credits"    &&<CreditsPage credits={credits} listings={listings} authSession={authSession} onCheckout={(qty)=>{ if (!authSession) requireAuthForCheckout(qty); else doCheckout(qty); }} onSetView={setView}/>}
           {view==="about"      &&<AboutPage onSetView={setView}/>}
