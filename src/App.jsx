@@ -4643,7 +4643,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         <tr><td class="k">Address</td><td>${address}</td></tr>
         <tr><td class="k">Email</td><td>${email}</td></tr>
         <tr><td class="k">Phone</td><td>${phone}</td></tr>
-        <tr><td class="k">Commission rate</td><td>${commissionRateDisplay ? `${commissionRateDisplay} of the Session Value of each completed Booking (as individually agreed)` : 'To be confirmed by Wello before you go live'}</td></tr>
+        <tr><td class="k">Commission rate</td><td>${commissionRateDisplay ? `${commissionRateDisplay} of the Session Value of each completed Booking` : 'To be confirmed by Wello before you go live'}</td></tr>
         <tr><td class="k">Founding Partner</td><td>${foundingLine}</td></tr>
         <tr><td class="k">Payout method</td><td>Stripe Connect transfer in EUR</td></tr>
         <tr><td class="k">Payout frequency</td><td>Weekly</td></tr>
@@ -6026,7 +6026,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   ["Email",                 bizData?.email || "—"],
                   ["Phone",                 bizData?.phone || "—"],
                   ["Commission rate",       hasCommission
-                    ? <span>{commissionRateDisplay} of the Session Value of each completed Booking (as individually agreed)</span>
+                    ? <span>{commissionRateDisplay} of the Session Value of each completed Booking</span>
                     : <span style={{color:"#6F5B44"}}>Your commission rate will be confirmed by Wello before you go live</span>],
                   ["Founding Partner",      bizData?.founding_partner ? "Yes" : "No"],
                   ...(bizData?.founding_partner && bizData?.founding_incentive_bookings ? [["Founding incentive", `No commission payable on your first ${bizData.founding_incentive_bookings} completed bookings`]] : []),
