@@ -994,6 +994,28 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
 function BizPanel({ biz, onClose, onBook }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
 
+  // Photo carousel — primary img + gallery, deduped and blank-filtered.
+  // Falls back to a stock image if the venue has nothing.
+  const FALLBACK_IMG = "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80";
+  const photoList = (() => {
+    const raw = [biz.img, ...(Array.isArray(biz.gallery) ? biz.gallery : [])].filter(Boolean);
+    const deduped = Array.from(new Set(raw));
+    return deduped.length > 0 ? deduped : [FALLBACK_IMG];
+  })();
+  const photoTrackRef = useRef(null);
+  const [photoIdx, setPhotoIdx] = useState(0);
+  function scrollToPhoto(i) {
+    const el = photoTrackRef.current;
+    if (!el) return;
+    el.scrollTo({ left: i * el.clientWidth, behavior: "smooth" });
+  }
+  // Update the active dot as the user swipes.
+  function onPhotoScroll(e) {
+    const el = e.currentTarget;
+    const i = Math.round(el.scrollLeft / el.clientWidth);
+    if (i !== photoIdx) setPhotoIdx(i);
+  }
+
   // Compute effective availability — a slot is unavailable if it's directly
   // booked OR if its time range overlaps with another booked slot on the
   // same date (e.g. 10:00 Pilates 90-min booked → 10:00 Yoga 60-min and
@@ -1037,11 +1059,56 @@ function BizPanel({ biz, onClose, onBook }) {
     <div style={{position:"fixed",inset:0,zIndex:1100,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px"}} onClick={onClose}>
       <div style={{background:"#fff",borderRadius:16,maxWidth:640,width:"100%",maxHeight:"88vh",overflow:"hidden",overflowY:"auto",boxShadow:"0 24px 60px rgba(0,0,0,0.25)",animation:"su .25s ease"}} onClick={e=>e.stopPropagation()}>
 
-        {/* Hero image */}
+        {/* Hero image carousel — primary + gallery in a horizontal scroll.
+            Scroll-snap makes it swipeable on mobile; prev/next arrows appear
+            on hover for desktop. Dots at the bottom indicate position. */}
         <div style={{position:"relative",height:200}}>
-          <img src={biz.img} alt={biz.name} style={{width:"100%",height:"100%",objectFit:"cover"}}
-            onError={e=>{e.target.src="https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80";}}/>
-          <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(27,28,25,0.88) 0%,rgba(27,28,25,0.05) 55%)"}}/>
+          <div
+            ref={photoTrackRef}
+            onScroll={onPhotoScroll}
+            style={{
+              display:"flex",width:"100%",height:"100%",
+              overflowX:"auto",overflowY:"hidden",
+              scrollSnapType:"x mandatory",
+              WebkitOverflowScrolling:"touch",
+              scrollbarWidth:"none",
+            }}>
+            {photoList.map((src, i) => (
+              <div key={i} style={{flex:"0 0 100%",height:"100%",scrollSnapAlign:"start",position:"relative"}}>
+                <img src={src} alt={`${biz.name} photo ${i+1}`} style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}
+                  onError={e=>{e.target.src=FALLBACK_IMG;}}/>
+              </div>
+            ))}
+          </div>
+          <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(27,28,25,0.88) 0%,rgba(27,28,25,0.05) 55%)",pointerEvents:"none"}}/>
+          {photoList.length > 1 && (
+            <>
+              {/* Prev / next arrows — hidden on the extremes */}
+              {photoIdx > 0 && (
+                <button aria-label="Previous photo" onClick={()=>scrollToPhoto(photoIdx-1)}
+                  style={{position:"absolute",top:"50%",left:12,transform:"translateY(-50%)",background:"rgba(27,28,25,0.55)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",border:"none",color:"#FBF9F4",width:34,height:34,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,fontFamily:F2}}>
+                  ‹
+                </button>
+              )}
+              {photoIdx < photoList.length - 1 && (
+                <button aria-label="Next photo" onClick={()=>scrollToPhoto(photoIdx+1)}
+                  style={{position:"absolute",top:"50%",right:12,transform:"translateY(-50%)",background:"rgba(27,28,25,0.55)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",border:"none",color:"#FBF9F4",width:34,height:34,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,fontFamily:F2}}>
+                  ›
+                </button>
+              )}
+              {/* Dot indicators */}
+              <div style={{position:"absolute",top:14,left:"50%",transform:"translateX(-50%)",display:"flex",gap:6,padding:"5px 10px",background:"rgba(27,28,25,0.5)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",borderRadius:999}}>
+                {photoList.map((_, i) => (
+                  <button key={i} aria-label={`Go to photo ${i+1}`} onClick={()=>scrollToPhoto(i)}
+                    style={{width:6,height:6,borderRadius:"50%",background:i===photoIdx?"#FBF9F4":"rgba(251,249,244,0.4)",border:"none",padding:0,cursor:"pointer"}}/>
+                ))}
+              </div>
+              {/* Photo counter bottom-right */}
+              <div style={{position:"absolute",bottom:16,right:16,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",borderRadius:999,padding:"3px 10px",fontFamily:F2,fontSize:10,fontWeight:600,color:"#FBF9F4"}}>
+                {photoIdx+1}/{photoList.length}
+              </div>
+            </>
+          )}
           <button onClick={onClose} aria-label="Close" style={{position:"absolute",top:12,right:12,zIndex:10,background:"rgba(255,255,255,0.95)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",border:"1px solid rgba(195,200,188,0.4)",color:"#1B1C19",width:40,height:40,borderRadius:"50%",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,boxShadow:"0 4px 12px rgba(0,0,0,0.18)"}}>×</button>
           {sys&&<div style={{position:"absolute",top:14,left:14,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(8px)",borderRadius:999,padding:"4px 10px",display:"flex",alignItems:"center",gap:5}}>
             <span style={{width:6,height:6,borderRadius:"50%",background:"#A3B18A",display:"inline-block"}}/>
@@ -8400,7 +8467,7 @@ export default function App() {
     // (real partners never have a demo- prefixed email).
     const { data: listingRows, error } = await supabase
       .from("listings")
-      .select("*, slots(*), businesses(address, phone, website, instagram, email)")
+      .select("*, slots(*), businesses(address, phone, website, instagram, email, gallery)")
       .eq("status","active")
       .order("id");
     if (error) {
@@ -8421,6 +8488,10 @@ export default function App() {
         phone:     row.businesses?.phone     || row.phone     || "",
         website:   row.businesses?.website   || row.website   || "",
         instagram: row.businesses?.instagram || row.instagram || "",
+        // Gallery photos pulled from the parent business row (partners upload
+        // up to 4 during onboarding). Kept as an array so BizPanel can render
+        // them as a swipeable carousel alongside the primary img.
+        gallery:   Array.isArray(row.businesses?.gallery) ? row.businesses.gallery.filter(Boolean) : (Array.isArray(row.gallery) ? row.gallery.filter(Boolean) : []),
         _isDemo:   /^demo-/i.test(row.businesses?.email || ""),
         desc: row.description || "",
         img: row.img || "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80",
