@@ -5257,9 +5257,22 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 <p style={{fontFamily:F2,fontSize:28,fontWeight:800,color:"#fff",letterSpacing:"-1px",margin:"0 0 2px"}}>{isPreview?"€619.20":payoutAmt}</p>
                 <p style={{fontFamily:F2,fontSize:12,color:"rgba(255,255,255,0.5)",margin:0}}>{isPreview||monthlyCredits>0?"Processed this Friday · direct to your IBAN":"No payout this week"}</p>
               </div>
+              {/* Commission — real value comes from businesses.commission
+                  (percentage as an integer, e.g. 15 means 15%). Falls back
+                  to "Agreed with Wello" if the admin hasn't set one yet so
+                  it never shows a scary "0%" for founding partners still
+                  being onboarded. */}
               <div style={{background:"rgba(255,255,255,0.1)",borderRadius:10,padding:"12px 16px",textAlign:"right"}}>
                 <p style={{fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.5)",margin:"0 0 2px"}}>Commission rate</p>
-                <p style={{fontFamily:F2,fontSize:16,fontWeight:700,color:"#CAECBA",margin:0}}>Agreed with Wello</p>
+                <p style={{fontFamily:F2,fontSize:16,fontWeight:700,color:"#CAECBA",margin:0}}>
+                  {(() => {
+                    const c = bizData?.commission;
+                    if (c === null || c === undefined || c === "") return "Agreed with Wello";
+                    const n = Number(c);
+                    if (!Number.isFinite(n) || n < 0) return "Agreed with Wello";
+                    return `${n}%`;
+                  })()}
+                </p>
               </div>
             </div>
             {(isPreview ? [
