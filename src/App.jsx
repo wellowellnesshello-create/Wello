@@ -4723,17 +4723,35 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const agreementCanDismiss = !agreementBlocker && agreementAccepted && !needsReacceptance;
   async function acceptAgreement() {
     if (isPreview || !bizData?.id) return;
-    if (!hasCommission) { setAgreementErr("Your commercial terms haven't been set yet — please wait for the Wello team to confirm your commission rate."); return; }
+    if (!hasCommission) { setAgreementErr("Your commercial terms haven't been set yet. Please wait for the Wello team to confirm your commission rate."); return; }
     if (!agreementChecked) { setAgreementErr("Please tick the box to confirm you've read the agreement."); return; }
+    // Guard: commissionRateNum can be NaN if commissionRaw was something like
+    // "" or 'null'. Saving NaN would poison terms_accepted_commission and force
+    // a re-acceptance on next login even though the user really did accept.
+    if (!Number.isFinite(commissionRateNum)) {
+      setAgreementErr("Your commission rate isn't a valid number yet. Please contact Wello.");
+      return;
+    }
     setAgreementSaving(true); setAgreementErr("");
     const payload = {
       terms_accepted_at:         new Date().toISOString(),
       terms_version:             TERMS_VERSION,
       terms_accepted_commission: commissionRateNum,
     };
-    const { error } = await supabase.from('businesses').update(payload).eq('id', bizData.id);
+    // .select() so we can detect the silent-zero-rows case (Supabase RLS
+    // blocking the UPDATE without throwing). Without it a policy mismatch
+    // returns error=null and we'd optimistically flip local state — the modal
+    // vanishes for this session and pops up again on next login because
+    // nothing persisted to the DB.
+    const { data: updated, error } = await supabase
+      .from('businesses').update(payload).eq('id', bizData.id).select('id, terms_accepted_at');
     setAgreementSaving(false);
     if (error) { setAgreementErr("Couldn't save your acceptance. " + error.message); return; }
+    if (!updated || updated.length === 0) {
+      setAgreementErr("Your acceptance couldn't be saved. This usually means an RLS policy on the businesses table is blocking the update. Contact hello@wello-wellness.com.");
+      console.warn('acceptAgreement: 0 rows updated. Check RLS policy: create policy "Partners can update own venue" on businesses for update to authenticated using (user_id = auth.uid());');
+      return;
+    }
     // Now that the agreement is accepted, activate the marketplace listing.
     // (notify-partner-status intentionally leaves it inactive on approval
     // until acceptance lands, so this is where the venue actually goes live.)
