@@ -2203,6 +2203,32 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
     setTimeout(() => setAcctMsg(""), 2600);
   }
 
+  // Delete-my-account flow. Auth verifies inside the edge function; on
+  // success we sign out locally so the app state clears cleanly.
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deletingAccount,   setDeletingAccount]   = useState(false);
+  const [deleteErr,         setDeleteErr]         = useState("");
+  async function confirmDeleteAccount() {
+    if (!authSession) return;
+    setDeletingAccount(true); setDeleteErr("");
+    try {
+      const { data, error } = await supabase.functions.invoke('delete-account', { body: {} });
+      if (error || !data?.success) {
+        setDeleteErr(data?.error || error?.message || "We couldn't delete your account. Please try again.");
+        setDeletingAccount(false);
+        return;
+      }
+      // Auth is already gone server-side, but call signOut so the local
+      // session clears and the app rehydrates to a signed-out state.
+      await supabase.auth.signOut();
+      onSignOut?.();
+      onSetView?.("home");
+    } catch (e) {
+      setDeleteErr(e.message || "Something went wrong.");
+      setDeletingAccount(false);
+    }
+  }
+
   // Source-of-truth bookings: Supabase rows for signed-in members; in-memory
   // prop for the anonymous demo state (used only when this page is reached
   // without auth, which we now redirect away from below).
@@ -2485,6 +2511,16 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                   </div>
                 ))}
               </div>
+            )},{title:"Danger zone",content:(
+              <div style={{padding:"20px"}}>
+                <p style={{fontFamily:F2,fontSize:13,color:"#1B1C19",fontWeight:600,margin:"0 0 6px"}}>Delete your Wello account</p>
+                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",lineHeight:1.65,margin:"0 0 14px"}}>Removes your profile, credit balance, saved preferences and sign-in. Past bookings stay on partner dashboards but with your name removed. This can't be undone.</p>
+                {deleteErr && <p style={{fontFamily:F2,fontSize:12,color:"#C46A4D",margin:"0 0 12px"}}>{deleteErr}</p>}
+                <button onClick={()=>{ setDeleteErr(""); setShowDeleteConfirm(true); }} disabled={deletingAccount || !authSession}
+                  style={{background:"transparent",color:"#C46A4D",border:"1px solid #C46A4D",borderRadius:999,padding:"10px 20px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:deletingAccount?"not-allowed":"pointer",letterSpacing:"0.2px"}}>
+                  Delete my account
+                </button>
+              </div>
             )}].map(s=>(
               <div key={s.title} style={{background:"#fff",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 12px rgba(27,28,25,0.04)",border:"1px solid rgba(195,200,188,0.2)"}}>
                 <div style={{padding:"14px 20px",borderBottom:"1px solid rgba(195,200,188,0.2)"}}><span style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F"}}>{s.title}</span></div>
@@ -2537,6 +2573,26 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
             finally { setSavingInterests(false); }
           }}
         />
+      )}
+      {showDeleteConfirm && (
+        <div style={{position:"fixed",inset:0,zIndex:1400,background:"rgba(27,28,25,0.7)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px"}} onClick={()=>!deletingAccount && setShowDeleteConfirm(false)}>
+          <div style={{background:"#FBF9F4",borderRadius:16,maxWidth:420,width:"100%",padding:"28px 28px 24px",boxShadow:"0 24px 60px rgba(0,0,0,0.25)"}} onClick={e=>e.stopPropagation()}>
+            <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#C46A4D",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 8px"}}>Delete account</p>
+            <h2 style={{fontFamily:F2,fontSize:20,fontWeight:800,color:"#213C18",letterSpacing:"-0.4px",margin:"0 0 10px"}}>Are you sure?</h2>
+            <p style={{fontFamily:F2,fontSize:13,color:"#54584F",lineHeight:1.65,margin:"0 0 20px"}}>Your profile, credit balance, saved preferences and sign-in will be permanently removed. Any credits on your account will not be refunded. This can't be undone.</p>
+            {deleteErr && <p style={{fontFamily:F2,fontSize:12,color:"#C46A4D",margin:"0 0 12px"}}>{deleteErr}</p>}
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
+              <button onClick={()=>setShowDeleteConfirm(false)} disabled={deletingAccount}
+                style={{background:"transparent",color:"#54584F",border:"none",padding:"10px 18px",fontFamily:F2,fontSize:13,fontWeight:600,cursor:deletingAccount?"not-allowed":"pointer"}}>
+                Cancel
+              </button>
+              <button onClick={confirmDeleteAccount} disabled={deletingAccount}
+                style={{background:deletingAccount?"#E4E2DD":"#C46A4D",color:deletingAccount?"#54584F":"#FBF9F4",border:"none",borderRadius:999,padding:"10px 22px",fontFamily:F2,fontSize:13,fontWeight:700,cursor:deletingAccount?"not-allowed":"pointer"}}>
+                {deletingAccount ? "Deleting…" : "Yes, delete my account"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -3319,12 +3375,21 @@ function GiftPage({ authSession, profile, onSetView, onGiftCreated }) {
           origin:          window.location.origin,
         },
       });
-      if (error || !data?.success) {
+      if (error || !data?.success || !data?.url) {
         setErr(data?.error || error?.message || "Something went wrong. Please try again.");
         setSubmitting(false);
         return;
       }
-      onGiftCreated?.({ code: data.code, credits: data.credits, claim_url: data.claim_url, recipient_email: recipientEmail.trim() || null });
+      // Stash recipient email so the return page can show "we emailed X"
+      // without another network round-trip.
+      try {
+        sessionStorage.setItem("wello_pending_gift", JSON.stringify({
+          code: data.code,
+          credits,
+          recipient_email: recipientEmail.trim() || null,
+        }));
+      } catch { /* non-critical */ }
+      window.location.href = data.url; // to Stripe Checkout
     } catch (e) {
       setErr(e.message || "Something went wrong.");
       setSubmitting(false);
@@ -3429,9 +3494,9 @@ function GiftPage({ authSession, profile, onSetView, onGiftCreated }) {
           {err && <p style={{fontFamily:F2,fontSize:12,color:"#C46A4D",margin:"0 0 12px"}}>{err}</p>}
           <button onClick={submit} disabled={!canSubmit}
             style={{width:"100%",padding:"14px 24px",background:!canSubmit?"#E4E2DD":"#213C18",color:!canSubmit?"#54584F":"#FBF9F4",border:"none",borderRadius:999,fontFamily:F2,fontSize:14,fontWeight:700,cursor:!canSubmit?"not-allowed":"pointer",boxShadow:!canSubmit?"none":"0 8px 20px rgba(33,60,24,0.18)"}}>
-            {submitting ? "Sending gift…" : "Send gift"}
+            {submitting ? "Opening checkout…" : `Continue to checkout · €${(credits * 1 + Math.min(credits * 0.10, 50)).toFixed(2)}`}
           </button>
-          <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:"12px 0 0",lineHeight:1.5,textAlign:"center"}}>Payment integration coming soon. You'll receive an email receipt.</p>
+          <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:"12px 0 0",lineHeight:1.5,textAlign:"center"}}>Secure card payment via Stripe. Credit + 10% service fee (capped at €50). Recipient claims by email link or code.</p>
         </div>
       </div>
     </div>
@@ -7964,6 +8029,10 @@ export default function App() {
     // ?claim=WELLO-XXXX-XXXX arrives from the recipient email link. We open
     // the Redeem page directly with the code prefilled.
     if(params.get("claim")) return "redeem";
+    // ?gift=sent&code=WELLO-... — Stripe returned the sender to the app after
+    // a successful gift checkout. Open the gift page which will render the
+    // success state from URL params + sessionStorage.
+    if(params.get("gift")) return "gift";
     return "home";
   });
   // ?claim=WELLO-XXXX-XXXX from the recipient email — read once so RedeemPage
@@ -7973,7 +8042,38 @@ export default function App() {
     try { return new URLSearchParams(window.location.search).get("claim") || ""; }
     catch { return ""; }
   });
-  const [lastGift, setLastGift] = useState(null); // { code, credits, claim_url, recipient_email }
+  // Rehydrate the gift-just-sent state from the URL + sessionStorage so the
+  // success page renders correctly after the Stripe redirect. sessionStorage
+  // survives the redirect, URL params tell us to look there.
+  const [lastGift, setLastGift] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("gift") !== "sent") return null;
+      const code = params.get("code") || "";
+      const stashed = JSON.parse(sessionStorage.getItem("wello_pending_gift") || "null");
+      const claim_url = code ? `${window.location.origin}/?claim=${encodeURIComponent(code)}` : "";
+      return {
+        code,
+        credits: stashed?.credits || 0,
+        recipient_email: stashed?.recipient_email || null,
+        claim_url,
+      };
+    } catch { return null; }
+  });
+  // Once the success page is mounted, strip the ?gift=sent params + stashed
+  // pending record so a refresh doesn't bounce them back onto the page.
+  useEffect(() => {
+    if (!lastGift) return;
+    try { sessionStorage.removeItem("wello_pending_gift"); } catch { /* noop */ }
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("gift")) {
+        url.searchParams.delete("gift");
+        url.searchParams.delete("code");
+        window.history.replaceState({}, "", url.pathname + (url.search ? url.search : "") + url.hash);
+      }
+    } catch { /* noop */ }
+  }, [lastGift]);
   const headerRef = useRef(null);
   const [headerH, setHeaderH] = useState(91);
   useEffect(()=>{

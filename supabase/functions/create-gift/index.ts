@@ -1,19 +1,23 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
+import Stripe from 'https://esm.sh/stripe@17.3.0?target=denonext'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-// Wello gifting — create a gift row that a recipient can redeem for credits.
-//
-// PAYMENT STUB — Stripe not yet wired for gifts. Right now this function
-// creates the gift row directly as status='available'. When Stripe is ready:
-//   1. Change status default here to 'pending_payment'.
-//   2. Route the user through Stripe checkout (see comment block below).
-//   3. On checkout.session.completed the webhook flips status to 'available'
-//      and sends the notification emails.
-// Everything downstream (redeem-gift, the recipient email) works today.
+// Wello gifting — create a Stripe Checkout Session so the sender pays before
+// the gift is issued. On checkout.session.completed the stripe-webhook
+// inserts the gifts row (status='available') and fires the recipient email
+// + sender receipt. This keeps every gift tied to a paid Stripe session.
 
+const STRIPE_SECRET_KEY         = Deno.env.get('STRIPE_SECRET_KEY')!
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const RESEND_API_KEY            = Deno.env.get('RESEND_API_KEY') || ''
+// Same price row as regular credit top-ups: 1 credit = €1. The service fee
+// is added as a separate line item so the sender sees the breakdown.
+const PRICE_ID = 'price_1TnKWEAevsrt3aGkxH47QVpr'
+
+const stripe = new Stripe(STRIPE_SECRET_KEY, {
+  apiVersion: '2024-09-30.acacia',
+  httpClient: Stripe.createFetchHttpClient(),
+})
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -37,71 +41,6 @@ function isValidEmail(v: unknown): v is string {
   return typeof v === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
 }
 
-async function sendRecipientEmail(gift: {
-  recipient_email: string; recipient_name?: string | null;
-  sender_name?: string | null; sender_email: string;
-  credits: number; code: string; message?: string | null;
-  origin: string;
-}) {
-  if (!RESEND_API_KEY) { console.warn('create-gift: no RESEND_API_KEY, skipping recipient email'); return 'no_resend_key' }
-  const senderLabel = gift.sender_name?.trim() || gift.sender_email
-  const claimUrl    = `${gift.origin}/?claim=${encodeURIComponent(gift.code)}`
-  const html = `
-    <div style="font-family:Manrope,Arial,sans-serif;max-width:540px;margin:0 auto;padding:28px;color:#1B1C19;background:#FBF9F4;">
-      <h2 style="color:#213C18;font-size:20px;margin:0 0 6px;letter-spacing:-0.4px;">${senderLabel} sent you a Wello gift</h2>
-      <p style="margin:0 0 20px;line-height:1.5;font-size:14px;color:#54584F;">${gift.credits} credits toward wellness anywhere on the island. Yoga, gyms, hotel pools, spa treatments, private instructors and more.</p>
-      ${gift.message ? `<div style="background:#F5F3EE;border-left:3px solid #A3B18A;padding:14px 18px;border-radius:6px;margin:0 0 20px;"><p style="margin:0;font-size:13px;color:#1B1C19;line-height:1.55;font-style:italic;">${gift.message.replace(/</g,'&lt;')}</p></div>` : ''}
-      <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;margin:0 0 22px;">
-        <tr><td style="padding:12px 16px;font-size:12px;color:#54584F;">Claim code</td><td style="padding:12px 16px;font-size:15px;color:#213C18;font-weight:700;font-family:'SF Mono',ui-monospace,monospace;letter-spacing:0.5px;">${gift.code}</td></tr>
-        <tr><td style="padding:12px 16px;font-size:12px;color:#54584F;border-top:1px solid #F5F3EE;">Credits</td><td style="padding:12px 16px;font-size:14px;color:#213C18;font-weight:600;border-top:1px solid #F5F3EE;">${gift.credits}</td></tr>
-      </table>
-      <a href="${claimUrl}" style="display:inline-block;padding:14px 28px;background:#213C18;color:#FBF9F4;text-decoration:none;border-radius:999px;font-weight:700;font-size:14px;letter-spacing:0.2px;">Claim your gift</a>
-      <p style="margin:22px 0 0;font-size:11px;color:#A3B18A;line-height:1.5;">If the button doesn't work, sign in on wello-wellness.com and enter your claim code on the Redeem page.</p>
-    </div>`
-  const r = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      from: 'Wello <hello@wello-wellness.com>',
-      to: gift.recipient_email,
-      subject: `${senderLabel} sent you a Wello gift`,
-      html,
-    }),
-  }).catch(e => { console.error('Resend recipient error:', e); return null })
-  return r?.ok ? 'sent' : 'failed'
-}
-
-async function sendSenderReceipt(gift: {
-  sender_email: string; sender_name?: string | null;
-  recipient_email?: string | null; recipient_name?: string | null;
-  credits: number; code: string; origin: string;
-}) {
-  if (!RESEND_API_KEY) return 'no_resend_key'
-  const claimUrl = `${gift.origin}/?claim=${encodeURIComponent(gift.code)}`
-  const recipientLabel = gift.recipient_email || 'you (share it however you like)'
-  const html = `
-    <div style="font-family:Manrope,Arial,sans-serif;max-width:540px;margin:0 auto;padding:28px;color:#1B1C19;background:#FBF9F4;">
-      <h2 style="color:#213C18;font-size:20px;margin:0 0 6px;letter-spacing:-0.4px;">Your Wello gift is ready</h2>
-      <p style="margin:0 0 20px;line-height:1.5;font-size:14px;color:#54584F;">${gift.credits} credits, delivered to ${recipientLabel}. Keep this claim code somewhere safe in case you want to share it manually.</p>
-      <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:8px;margin:0 0 22px;">
-        <tr><td style="padding:12px 16px;font-size:12px;color:#54584F;">Claim code</td><td style="padding:12px 16px;font-size:15px;color:#213C18;font-weight:700;font-family:'SF Mono',ui-monospace,monospace;letter-spacing:0.5px;">${gift.code}</td></tr>
-        <tr><td style="padding:12px 16px;font-size:12px;color:#54584F;border-top:1px solid #F5F3EE;">Claim link</td><td style="padding:12px 16px;font-size:12px;color:#213C18;border-top:1px solid #F5F3EE;word-break:break-all;"><a href="${claimUrl}" style="color:#213C18;">${claimUrl}</a></td></tr>
-      </table>
-      <p style="margin:0;font-size:11px;color:#A3B18A;line-height:1.5;">Any questions, reply to this email.</p>
-    </div>`
-  const r = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      from: 'Wello <hello@wello-wellness.com>',
-      to: gift.sender_email,
-      subject: `Your Wello gift receipt (${gift.code})`,
-      html,
-    }),
-  }).catch(e => { console.error('Resend sender error:', e); return null })
-  return r?.ok ? 'sent' : 'failed'
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
   if (req.method !== 'POST')    return json({ error: 'POST only' }, 405)
@@ -110,10 +49,11 @@ serve(async (req) => {
     const body = await req.json()
     const credits         = Math.floor(Number(body?.credits))
     const sender_email    = String(body?.sender_email || '').trim().toLowerCase()
-    const sender_name     = (body?.sender_name    ? String(body.sender_name).trim() : null) || null
-    const recipient_email = body?.recipient_email ? String(body.recipient_email).trim().toLowerCase() : null
-    const recipient_name  = body?.recipient_name  ? String(body.recipient_name).trim() : null
-    const message         = body?.message         ? String(body.message).slice(0, 400) : null
+    const sender_name     = (body?.sender_name    ? String(body.sender_name).trim() : '') || ''
+    const recipient_email = body?.recipient_email ? String(body.recipient_email).trim().toLowerCase() : ''
+    const recipient_name  = body?.recipient_name  ? String(body.recipient_name).trim() : ''
+    // Stripe metadata values cap at 500 chars — we cap at 400 to leave headroom.
+    const message         = body?.message         ? String(body.message).slice(0, 400) : ''
     const origin          = String(body?.origin || 'https://www.wello-wellness.com')
 
     if (!Number.isFinite(credits) || credits < 5) return json({ error: 'Minimum gift is 5 credits.' }, 400)
@@ -123,20 +63,12 @@ serve(async (req) => {
 
     const safeOrigin = /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(origin) ? origin : 'https://www.wello-wellness.com'
 
-    // ── STRIPE PAYMENT SLOT ────────────────────────────────────────
-    // When you're ready to gate this behind payment, replace the direct
-    // insert below with a Stripe Checkout Session created here (same shape
-    // as create-checkout-session), pass the generated code + all gift
-    // fields as metadata, and have stripe-webhook do the insert (with
-    // status='available') once the session settles. Everything else in
-    // this file already produces the right shape.
-    // ───────────────────────────────────────────────────────────────
-
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    // Generate a code, retry on collision (extremely unlikely — 32^8 space).
+    // Generate a code, retry a few times on collision (extremely unlikely
+    // — 32^8 space, but we check anyway so a race can't hand out duplicates).
     let code = generateGiftCode()
     for (let attempt = 0; attempt < 4; attempt++) {
       const { data: existing } = await supabase.from('gifts').select('id').eq('code', code).maybeSingle()
@@ -144,56 +76,64 @@ serve(async (req) => {
       code = generateGiftCode()
     }
 
-    const { data: inserted, error: insErr } = await supabase
-      .from('gifts')
-      .insert({
+    // Service fee = 10% of credit value, capped at €50 — same rule as the
+    // regular credit top-up flow. Added as a separate Stripe line item so
+    // the sender sees the breakdown on the checkout page.
+    const creditValueEuros = credits * 1 // 1 credit = €1
+    const feeEuros = Math.min(creditValueEuros * 0.10, 50)
+    const feeCents = Math.round(feeEuros * 100)
+
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
+      { price: PRICE_ID, quantity: credits },
+    ]
+    if (feeCents > 0) {
+      lineItems.push({
+        price_data: {
+          currency: 'eur',
+          product_data: { name: 'Service fee', description: '10% of credits, capped at €50' },
+          unit_amount: feeCents,
+        },
+        quantity: 1,
+      })
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: lineItems,
+      // Send them back to the app with the code so the frontend can render
+      // the "gift sent" success page. The gifts row is inserted by the
+      // webhook, not here, so payment must complete before the code is real.
+      success_url: `${safeOrigin}/?gift=sent&code=${encodeURIComponent(code)}`,
+      cancel_url:  `${safeOrigin}/?gift=cancelled`,
+      customer_email: sender_email,
+      // Metadata on both the session AND the payment intent so the webhook
+      // can read them regardless of which event fires first.
+      metadata: {
+        type:            'gift',
         code,
-        credits,
+        credits:         String(credits),
+        fee_cents:       String(feeCents),
         sender_email,
         sender_name,
         recipient_email,
         recipient_name,
         message,
-        status: 'available', // TODO: 'pending_payment' once Stripe is wired
-      })
-      .select('id, code, credits, sender_email, sender_name, recipient_email, recipient_name, message, status, created_at')
-      .single()
-    if (insErr || !inserted) {
-      console.error('create-gift: insert failed', insErr?.message)
-      return json({ error: 'Could not create gift. Please try again.' }, 500)
-    }
-
-    // Fire emails in parallel — no need to await the customer response.
-    const [recipientEmailResult, senderReceiptResult] = await Promise.all([
-      inserted.recipient_email
-        ? sendRecipientEmail({
-            recipient_email: inserted.recipient_email,
-            recipient_name:  inserted.recipient_name,
-            sender_name:     inserted.sender_name,
-            sender_email:    inserted.sender_email,
-            credits:         inserted.credits,
-            code:            inserted.code,
-            message:         inserted.message,
-            origin:          safeOrigin,
-          })
-        : Promise.resolve('no_recipient'),
-      sendSenderReceipt({
-        sender_email:    inserted.sender_email,
-        sender_name:     inserted.sender_name,
-        recipient_email: inserted.recipient_email,
-        recipient_name:  inserted.recipient_name,
-        credits:         inserted.credits,
-        code:            inserted.code,
-        origin:          safeOrigin,
-      }),
-    ])
-    console.log('create-gift:', { code: inserted.code, recipient_email: recipientEmailResult, sender_receipt: senderReceiptResult })
+      },
+      payment_intent_data: {
+        metadata: {
+          type: 'gift',
+          code,
+          credits: String(credits),
+        },
+      },
+    })
 
     return json({
       success: true,
-      code: inserted.code,
-      credits: inserted.credits,
-      claim_url: `${safeOrigin}/?claim=${encodeURIComponent(inserted.code)}`,
+      url: session.url,
+      session_id: session.id,
+      code, // returned so the frontend can pre-render success if it wants
     })
   } catch (e) {
     console.error('create-gift exception:', e)
