@@ -1971,7 +1971,10 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
             }
           }
 
-          // Score within the candidate set for ordering only.
+          // Score within the candidate set for ordering only. Demo seeds
+          // take a large penalty so real partners always beat them on the
+          // For You rail — demos still appear when no real listing matches
+          // the customer's interests, but they never lead the rail.
           function scoreFor(b) {
             let s = 0;
             if (savedIds.includes(b.id)) s += 30;
@@ -1983,6 +1986,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
               for (const it of interestTags) { if (t.includes(it) || it.includes(t)) { s += 2; break; } }
             }
             s += (b.rating || 0) * 0.4;
+            if (b._isDemo) s -= 100;
             return s;
           }
           let forYouItems = candidates
@@ -1992,11 +1996,13 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
             .slice(0, 10);
 
           // No signals at all? Top-rated fallback so first-timers still see
-          // something curated. We only hit this branch when the customer
-          // has no interests AND no saves AND no saved-category siblings.
+          // something curated. Real partners rank above demos here too.
           if (forYouItems.length === 0) {
             forYouItems = [...pool]
-              .sort((a,b) => (b.rating||0) - (a.rating||0))
+              .sort((a,b) => {
+                if (a._isDemo !== b._isDemo) return a._isDemo ? 1 : -1;
+                return (b.rating||0) - (a.rating||0);
+              })
               .slice(0, 8);
           }
 
