@@ -2468,6 +2468,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
 // ═══════════════════════════════════════════════════════════════
 function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetView, isBiz, onToggleBiz, onPreviewDashboard, profile, authSession, onSignOut, onOpenSignIn, bookingsVersion = 0, onSaveInterests, onProfilePatch, onCancelBooking }) {
   const [tab,setTab]=useState("reservations");
+  const [resTab,setResTab] = useState("upcoming"); // "upcoming" | "past"
   const saved=listings.filter(b=>savedIds.includes(b.id));
   const [friends]=useState(FRIENDS);
   const TABS=[["reservations","Reservations"],["saved","Saved"],["friends","Friends"],["settings","Settings"]];
@@ -2653,47 +2654,75 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
               status: bk.status,
             };
           }
-          // Filter: not cancelled/declined AND session hasn't happened yet.
-          // We compare against today's midnight so a session earlier today
-          // still shows here until the clock ticks past midnight, giving
-          // members a beat to cancel same-day sessions if the window allows.
+          // Sort every booking by session time, then split into upcoming
+          // (today onwards) vs past (everything before today, including
+          // completed sessions and any old cancellations). Cutoff is
+          // today's midnight so same-day sessions stay in Upcoming until
+          // the clock rolls past midnight.
           const cutoff = new Date();
           cutoff.setHours(0, 0, 0, 0);
-          const items = shownBookings
-            .map(normalize)
+          const normalised = shownBookings.map(normalize);
+          const upcomingItems = normalised
             .filter(b => b.status !== 'cancelled' && b.status !== 'declined')
             .filter(b => {
               const dt = sessionDateTime(b.date, b.time);
               return dt ? dt >= cutoff : true;
             })
-            .sort((a, z) => {
-              const da = sessionDateTime(a.date, a.time)?.getTime() || 0;
-              const dz = sessionDateTime(z.date, z.time)?.getTime() || 0;
-              return da - dz;
-            });
+            .sort((a, z) => (sessionDateTime(a.date, a.time)?.getTime() || 0) - (sessionDateTime(z.date, z.time)?.getTime() || 0));
+          const pastItems = normalised
+            .filter(b => {
+              const dt = sessionDateTime(b.date, b.time);
+              const isPast = dt ? dt < cutoff : false;
+              const isCancelled = b.status === 'cancelled' || b.status === 'declined';
+              return isPast || isCancelled;
+            })
+            .sort((a, z) => (sessionDateTime(z.date, z.time)?.getTime() || 0) - (sessionDateTime(a.date, a.time)?.getTime() || 0));
+          const items = resTab === "upcoming" ? upcomingItems : pastItems;
+          const subTabs = [["upcoming", "Upcoming", upcomingItems.length], ["past", "Past", pastItems.length]];
+          const subTabNav = (
+            <div style={{display:"inline-flex",gap:4,padding:4,background:"rgba(33,60,24,0.06)",border:"1px solid rgba(33,60,24,0.08)",borderRadius:14,marginBottom:20}}>
+              {subTabs.map(([id,label,count])=>{
+                const active = resTab===id;
+                return (
+                  <button key={id} onClick={()=>setResTab(id)} style={{padding:"8px 16px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:F2,fontSize:13,fontWeight:600,background:active?"#213C18":"transparent",color:active?"#FBF9F4":"#213C18",transition:"background 120ms ease",display:"inline-flex",alignItems:"center",gap:6}}>
+                    {label}<span style={{fontSize:11,opacity:0.7}}>({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+          );
           if (items.length === 0) {
             return (
-              <div style={{background:"#F5F3EE",borderRadius:16,padding:"80px 20px",textAlign:"center"}}>
-                <div style={{fontSize:40,marginBottom:16}}>📅</div>
-                <h3 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:"#213C18",marginBottom:12}}>No reservations yet</h3>
-                <button onClick={()=>onSetView("explore")}
-                  style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"12px 28px",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>
-                  Explore Classes
-                </button>
+              <div>
+                {subTabNav}
+                <div style={{background:"#F5F3EE",borderRadius:16,padding:"80px 20px",textAlign:"center"}}>
+                  <div style={{fontSize:40,marginBottom:16}}>📅</div>
+                  <h3 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:"#213C18",marginBottom:12}}>{resTab==="upcoming" ? "No upcoming reservations" : "No past reservations yet"}</h3>
+                  {resTab === "upcoming" && (
+                    <button onClick={()=>onSetView("explore")}
+                      style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"12px 28px",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>
+                      Explore Classes
+                    </button>
+                  )}
+                </div>
               </div>
             );
           }
           return (
             <div>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:24}}>
-                <h2 style={{fontFamily:F2,fontSize:22,fontWeight:700,color:"#213C18",letterSpacing:"-0.5px",margin:0}}>Upcoming Bookings</h2>
-              </div>
+              {subTabNav}
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 {items.map(bk=>{
                   const cancelState = cancelStatusFor({ booking_date: bk.date, start_time: bk.time }, bk.biz?.cat);
-                  const canCancel = bk.dbId && cancelState.canCancel && bk.status !== 'cancelled';
+                  const canCancel = resTab === "upcoming" && bk.dbId && cancelState.canCancel && bk.status !== 'cancelled';
+                  // Status label + colour differs for past bookings.
+                  const isCancelled = bk.status === 'cancelled' || bk.status === 'declined';
+                  const isPastDate  = (sessionDateTime(bk.date, bk.time)?.getTime() || 0) < Date.now();
+                  const statusLabel = isCancelled ? "Cancelled" : (resTab === "past" ? "Completed" : "Confirmed");
+                  const statusBg    = isCancelled ? "#FADEC0" : (resTab === "past" ? "#E4E2DD" : "#CAECBA");
+                  const statusFg    = isCancelled ? "#6F5B44" : "#213C18";
                   return (
-                    <div key={bk.key} style={{display:"flex",flexWrap:"wrap",background:"#F5F3EE",borderRadius:12,overflow:"hidden",transition:"background .2s"}}>
+                    <div key={bk.key} style={{display:"flex",flexWrap:"wrap",background:"#F5F3EE",borderRadius:12,overflow:"hidden",transition:"background .2s",opacity:isPastDate?0.88:1}}>
                       <div style={{width:"clamp(80px,30vw,160px)",minHeight:100,flexShrink:0,overflow:"hidden"}}>
                         <img src={bk.biz?.img || "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=400&q=80"} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
                       </div>
@@ -2705,11 +2734,11 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                           <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:0}}>📍 {bk.biz?.name}{bk.biz?.loc ? `, ${bk.biz.loc}` : ""}</p>
                         </div>
                         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:10}}>
-                          <span style={{display:"flex",alignItems:"center",gap:6,background:"#CAECBA",color:"#213C18",padding:"6px 14px",borderRadius:999,fontSize:11,fontWeight:700}}>
-                            <span style={{width:6,height:6,borderRadius:"50%",background:"#213C18",display:"inline-block"}}/>Confirmed
+                          <span style={{display:"flex",alignItems:"center",gap:6,background:statusBg,color:statusFg,padding:"6px 14px",borderRadius:999,fontSize:11,fontWeight:700}}>
+                            <span style={{width:6,height:6,borderRadius:"50%",background:statusFg,display:"inline-block"}}/>{statusLabel}
                           </span>
                           <span style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18"}}>◈ {bk.cost} credits</span>
-                          {bk.dbId && (
+                          {resTab === "upcoming" && bk.dbId && (
                             canCancel ? (
                               <button onClick={async () => {
                                 if (!confirm(`Cancel this booking? Your ${bk.cost} credits will be refunded.`)) return;
