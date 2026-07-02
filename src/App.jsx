@@ -199,73 +199,144 @@ const TERMS_VERSION = 'v1.0-2026-07';
 const AGREEMENT_SECTIONS = [
   {
     id: '1',
-    title: 'Parties and background',
+    title: 'Definitions',
     body: [
-      '[Paste clause 1 copy here.]',
+      '1.1  "Wello", "we", "us" means Wello-Wellness Ltd, a company registered in England and Wales, operating the Wello platform at wello-wellness.com and associated applications.',
+      '1.2  "Partner", "you" means the venue, business or individual instructor named in Schedule 1.',
+      '1.3  "Platform" means the Wello website, web application, and any associated booking, payment and communication systems operated by Wello.',
+      '1.4  "Member" means a customer who holds a Wello account and uses credits to book Sessions.',
+      '1.5  "Session" means any class, treatment, activity, access period or one-to-one appointment listed by the Partner on the Platform.',
+      '1.6  "Booking" means a confirmed reservation of a Session made by a Member through the Platform.',
+      '1.7  "Completed Booking" means a Booking where the Session took place, or where the Member failed to attend without cancelling in accordance with the cancellation policy (a "no-show").',
+      '1.8  "Session Value" means the price of the Session in euros, as set by the Partner. Members pay using Wello credits, purchased at a fixed rate of one credit per euro, so the Session Value in euros and its price in credits are always numerically identical. Commission is calculated on the Session Value.',
+      '1.9  "Commission" means the percentage of the Session Value payable to Wello for each Completed Booking, as individually agreed and stated in Schedule 1.',
+      '1.10  "Founding Partner" means a Partner identified as such in Schedule 1, being one of the early partners who joined the Platform before or shortly after public launch.',
     ],
   },
   {
     id: '2',
-    title: 'Definitions',
+    title: 'Appointment and Scope',
     body: [
-      '[Paste clause 2 copy here.]',
+      '2.1  Wello operates a marketplace that connects Members with wellness venues and instructors in Mallorca. Wello acts as a booking intermediary and commercial agent for the limited purpose of concluding Bookings and collecting payment on the Partner\'s behalf.',
+      '2.2  The Partner appoints Wello as its non-exclusive agent for the purposes of marketing the Partner\'s Sessions on the Platform, accepting Bookings, and collecting payment from Members.',
+      '2.3  This Agreement is non-exclusive. The Partner remains free to sell its services through its own channels and through any other platform, and Wello remains free to list any other venue or instructor.',
+      '2.4  The Partner at all times remains the provider of the Sessions. Nothing in this Agreement creates an employment relationship, joint venture or partnership between the parties. Wello does not deliver, supervise or control the Sessions.',
     ],
   },
   {
     id: '3',
-    title: 'Wello services',
+    title: 'Listings and Content',
     body: [
-      '[Paste clause 3 copy here.]',
+      '3.1  The Partner will provide accurate, complete and up-to-date information for its listing, including venue details, Session descriptions, schedules, capacity, pricing, amenities and photographs.',
+      '3.2  The Partner is responsible for keeping its availability accurate, whether managed through an integrated booking system (such as Acuity or an iCal feed), or manually through the Wello partner portal.',
+      '3.3  The Partner grants Wello a non-exclusive, royalty-free licence to use the Partner\'s name, logo, photographs and listing content on the Platform and in Wello\'s marketing materials (including social media and email) for the purpose of promoting the Partner\'s Sessions and the Platform, for the duration of this Agreement.',
+      '3.4  The Partner warrants that it owns or has the right to license all content it provides, and that such content does not infringe any third party rights.',
+      '3.5  Wello may edit listing content for formatting, clarity and consistency with the Platform\'s style, and may remove content that it reasonably considers inaccurate, misleading or inappropriate.',
     ],
   },
   {
     id: '4',
-    title: 'Partner obligations',
+    title: 'Bookings, Pricing and Credits',
     body: [
-      '[Paste clause 4 copy here.]',
+      '4.1  The Partner sets its own Session prices. Wello will not alter the Partner\'s pricing without agreement. Prices are displayed to Members in Wello credits at a rate of one credit per euro of Session Value.',
+      '4.2  Members pay for Sessions using credits purchased from Wello. Wello is solely responsible for the sale of credits to Members, including any service fee Wello charges Members on credit purchases. No such Member-facing fee reduces the amount payable to the Partner.',
+      '4.3  A Booking is confirmed when the Member completes the booking flow on the Platform and, where relevant, when it is accepted by the Partner\'s integrated booking system. For private instructor Sessions, a Booking is confirmed when the instructor accepts the request or when the acceptance window expires in accordance with clause 4.4.',
+      '4.4  Private instructor booking requests must be accepted or declined by the Partner within 48 hours. If the Partner does not respond within 48 hours, the request is automatically declined and the Member\'s credits are returned in full, in accordance with clause 5.2. Accepting promptly gives the Partner the best chance of retaining the Booking.',
+      '4.5  The Partner will honour every confirmed Booking on the same basis as a booking made through its own channels, and will not treat Members less favourably than its direct customers.',
     ],
   },
   {
     id: '5',
-    title: 'Commercial terms',
+    title: 'Cancellations and No-Shows',
     body: [
-      'The commercial terms of this Agreement are set out in Schedule 1 above and are individually agreed between Wello and the Partner. No standard rate applies.',
-      '[Paste any additional clause 5 copy here.]',
+      '5.1  Members may cancel a Booking through the Platform in accordance with the cancellation policy displayed at the time of booking. Where a Member cancels within the permitted window, credits are returned to the Member and no Commission or payout arises.',
+      '5.2  Where a Member fails to attend a confirmed Session without cancelling (a no-show), the Booking is treated as a Completed Booking. The Member\'s credits are deducted and the Partner is paid in full for that Booking. The Partner does not bear the cost of Member no-shows. This clause applies to confirmed Bookings only, and does not apply to private instructor requests that are automatically declined under clause 4.4, for which credits are returned to the Member.',
+      '5.3  If the Partner cancels a confirmed Booking, the Member\'s credits are returned in full. Repeated Partner cancellations may result in reduced visibility on the Platform or suspension under clause 11.',
+      '5.4  If the Partner needs to cancel a Session, it will give Wello and affected Members as much notice as reasonably possible through the partner portal or by contacting Wello directly.',
     ],
   },
   {
     id: '6',
-    title: 'Payment and payouts',
+    title: 'Commission and Payments',
     body: [
-      '[Paste clause 6 copy here.]',
+      '6.1  In consideration of Wello\'s services, the Partner will pay Wello the Commission stated in Schedule 1 on the Session Value of each Completed Booking. The Commission rate is agreed individually with each Partner and is not a standard or published rate.',
+      '6.2  Where Schedule 1 records a Founding Partner incentive, no Commission is payable on the Partner\'s first 100 Completed Bookings. Commission applies from the 101st Completed Booking at the rate stated in Schedule 1.',
+      '6.3  Wello collects payment from Members on the Partner\'s behalf. Wello will pay the Partner the Session Value of each Completed Booking, less the applicable Commission, in euros, to the Partner\'s nominated bank account.',
+      '6.4  Payouts are made weekly, covering all Completed Bookings settled in the preceding period, whether processed automatically via Stripe Connect or manually by Wello. Wello may adjust the payout day with reasonable notice, but will not reduce the frequency below weekly without the Partner\'s agreement.',
+      '6.5  Receipt of payment by Wello from a Member discharges the Member\'s payment obligation to the Partner for that Booking. Wello bears the risk of Member payment failure once a Booking is confirmed as a Completed Booking.',
+      '6.6  Wello will make available to the Partner, through the partner portal, a record of Bookings, Completed Bookings, Commission deducted and payouts made.',
+      '6.7  Amounts payable under this Agreement are stated exclusive of VAT or Spanish IVA, which shall be added where applicable. Each party is responsible for its own tax affairs. The Partner is responsible for accounting for tax on its Session revenue, and Wello is responsible for accounting for tax on its Commission.',
+      '6.8  If a Booking is refunded to a Member after payout (for example following a legitimate complaint), Wello may deduct the corresponding amount from the Partner\'s next payout, provided Wello has consulted the Partner first.',
     ],
   },
   {
     id: '7',
-    title: 'Term and termination',
+    title: 'Partner Obligations',
     body: [
-      '[Paste clause 7 copy here.]',
+      '7.1  The Partner will:',
+      '(a)  deliver Sessions with reasonable skill and care and to the standard described in its listing;',
+      '(b)  hold and maintain all licences, registrations, permits and insurance required to operate its business and deliver the Sessions lawfully in Spain, including appropriate public liability insurance;',
+      '(c)  ensure that any staff or instructors delivering Sessions are appropriately qualified and, where legally required, certified;',
+      '(d)  comply with all applicable health, safety and hygiene requirements at its premises or session locations;',
+      '(e)  treat Members with courtesy and deal with complaints promptly and professionally; and',
+      '(f)  comply with all applicable laws, including Spanish consumer protection law, in its dealings with Members.',
+      '7.2  For private instructors: the Partner confirms it is entitled to work in Spain, is registered as required for self-employment (autónomo) or equivalent, and holds insurance appropriate to delivering one-to-one sessions at third party or outdoor locations.',
+      '7.3  The Partner will not solicit Members to book directly with the Partner for the purpose of avoiding Commission on Sessions initiated through the Platform. Members who independently choose to become direct customers of the Partner are not restricted.',
     ],
   },
   {
     id: '8',
-    title: 'Data protection',
+    title: 'Wello Obligations',
     body: [
-      '[Paste clause 8 copy here.]',
+      '8.1  Wello will:',
+      '(a)  operate and maintain the Platform with reasonable skill and care;',
+      '(b)  collect payment from Members and pay the Partner in accordance with clause 6;',
+      '(c)  provide the Partner with access to a partner portal to manage its listing, schedule and bookings;',
+      '(d)  provide first-line customer support to Members in relation to the Platform, credits and bookings; and',
+      '(e)  handle Member payment data securely through its payment provider. Card details are processed by Stripe and are not stored by Wello.',
+      '8.2  Wello does not guarantee any volume of Bookings, revenue or Platform availability. The Platform may be unavailable during maintenance or due to events outside Wello\'s control.',
     ],
   },
   {
     id: '9',
-    title: 'Liability and indemnity',
+    title: 'Data Protection',
     body: [
-      '[Paste clause 9 copy here.]',
+      '9.1  Each party will comply with applicable data protection law, including the UK GDPR and the EU GDPR as applicable, in respect of personal data processed under this Agreement.',
+      '9.2  Wello shares with the Partner only the Member personal data necessary to deliver a booked Session (such as the Member\'s name, and for private instructor Sessions, the Member\'s stated location). The Partner will use that data solely to deliver the Session, will keep it secure, and will not use it for marketing without the Member\'s separate consent.',
+      '9.3  Each party acts as an independent controller of the personal data it processes. If the parties\' processing arrangement changes such that a processor relationship arises, the parties will enter into appropriate data processing terms.',
+      '9.4  Each party will notify the other without undue delay on becoming aware of a personal data breach affecting data shared under this Agreement.',
     ],
   },
   {
     id: '10',
+    title: 'Liability',
+    body: [
+      '10.1  The Partner is solely responsible for the delivery of Sessions and for the safety of Members while attending Sessions. The Partner will indemnify Wello against claims arising from personal injury, property damage or other direct loss suffered by a Member as a result of the Partner\'s delivery of a Session, or the Partner\'s breach of clause 7, except to the extent caused by Wello\'s negligence.',
+      '10.2  Wello is responsible for the operation of the Platform and the handling of payments. Wello\'s total liability to the Partner under this Agreement in any 12 month period is limited to the total Commission received by Wello from the Partner in that period.',
+      '10.3  Neither party excludes or limits liability for death or personal injury caused by its negligence, for fraud, or for any liability that cannot lawfully be excluded or limited.',
+      '10.4  Neither party is liable for indirect or consequential loss, loss of profit or loss of anticipated savings, save that this clause does not limit the Partner\'s payment obligations or the indemnity in clause 10.1.',
+    ],
+  },
+  {
+    id: '11',
+    title: 'Term, Suspension and Termination',
+    body: [
+      '11.1  This Agreement starts on the date in Schedule 1 and continues until terminated. There is no minimum term and no long-term commitment.',
+      '11.2  Either party may terminate this Agreement at any time by giving 30 days\' written notice (email is sufficient).',
+      '11.3  Wello may suspend the Partner\'s listing immediately where it reasonably suspects: a serious risk to Member safety; fraud; repeated failure to honour Bookings; or material breach of this Agreement. Wello will notify the Partner of the reason and, where the issue can be remedied, give the Partner a reasonable opportunity to remedy it.',
+      '11.4  Either party may terminate immediately on written notice if the other commits a material breach which is not remedied within 14 days of notice, or becomes insolvent.',
+      '11.5  On termination: confirmed future Bookings will either be honoured by the Partner or cancelled with credits returned to Members, as agreed between the parties; Wello will pay all outstanding amounts due for Completed Bookings in the next payout cycle; and each party will stop using the other\'s branding, except that Wello may retain records as required by law.',
+    ],
+  },
+  {
+    id: '12',
     title: 'General',
     body: [
-      '[Paste clause 10 copy here.]',
+      '12.1  Changes to these terms. Wello may update the general terms of this Agreement by giving the Partner at least 30 days\' notice by email. If the Partner does not accept the change, it may terminate under clause 11.2 before the change takes effect. Changes to the individually agreed Commercial Terms in Schedule 1 require the written agreement of both parties.',
+      '12.2  Assignment. Wello may assign this Agreement to a successor entity, including a Spanish company within the same ownership, on notice to the Partner. The Partner may not assign this Agreement without Wello\'s consent, not to be unreasonably withheld.',
+      '12.3  Entire agreement. This Agreement, including Schedule 1, is the entire agreement between the parties in relation to its subject matter.',
+      '12.4  Notices. Notices may be given by email to the addresses in Schedule 1 (for the Partner) and hello@wello-wellness.com (for Wello).',
+      '12.5  Governing law and jurisdiction. This Agreement is governed by the laws of England and Wales, and the parties submit to the non-exclusive jurisdiction of the English courts.',
     ],
   },
 ];
@@ -4480,8 +4551,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
 
   // ─── Partner Agreement handlers ─────────────────────────────────────
   // Derived agreement state — computed from bizData so it stays in sync.
-  const hasCommission          = bizData?.commission_rate != null && bizData?.commission_rate !== "";
-  const commissionRateNum      = Number(bizData?.commission_rate);
+  // Fall back to the older `commission` column (integer) so partners that
+  // were configured before the commission_rate migration still render a
+  // rate here without needing a data backfill.
+  const commissionRaw = (bizData?.commission_rate != null && bizData?.commission_rate !== "")
+    ? bizData.commission_rate
+    : bizData?.commission;
+  const hasCommission          = commissionRaw != null && commissionRaw !== "";
+  const commissionRateNum      = Number(commissionRaw);
   const commissionRateDisplay  = hasCommission && Number.isFinite(commissionRateNum)
     ? (Number.isInteger(commissionRateNum) ? `${commissionRateNum}%` : `${commissionRateNum}%`)
     : null;
@@ -5944,7 +6021,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 const rows = [
                   ["Partner legal name",    bizData?.legal_name || bizData?.name || "—"],
                   ["Trading name",          bizData?.name || "—"],
-                  ["Business type",         bizData?.business_type || bizData?.category || "—"],
+                  ["Business type",         (bizData?.business_type ? (businessTypeFor(bizData.business_type)?.label || bizData.business_type) : null) || bizData?.category || "—"],
                   ["Address",               bizData?.address || "—"],
                   ["Email",                 bizData?.email || "—"],
                   ["Phone",                 bizData?.phone || "—"],
