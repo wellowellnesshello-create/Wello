@@ -2653,7 +2653,24 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
               status: bk.status,
             };
           }
-          const items = shownBookings.map(normalize).filter(b => b.status !== 'cancelled' && b.status !== 'declined');
+          // Filter: not cancelled/declined AND session hasn't happened yet.
+          // We compare against today's midnight so a session earlier today
+          // still shows here until the clock ticks past midnight, giving
+          // members a beat to cancel same-day sessions if the window allows.
+          const cutoff = new Date();
+          cutoff.setHours(0, 0, 0, 0);
+          const items = shownBookings
+            .map(normalize)
+            .filter(b => b.status !== 'cancelled' && b.status !== 'declined')
+            .filter(b => {
+              const dt = sessionDateTime(b.date, b.time);
+              return dt ? dt >= cutoff : true;
+            })
+            .sort((a, z) => {
+              const da = sessionDateTime(a.date, a.time)?.getTime() || 0;
+              const dz = sessionDateTime(z.date, z.time)?.getTime() || 0;
+              return da - dz;
+            });
           if (items.length === 0) {
             return (
               <div style={{background:"#F5F3EE",borderRadius:16,padding:"80px 20px",textAlign:"center"}}>
