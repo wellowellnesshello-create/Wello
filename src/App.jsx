@@ -171,7 +171,7 @@ const INTEGRATIONS = [
   { id:"ical",       name:"iCal Feed",   desc:"Any calendar, 15-min sync",    auth:"Feed URL",    col:T.ochre },
   { id:"custom",     name:"Custom API",  desc:"Your own booking system",      auth:"Bearer Token",col:T.stone },
 ];
-const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","Meditation","Padel","Tennis","Pickleball","Private Instructor"];
+const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","Meditation","Spa","Massage","Sound Bath","Padel","Tennis","Pickleball","Private Instructor"];
 
 // Business-type decision drives the onboarding flow flavor. Stored in
 // businesses.business_type (a fixed enum-ish string). isPrivateInstructor —
@@ -183,7 +183,7 @@ const BUSINESS_TYPES = [
   { id:"hotel_gym",         icon:"🏨",   label:"Hotel or gym",         desc:"Day passes, pool access, gym membership",               defaultCategory:"Hotel Gym",   suggestedCats:["Hotel Gym","Pool Access","Fitness Class"] },
   { id:"private_instructor", icon:"👋",  label:"Private instructor",   desc:"1-to-1 sessions, you travel to clients",                defaultCategory:"Private Instructor", suggestedCats:["Yoga","Pilates","Fitness Class","Meditation","Surfing","Paddle Boarding"] },
   { id:"outdoor",           icon:"🌊",   label:"Outdoor adventure",    desc:"Surf, kayak, hike, bike, sail",                         defaultCategory:"Surfing",     suggestedCats:["Surfing","Paddle Boarding","Kayaking","Cycling","Hiking","Running"] },
-  { id:"spa",               icon:"💆",   label:"Spa or wellness",      desc:"Treatments, massage, sound healing",                    defaultCategory:"Meditation",  suggestedCats:["Meditation"] },
+  { id:"spa",               icon:"💆",   label:"Spa or wellness",      desc:"Treatments, massage, sound healing",                    defaultCategory:"Spa",         suggestedCats:["Spa","Massage","Sound Bath","Meditation"] },
   { id:"other",             icon:"❓",   label:"Something else",       desc:"Doesn't fit the categories above — tell us more",       defaultCategory:"Yoga",        suggestedCats: CATS.filter(c=>c!=="All") },
 ];
 function businessTypeFor(typeId) { return BUSINESS_TYPES.find(t=>t.id===typeId) ?? BUSINESS_TYPES[0]; }
@@ -1358,20 +1358,23 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
           <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#A3B18A",letterSpacing:"4px",textTransform:"uppercase",margin:"0 0 8px"}}>The Wellness Pass</p>
           <h1 style={{fontFamily:F2,fontWeight:800,fontSize:"clamp(40px,11vw,160px)",color:"#213C18",lineHeight:1,letterSpacing:"clamp(-2px,-0.04em,-6px)",margin:"0 0 clamp(6px,2vw,20px)",userSelect:"none"}}>wello</h1>
           <p style={{fontFamily:F2,fontSize:"clamp(12px,2vw,18px)",color:"#54584F",fontWeight:500,lineHeight:1.5,maxWidth:520,margin:"0 auto clamp(10px,2.5vw,32px)",letterSpacing:"-0.2px",padding:"0 8px"}}>
-            Book yoga classes, gym access, hotel pools, spa treatments and outdoor adventures — or a private instructor who comes to you. All with one pass. No membership needed.
+            No membership. Just one pass. Book yoga, gyms, hotel pools, spa treatments, outdoor adventures or a private instructor who comes to you, all across Mallorca. Cancel any time.
           </p>
           {/* CTAs — the home page used to host an AI search bar here, but
               it filtered the Featured strip in place rather than navigating,
               which felt broken. The semantic search lives on /explore now;
               the Explore CTA below sends guests straight to it. */}
           <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginTop:"clamp(16px,3vw,28px)"}}>
-            <button onClick={onGotoCredits || (()=>onSetView("credits"))}
-              style={{display:"flex",alignItems:"center",gap:8,padding:"12px clamp(16px,4vw,36px)",borderRadius:999,background:"#213C18",color:"#fff",border:"none",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>
-              Get Your Pass →
-            </button>
+            {/* Explore is the primary CTA — filled forest green — because
+                browsing is the natural first click. Credits is the secondary
+                outlined action, shown to the right. */}
             <button onClick={()=>onSetView("explore")}
+              style={{display:"inline-flex",alignItems:"center",gap:8,padding:"12px clamp(16px,4vw,36px)",borderRadius:999,background:"#213C18",color:"#FBF9F4",border:"2px solid #213C18",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 6px 16px rgba(33,60,24,0.18)"}}>
+              Explore Wello →
+            </button>
+            <button onClick={onGotoCredits || (()=>onSetView("credits"))}
               style={{padding:"12px clamp(16px,4vw,36px)",borderRadius:999,background:"transparent",color:"#213C18",border:"2px solid #213C18",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer"}}>
-              Explore all
+              Buy credits
             </button>
           </div>
         </div>
@@ -1380,10 +1383,10 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
 
       
 
-      {/* ── STATEMENT STRIP ── */}
+      {/* ── STATEMENT STRIP — leads with the no-membership differentiator ── */}
       <div id="statement-strip" style={{background:"#213C18",padding:"14px 24px"}}>
         <div style={{maxWidth:1200,margin:"0 auto",display:"flex",justifyContent:"center",alignItems:"center",gap:0,flexWrap:"wrap"}}>
-          {["Get your pass","Book any venue","Or a private instructor","No membership needed"].map((s,i,arr)=>(
+          {["No membership","One pass","Any venue"].map((s,i,arr)=>(
             <div key={s} style={{display:"flex",alignItems:"center",gap:0}}>
               <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,fontWeight:600,color:"#CAECBA",letterSpacing:"-0.2px",padding:"4px 10px",whiteSpace:"nowrap"}}>{s}</span>
               {i<arr.length-1&&<span style={{color:"rgba(163,177,138,0.4)",fontSize:14}}>·</span>}
@@ -1593,6 +1596,23 @@ function AboutPage({ onSetView }) {
                 <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:0,lineHeight:1.7}}>{desc}</p>
               </div>
             ))}
+          </div>
+        </section>
+
+        {/* Gift teaser — the "reward your favourite people" angle. Kept
+            above the final Explore CTA so the offer is visible without
+            competing with the primary browse action. */}
+        <section style={{background:"#213C18",borderRadius:20,padding:"clamp(28px,5vw,52px)",marginBottom:"clamp(40px,6vw,72px)",display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,260px),1fr))",gap:28,alignItems:"center"}}>
+          <div>
+            <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#A3B18A",letterSpacing:"3px",textTransform:"uppercase",margin:"0 0 12px"}}>Gift Wello</p>
+            <h2 style={{fontFamily:F2,fontSize:"clamp(22px,3vw,32px)",fontWeight:800,color:"#FBF9F4",letterSpacing:"-0.8px",margin:"0 0 12px",lineHeight:1.1}}>Reward your favourite people with wellness on the island.</h2>
+            <p style={{fontFamily:F2,fontSize:14,color:"rgba(251,249,244,0.75)",lineHeight:1.65,margin:0,maxWidth:520}}>Send credits to a friend, a partner, or your team. Redeemable across all Wello partners. No membership, no expiry.</p>
+          </div>
+          <div style={{display:"flex",justifyContent:"flex-end",flexWrap:"wrap",gap:12}}>
+            <button onClick={()=>onSetView("gift")}
+              style={{padding:"14px clamp(20px,3vw,32px)",borderRadius:999,background:"#FBF9F4",color:"#213C18",border:"none",fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer",boxShadow:"0 8px 20px rgba(0,0,0,0.18)"}}>
+              Send a gift →
+            </button>
           </div>
         </section>
 
@@ -2653,17 +2673,18 @@ function PartnersPage({ onSetView }) {
         <div style={{maxWidth:760}}>
           <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#6F5B44",letterSpacing:"4px",textTransform:"uppercase",display:"block",marginBottom:18}}>For wellness venues</span>
           <h1 style={{fontFamily:F2,fontSize:"clamp(34px,6vw,56px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:"0 0 18px",lineHeight:1.02}}>Partner with Wello.</h1>
-          <p style={{fontFamily:F2,fontSize:"clamp(15px,1.9vw,19px)",color:"#43483F",lineHeight:1.6,margin:"0 0 32px",maxWidth:620,fontWeight:400}}>Join a growing network of wellness venues and reach visitors and locals who are actively looking for new experiences in Mallorca.</p>
+          <p style={{fontFamily:F2,fontSize:"clamp(15px,1.9vw,19px)",color:"#43483F",lineHeight:1.6,margin:"0 0 12px",maxWidth:620,fontWeight:400}}>Join a growing network of wellness venues and reach visitors and locals who are actively looking for new experiences in Mallorca.</p>
+          <p style={{fontFamily:F2,fontSize:"clamp(14px,1.7vw,17px)",color:"#54584F",lineHeight:1.6,margin:"0 0 32px",maxWidth:620,fontWeight:400}}>Register your interest and we'll be in touch within two working days to walk through Wello together and get you set up.</p>
           <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
             <button onClick={goRegister}
               style={{padding:"14px 30px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:14,fontWeight:700,cursor:"pointer",letterSpacing:"0.3px",boxShadow:"0 4px 14px rgba(33,60,24,0.2)"}}>
-              Register your venue
-            </button>
-            <button onClick={()=>{ const f = document.getElementById('partners-faq'); if (f) f.scrollIntoView({behavior:"smooth",block:"start"}); }}
-              style={{padding:"14px 24px",background:"transparent",color:"#213C18",border:"1px solid #213C18",borderRadius:999,fontFamily:F2,fontSize:14,fontWeight:600,cursor:"pointer"}}>
-              Read the FAQ
+              Register your interest →
             </button>
           </div>
+          <button onClick={()=>{ const f = document.getElementById('partners-faq'); if (f) f.scrollIntoView({behavior:"smooth",block:"start"}); }}
+            style={{marginTop:14,background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",padding:0,textDecoration:"underline"}}>
+            Or read the FAQ
+          </button>
         </div>
       </section>
 
@@ -2748,7 +2769,7 @@ function PartnersPage({ onSetView }) {
 }
 
 
-function CreditsPage({ credits, listings=[] }) {
+function CreditsPage({ credits, listings=[], authSession, onCheckout, onSetView }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   const PRICE_PER_CREDIT = 1; // EUR. 1 credit equals one euro of credit value.
 
@@ -2958,20 +2979,15 @@ CRITICAL: every "credits" value and "total_credits" MUST be a single positive in
     if (qtyNum < 1) return;
     setBuyLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('create-checkout-session', {
-        body: { quantity: qtyNum, origin: window.location.origin },
-      });
-      if (error || !data?.url) {
-        console.error('create-checkout-session failed:', error?.message || data?.error);
-        setBuyLoading(false);
-        alert("Sorry, we could not open checkout. Please try again, or sign in if you have not yet.");
-        return;
+      // Auth gate lives on the App-level handler now: guests get the sign-up
+      // modal + auto-resumed checkout, signed-in users go straight to Stripe.
+      if (onCheckout) {
+        await onCheckout(qtyNum);
       }
-      window.location.href = data.url;
     } catch (e) {
       console.error('startCheckout error:', e);
+    } finally {
       setBuyLoading(false);
-      alert("Sorry, we could not open checkout. Please try again.");
     }
   }
 
@@ -3089,6 +3105,13 @@ CRITICAL: every "credits" value and "total_credits" MUST be a single positive in
               </button>
 
               <p style={{fontFamily:F2,fontSize:11,color:"rgba(33,60,24,0.55)",textAlign:"center",margin:"14px 0 0"}}>Secure card payment. Credits valid 6 months. 1 credit = €{PRICE_PER_CREDIT}.</p>
+
+              {onSetView && (
+                <button type="button" onClick={()=>onSetView("gift")}
+                  style={{marginTop:14,width:"100%",padding:"13px 22px",background:"#213C18",color:"#FBF9F4",border:"1px solid #213C18",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer",letterSpacing:"0.2px",boxShadow:"0 8px 20px rgba(33,60,24,0.18)",display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                  Or gift credits to someone →
+                </button>
+              )}
             </div>
 
             {/* AI concierge entry — visually prominent card so first-time
@@ -3252,6 +3275,288 @@ CRITICAL: every "credits" value and "total_credits" MUST be a single positive in
           </div>
         )}
 
+      </div>
+    </div>
+  );
+}
+
+function GiftPage({ authSession, profile, onSetView, onGiftCreated }) {
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  // Prefill sender info if the user is signed in — one less thing to type.
+  const [senderName,  setSenderName]     = useState(profile?.full_name || authSession?.user?.user_metadata?.full_name || "");
+  const [senderEmail, setSenderEmail]    = useState(authSession?.user?.email || "");
+  const [recipientName,  setRecipientName]  = useState("");
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [credits, setCredits] = useState(50);
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    if (!senderName && (profile?.full_name || authSession?.user?.user_metadata?.full_name)) {
+      setSenderName(profile?.full_name || authSession?.user?.user_metadata?.full_name || "");
+    }
+    if (!senderEmail && authSession?.user?.email) {
+      setSenderEmail(authSession.user.email);
+    }
+  }, [profile?.full_name, authSession?.user?.email, authSession?.user?.user_metadata?.full_name, senderName, senderEmail]);
+
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(senderEmail.trim());
+  const recipientOK = !recipientEmail.trim() || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail.trim());
+  const canSubmit = credits >= 5 && emailValid && recipientOK && !submitting;
+
+  async function submit() {
+    if (!canSubmit) return;
+    setSubmitting(true); setErr("");
+    try {
+      const { data, error } = await supabase.functions.invoke('create-gift', {
+        body: {
+          credits,
+          sender_email:    senderEmail.trim(),
+          sender_name:     senderName.trim() || null,
+          recipient_email: recipientEmail.trim() || null,
+          recipient_name:  recipientName.trim() || null,
+          message:         message.trim() || null,
+          origin:          window.location.origin,
+        },
+      });
+      if (error || !data?.success) {
+        setErr(data?.error || error?.message || "Something went wrong. Please try again.");
+        setSubmitting(false);
+        return;
+      }
+      onGiftCreated?.({ code: data.code, credits: data.credits, claim_url: data.claim_url, recipient_email: recipientEmail.trim() || null });
+    } catch (e) {
+      setErr(e.message || "Something went wrong.");
+      setSubmitting(false);
+    }
+  }
+
+  const cardSt   = { background:"#fff", border:"1px solid rgba(195,200,188,0.3)", borderRadius:16, padding:"clamp(20px,3.5vw,32px)", boxShadow:"0 1px 8px rgba(0,0,0,0.04)" };
+  const labelSt  = { fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:6 };
+  const inputSt  = { width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"12px 16px",fontFamily:F2,fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s" };
+
+  const presets = [25, 50, 100, 200];
+
+  return (
+    <div style={{maxWidth:900,margin:"0 auto",padding:"clamp(20px,4vw,40px) clamp(16px,4vw,24px) 80px"}}>
+      <div style={{marginBottom:24}}>
+        <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#A3B18A",letterSpacing:"3px",textTransform:"uppercase",margin:"0 0 10px"}}>Gift Wello</p>
+        <h1 style={{fontFamily:F2,fontSize:"clamp(28px,4vw,44px)",fontWeight:800,color:"#213C18",letterSpacing:"-1.2px",margin:"0 0 10px",lineHeight:1.05}}>Reward your favourite people with wellness on the island.</h1>
+        <p style={{fontFamily:F2,fontSize:"clamp(13px,1.6vw,15px)",color:"#54584F",lineHeight:1.6,margin:0,maxWidth:640}}>
+          Send someone credits to book across all Wello partners on the island. They pick what they love, whenever suits them. No membership. Cancel any time.
+        </p>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,320px),1fr))",gap:20,alignItems:"start"}}>
+        {/* Left column — gift form */}
+        <div style={cardSt}>
+          <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 14px"}}>How much</p>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:14}}>
+            {presets.map(p => (
+              <button key={p} type="button" onClick={()=>setCredits(p)}
+                style={{padding:"10px 18px",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer",border:`1px solid ${credits===p?"#213C18":"rgba(195,200,188,0.6)"}`,background:credits===p?"#213C18":"transparent",color:credits===p?"#FBF9F4":"#213C18",transition:"all .13s"}}>
+                {p} credits
+              </button>
+            ))}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+            <label style={{fontFamily:F2,fontSize:12,color:"#54584F"}}>Or enter a custom amount</label>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:6}}>
+            <input type="number" min="5" max="5000" value={credits}
+              onChange={e=>{ const n = parseInt(e.target.value,10); setCredits(Number.isFinite(n)?n:0); }}
+              style={{...inputSt,flex:"0 1 140px"}}/>
+            <span style={{fontFamily:F2,fontSize:13,color:"#54584F"}}>credits</span>
+          </div>
+          <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:"0 0 22px"}}>Minimum 5 credits.</p>
+
+          <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 14px"}}>Recipient</p>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,180px),1fr))",gap:14,marginBottom:14}}>
+            <div>
+              <label style={labelSt}>Their name</label>
+              <input value={recipientName} onChange={e=>setRecipientName(e.target.value)} placeholder="Optional"
+                style={inputSt}/>
+            </div>
+            <div>
+              <label style={labelSt}>Their email</label>
+              <input type="email" value={recipientEmail} onChange={e=>setRecipientEmail(e.target.value)} placeholder="Optional if you'd rather share the code yourself"
+                style={inputSt}/>
+            </div>
+          </div>
+          <div style={{marginBottom:22}}>
+            <label style={labelSt}>Message</label>
+            <textarea value={message} onChange={e=>setMessage(e.target.value.slice(0,400))} placeholder="Optional — a note they'll see with the gift."
+              style={{...inputSt,resize:"vertical",minHeight:80,fontFamily:F2}}/>
+            <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:"6px 0 0",textAlign:"right"}}>{message.length}/400</p>
+          </div>
+
+          <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 14px"}}>From</p>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,180px),1fr))",gap:14,marginBottom:6}}>
+            <div>
+              <label style={labelSt}>Your name</label>
+              <input value={senderName} onChange={e=>setSenderName(e.target.value)} placeholder="Your name"
+                style={inputSt}/>
+            </div>
+            <div>
+              <label style={labelSt}>Your email</label>
+              <input type="email" value={senderEmail} onChange={e=>setSenderEmail(e.target.value)} placeholder="you@email.com"
+                style={{...inputSt,borderColor:senderEmail && !emailValid ? "#C46A4D" : "rgba(195,200,188,0.5)"}}/>
+            </div>
+          </div>
+        </div>
+
+        {/* Right column — review + submit */}
+        <div style={{...cardSt,position:"sticky",top:120}}>
+          <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 14px"}}>Your gift</p>
+          <div style={{padding:"18px 20px",background:"#F5F3EE",borderRadius:12,marginBottom:16}}>
+            <p style={{fontFamily:F2,fontSize:32,fontWeight:800,color:"#213C18",letterSpacing:"-1px",margin:0,lineHeight:1.05}}>{credits}<span style={{fontSize:14,color:"#54584F",fontWeight:600,marginLeft:8}}>credits</span></p>
+            <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"6px 0 0"}}>to {recipientName || recipientEmail || "your recipient"}</p>
+          </div>
+          <ul style={{listStyle:"none",padding:0,margin:"0 0 18px",display:"flex",flexDirection:"column",gap:8}}>
+            <li style={{fontFamily:F2,fontSize:12,color:"#54584F",display:"flex",alignItems:"flex-start",gap:8}}>
+              <Check size={14} stroke="#213C18" strokeWidth={2.6}/>
+              <span>Redeemable across all Wello partners.</span>
+            </li>
+            <li style={{fontFamily:F2,fontSize:12,color:"#54584F",display:"flex",alignItems:"flex-start",gap:8}}>
+              <Check size={14} stroke="#213C18" strokeWidth={2.6}/>
+              <span>No membership required for them.</span>
+            </li>
+            <li style={{fontFamily:F2,fontSize:12,color:"#54584F",display:"flex",alignItems:"flex-start",gap:8}}>
+              <Check size={14} stroke="#213C18" strokeWidth={2.6}/>
+              <span>They get a claim code and, if you gave their email, an invite link.</span>
+            </li>
+          </ul>
+          {err && <p style={{fontFamily:F2,fontSize:12,color:"#C46A4D",margin:"0 0 12px"}}>{err}</p>}
+          <button onClick={submit} disabled={!canSubmit}
+            style={{width:"100%",padding:"14px 24px",background:!canSubmit?"#E4E2DD":"#213C18",color:!canSubmit?"#54584F":"#FBF9F4",border:"none",borderRadius:999,fontFamily:F2,fontSize:14,fontWeight:700,cursor:!canSubmit?"not-allowed":"pointer",boxShadow:!canSubmit?"none":"0 8px 20px rgba(33,60,24,0.18)"}}>
+            {submitting ? "Sending gift…" : "Send gift"}
+          </button>
+          <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:"12px 0 0",lineHeight:1.5,textAlign:"center"}}>Payment integration coming soon. You'll receive an email receipt.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GiftSentPage({ gift, onSetView }) {
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  const [copied, setCopied] = useState("");
+  async function copy(text, id) {
+    try { await navigator.clipboard.writeText(text); setCopied(id); setTimeout(()=>setCopied(""), 1600); }
+    catch { /* clipboard blocked, nothing to do */ }
+  }
+  return (
+    <div style={{maxWidth:640,margin:"0 auto",padding:"clamp(28px,5vw,60px) clamp(16px,4vw,24px) 80px",textAlign:"center"}}>
+      <div style={{width:72,height:72,margin:"0 auto 20px",borderRadius:"50%",background:"#CAECBA",border:"1px solid #A3B18A",display:"flex",alignItems:"center",justifyContent:"center"}}>
+        <Check size={34} stroke="#213C18" strokeWidth={2.6}/>
+      </div>
+      <h1 style={{fontFamily:F2,fontSize:"clamp(24px,3.5vw,36px)",fontWeight:800,color:"#213C18",letterSpacing:"-1px",margin:"0 0 10px",lineHeight:1.1}}>Your gift is on its way.</h1>
+      <p style={{fontFamily:F2,fontSize:14,color:"#54584F",lineHeight:1.6,margin:"0 0 26px"}}>
+        {gift.recipient_email
+          ? <>We emailed <strong style={{color:"#213C18"}}>{gift.recipient_email}</strong> with the claim link. You also have a copy in your inbox.</>
+          : <>Share the claim code or link below. Your copy is also in your inbox.</>}
+      </p>
+
+      <div style={{background:"#fff",border:"1px solid rgba(195,200,188,0.3)",borderRadius:16,padding:"20px 22px",boxShadow:"0 1px 8px rgba(0,0,0,0.04)",textAlign:"left"}}>
+        <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>Claim code</p>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 14px",background:"#F5F3EE",borderRadius:8,marginBottom:16}}>
+          <span style={{fontFamily:"'SF Mono',ui-monospace,monospace",fontSize:16,fontWeight:700,color:"#213C18",letterSpacing:"0.5px"}}>{gift.code}</span>
+          <button type="button" onClick={()=>copy(gift.code, "code")}
+            style={{background:"transparent",border:"1px solid rgba(33,60,24,0.4)",color:"#213C18",fontFamily:F2,fontSize:10,fontWeight:700,padding:"5px 12px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+            {copied === "code" ? "Copied" : "Copy"}
+          </button>
+        </div>
+        <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>Claim link</p>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"10px 14px",background:"#F5F3EE",borderRadius:8}}>
+          <span style={{fontFamily:F2,fontSize:12,color:"#54584F",wordBreak:"break-all"}}>{gift.claim_url}</span>
+          <button type="button" onClick={()=>copy(gift.claim_url, "url")}
+            style={{background:"transparent",border:"1px solid rgba(33,60,24,0.4)",color:"#213C18",fontFamily:F2,fontSize:10,fontWeight:700,padding:"5px 12px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase",flexShrink:0}}>
+            {copied === "url" ? "Copied" : "Copy"}
+          </button>
+        </div>
+      </div>
+
+      <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginTop:24}}>
+        <button onClick={()=>onSetView("gift")}
+          style={{padding:"12px 24px",background:"transparent",color:"#213C18",border:"2px solid #213C18",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+          Send another gift
+        </button>
+        <button onClick={()=>onSetView("home")}
+          style={{padding:"12px 24px",background:"#213C18",color:"#FBF9F4",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+          Back to Wello
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RedeemPage({ authSession, prefilledCode = "", onSetView, onOpenSignIn, onCreditsAdded }) {
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  const [code, setCode] = useState(prefilledCode);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null); // { credits_added, new_balance, sender_name, sender_email }
+  const [err, setErr] = useState("");
+
+  async function submit() {
+    if (!authSession) { onOpenSignIn?.(); return; }
+    const clean = code.trim().toUpperCase();
+    if (!clean) { setErr("Enter a claim code."); return; }
+    setBusy(true); setErr("");
+    try {
+      const { data, error } = await supabase.functions.invoke('redeem-gift', { body: { code: clean } });
+      if (error || !data?.success) {
+        setErr(data?.error || error?.message || "Could not redeem this code.");
+        setBusy(false);
+        return;
+      }
+      setResult(data);
+      onCreditsAdded?.(data.new_balance);
+      setBusy(false);
+    } catch (e) {
+      setErr(e.message || "Something went wrong.");
+      setBusy(false);
+    }
+  }
+
+  const cardSt   = { background:"#fff", border:"1px solid rgba(195,200,188,0.3)", borderRadius:16, padding:"clamp(24px,4vw,36px)", boxShadow:"0 1px 8px rgba(0,0,0,0.04)" };
+  const inputSt  = { width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"14px 18px",fontFamily:"'SF Mono',ui-monospace,monospace",fontSize:16,color:"#213C18",outline:"none",boxSizing:"border-box",background:"#FBF9F4",transition:"border-color .15s",letterSpacing:"0.5px",textTransform:"uppercase" };
+
+  if (result) {
+    const senderLabel = result.sender_name || result.sender_email || "Someone";
+    return (
+      <div style={{maxWidth:560,margin:"0 auto",padding:"clamp(28px,5vw,60px) clamp(16px,4vw,24px) 80px",textAlign:"center"}}>
+        <div style={{width:72,height:72,margin:"0 auto 20px",borderRadius:"50%",background:"#CAECBA",border:"1px solid #A3B18A",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <Check size={34} stroke="#213C18" strokeWidth={2.6}/>
+        </div>
+        <h1 style={{fontFamily:F2,fontSize:"clamp(24px,3.5vw,32px)",fontWeight:800,color:"#213C18",letterSpacing:"-1px",margin:"0 0 10px",lineHeight:1.1}}>{result.credits_added} credits added.</h1>
+        <p style={{fontFamily:F2,fontSize:14,color:"#54584F",lineHeight:1.6,margin:"0 0 26px"}}>{senderLabel} gifted you {result.credits_added} credits. Your new balance is <strong style={{color:"#213C18"}}>{result.new_balance}</strong>.</p>
+        <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap"}}>
+          <button onClick={()=>onSetView("explore")}
+            style={{padding:"12px 24px",background:"#213C18",color:"#FBF9F4",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+            Explore Wello →
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{maxWidth:520,margin:"0 auto",padding:"clamp(28px,5vw,60px) clamp(16px,4vw,24px) 80px"}}>
+      <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#A3B18A",letterSpacing:"3px",textTransform:"uppercase",margin:"0 0 10px",textAlign:"center"}}>Redeem</p>
+      <h1 style={{fontFamily:F2,fontSize:"clamp(24px,3.5vw,32px)",fontWeight:800,color:"#213C18",letterSpacing:"-1px",margin:"0 0 8px",lineHeight:1.1,textAlign:"center"}}>Claim your gift</h1>
+      <p style={{fontFamily:F2,fontSize:13,color:"#54584F",lineHeight:1.6,margin:"0 0 24px",textAlign:"center"}}>Enter the claim code someone sent you. Credits land on your account instantly.</p>
+      <div style={cardSt}>
+        <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:8}}>Claim code</label>
+        <input value={code} onChange={e=>setCode(e.target.value.toUpperCase())}
+          placeholder="WELLO-XXXX-XXXX" autoFocus
+          onKeyDown={e=>{ if(e.key==="Enter") submit(); }}
+          style={inputSt}/>
+        {err && <p style={{fontFamily:F2,fontSize:12,color:"#C46A4D",margin:"12px 0 0"}}>{err}</p>}
+        {!authSession && !err && <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"12px 0 0"}}>You'll be asked to sign in before we can add the credits to your account.</p>}
+        <button onClick={submit} disabled={busy}
+          style={{width:"100%",padding:"14px 24px",marginTop:16,background:busy?"#E4E2DD":"#213C18",color:busy?"#54584F":"#FBF9F4",border:"none",borderRadius:999,fontFamily:F2,fontSize:14,fontWeight:700,cursor:busy?"not-allowed":"pointer"}}>
+          {busy ? "Checking…" : authSession ? "Redeem" : "Sign in to redeem"}
+        </button>
       </div>
     </div>
   );
@@ -7632,8 +7937,19 @@ export default function App() {
   const [view,setView]         = useState(()=>{
     const params = new URLSearchParams(window.location.search);
     if(params.get("portal")==="business") return "biz-portal";
+    // ?claim=WELLO-XXXX-XXXX arrives from the recipient email link. We open
+    // the Redeem page directly with the code prefilled.
+    if(params.get("claim")) return "redeem";
     return "home";
   });
+  // ?claim=WELLO-XXXX-XXXX from the recipient email — read once so RedeemPage
+  // can prefill the input. Left in URL until the user submits so a mid-flow
+  // sign-in doesn't lose the code.
+  const [prefilledClaimCode, setPrefilledClaimCode] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get("claim") || ""; }
+    catch { return ""; }
+  });
+  const [lastGift, setLastGift] = useState(null); // { code, credits, claim_url, recipient_email }
   const headerRef = useRef(null);
   const [headerH, setHeaderH] = useState(91);
   useEffect(()=>{
@@ -7857,10 +8173,30 @@ export default function App() {
   const [isBiz,setIsBiz]       = useState(false);
   const [bizPreview,setBizPreview] = useState(false);
 
-  // Fetch listings + slots from Supabase (with localStorage cache for instant load)
-  useEffect(()=>{
-    function transformRows(listingRows) {
-      return listingRows.map(row => ({
+  // Fetch listings + slots from Supabase (with localStorage cache for instant
+  // load). Callable from anywhere so we can re-run it when the customer
+  // navigates back to Explore / Home — otherwise partner-side edits to
+  // availability won't show up until a full page refresh.
+  const fetchListings = useCallback(async ({ skipCache = false } = {}) => {
+    if (!skipCache) {
+      try {
+        const cached = localStorage.getItem("wello_listings");
+        if (cached) {
+          setListings(JSON.parse(cached));
+          setListingsLoading(false);
+        }
+      } catch { /* non-critical: ignore */ }
+    }
+    const { data: listingRows, error } = await supabase
+      .from("listings")
+      .select("*, slots(*)")
+      .eq("status","active")
+      .order("id");
+    if (error) {
+      console.error("Error fetching listings:", error);
+      if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
+    } else if (listingRows && listingRows.length > 0) {
+      const transformed = listingRows.map(row => ({
         id: row.id,
         business_id: row.business_id || null,
         name: row.name,
@@ -7886,40 +8222,21 @@ export default function App() {
           acuity_type_id: s.acuity_type_id ?? null,
         }))
       }));
+      setListings(transformed);
+      try { localStorage.setItem("wello_listings", JSON.stringify(transformed)); } catch { /* non-critical: ignore */ }
+    } else {
+      if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
     }
-
-    async function fetchListings() {
-      // Show cached data instantly if available
-      try {
-        const cached = localStorage.getItem("wello_listings");
-        if (cached) {
-          setListings(JSON.parse(cached));
-          setListingsLoading(false);
-        }
-      } catch { /* non-critical: ignore */ }
-
-      // Approved businesses are synced into the listings table by the
-      // notify-partner-status Edge Function when status changes to 'approved'.
-      const { data: listingRows, error } = await supabase
-        .from("listings")
-        .select("*, slots(*)")
-        .eq("status","active")
-        .order("id");
-
-      if (error) {
-        console.error("Error fetching listings:", error);
-        if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
-      } else if (listingRows && listingRows.length > 0) {
-        const transformed = transformRows(listingRows);
-        setListings(transformed);
-        try { localStorage.setItem("wello_listings", JSON.stringify(transformed)); } catch { /* non-critical: ignore */ }
-      } else {
-        if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
-      }
-      setListingsLoading(false);
-    }
-    fetchListings();
+    setListingsLoading(false);
   }, []);
+  // Initial mount fetch.
+  useEffect(() => { fetchListings(); }, [fetchListings]);
+  // Refetch (skipping the stale cache paint) when the customer opens Explore
+  // or Home — this is the moment partner-side availability changes need to
+  // land in the UI without a manual reload.
+  useEffect(() => {
+    if (view === "explore" || view === "home") fetchListings({ skipCache: true });
+  }, [view, fetchListings]);
 
   const onSyncUpdate=useCallback((bizId,slotId,delta)=>{
     setSyncing(p=>({...p,[bizId]:true}));
@@ -7938,12 +8255,38 @@ export default function App() {
     }
     setBkData({biz,slot}); setSelBiz(null);
   }
-  // Wrapper used by the nav Pass icon, the HomePage 'Get Your Pass' CTA, and
-  // anywhere else that should require auth before reaching the credits page.
-  function gotoCredits(){
-    if (!authSession) { setAuthModal({ mode: "signup" }); return; }
-    setView("credits");
+  // Anyone can browse Credits — auth is gated at checkout, not at page view.
+  // Lets guests see prices and pick a pack before deciding to sign up.
+  function gotoCredits(){ setView("credits"); }
+  // Stashed intent for the "clicked Buy while signed-out" flow — after auth
+  // completes we auto-invoke checkout with the quantity they picked.
+  const [pendingCheckoutQty, setPendingCheckoutQty] = useState(null);
+  function requireAuthForCheckout(qty) {
+    setPendingCheckoutQty(qty);
+    setAuthModal({ mode: "signup" });
   }
+  // Runs checkout once. Uses the origin so Stripe redirects back to this app.
+  const doCheckout = useCallback(async (qty) => {
+    const { data, error } = await supabase.functions.invoke('create-checkout-session', {
+      body: { quantity: qty, origin: window.location.origin },
+    });
+    if (error || !data?.url) {
+      console.error('create-checkout-session failed:', error?.message || data?.error);
+      showToast("Sorry, we couldn't open checkout. Please try again.", "error", 4000);
+      return;
+    }
+    window.location.href = data.url;
+  }, []);
+  // If a guest clicked Buy, we stashed their quantity and opened the sign-up
+  // modal. As soon as the session lands, resume the checkout automatically
+  // so they never have to click Buy twice.
+  useEffect(() => {
+    if (authSession && pendingCheckoutQty != null) {
+      const q = pendingCheckoutQty;
+      setPendingCheckoutQty(null);
+      doCheckout(q);
+    }
+  }, [authSession, pendingCheckoutQty, doCheckout]);
 
   // Shared interests-save handler — used by both the Explore modal and the
   // Profile Settings tab's Edit preferences button. Persists to
@@ -8162,7 +8505,7 @@ export default function App() {
     setView(id);
   }
 
-  const NAV=[{id:"home",l:"Home"},{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"profile",l:"Profile"},{id:"biz-portal",l:"Business"}];
+  const NAV=[{id:"home",l:"Home"},{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"profile",l:"Profile"},{id:"biz-portal",l:"For Business"}];
 
   return (
     <>
@@ -8292,7 +8635,7 @@ export default function App() {
             <div onClick={()=>setMobileMenuOpen(false)}
               style={{position:"fixed",inset:0,top:headerH,background:"rgba(27,28,25,0.35)",zIndex:990}}/>
             <div style={{position:"absolute",top:"100%",left:0,right:0,background:"rgba(251,249,244,0.98)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderBottom:"1px solid rgba(195,200,188,0.3)",boxShadow:"0 10px 30px rgba(33,60,24,0.12)",zIndex:1001,padding:"6px 0"}}>
-              {[{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"biz-portal",l:"Business"},{id:"profile",l:"Profile"},{id:"partners",l:"For partners"}].map(n=>(
+              {[{id:"explore",l:"Explore"},{id:"credits",l:"Pass"},{id:"profile",l:"Profile"},{id:"biz-portal",l:"For Business"}].map(n=>(
                 <button key={n.id}
                   onClick={()=>{handleNavClick(n.id);setMobileMenuOpen(false);}}
                   style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%",padding:"14px clamp(16px,4vw,32px)",background:view===n.id?"rgba(33,60,24,0.06)":"transparent",border:"none",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:15,fontWeight:view===n.id?700:500,color:view===n.id?"#213C18":"#43483F",cursor:"pointer",borderBottom:"1px solid rgba(195,200,188,0.18)",textAlign:"left"}}>
@@ -8311,9 +8654,14 @@ export default function App() {
           {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds} profile={profile} authSession={authSession} onSaveInterests={saveInterests}/>}
           {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion} onSaveInterests={saveInterests} onProfilePatch={(patch)=>setProfile(p => p ? { ...p, ...patch } : { id: authSession?.user?.id, ...patch })}/>}
           {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
-          {view==="credits"    &&<CreditsPage credits={credits} listings={listings}/>}
+          {view==="credits"    &&<CreditsPage credits={credits} listings={listings} authSession={authSession} onCheckout={(qty)=>{ if (!authSession) requireAuthForCheckout(qty); else doCheckout(qty); }} onSetView={setView}/>}
           {view==="about"      &&<AboutPage onSetView={setView}/>}
           {view==="partners"   &&<PartnersPage onSetView={setView}/>}
+          {view==="gift"       &&(lastGift
+            ? <GiftSentPage gift={lastGift} onSetView={(v)=>{ setLastGift(null); setView(v); }}/>
+            : <GiftPage authSession={authSession} profile={profile} onSetView={setView} onGiftCreated={(g)=>setLastGift(g)}/>
+          )}
+          {view==="redeem"     &&<RedeemPage authSession={authSession} prefilledCode={prefilledClaimCode} onSetView={setView} onOpenSignIn={()=>setAuthModal({mode:"signin"})} onCreditsAdded={(newBal)=>{ setCredits(newBal); try { const url = new URL(window.location.href); url.searchParams.delete("claim"); window.history.replaceState({}, "", url.toString()); } catch { /* noop */ } setPrefilledClaimCode(""); }}/>}
         </div>
 
         {/* FOOTER — Stitch linen style */}
