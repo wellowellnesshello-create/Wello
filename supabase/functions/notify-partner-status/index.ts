@@ -117,6 +117,27 @@ serve(async (req) => {
     return new Response(JSON.stringify({ success: true }), { headers: { 'Content-Type': 'application/json' } })
   }
 
+  // ── status -> paused ──────────────────────────────────────────
+  // Partner (or admin) has flipped an approved venue to 'paused'. The
+  // businesses row stays intact and the partner keeps dashboard access —
+  // we just hide the listing from the marketplace so nobody can book.
+  // Flipping back to 'approved' runs through the approved handler below,
+  // which reactivates the listing and regenerates its slots.
+  if (record.status === 'paused' && old_record?.status !== 'paused') {
+    if (old_record?.status === 'approved') {
+      const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      })
+      const { error: deactivateErr } = await supabase
+        .from('listings')
+        .update({ status: 'inactive' })
+        .eq('business_id', record.id)
+      if (deactivateErr) console.error('Failed to deactivate listings on pause:', deactivateErr.message)
+      else console.log('Listing paused (inactive) for:', record.name)
+    }
+    return new Response(JSON.stringify({ success: true, action: 'paused' }), { headers: { 'Content-Type': 'application/json' } })
+  }
+
   // ── status -> approved ────────────────────────────────────────
   if (record.status === 'approved' && old_record?.status !== 'approved') {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -249,12 +270,19 @@ serve(async (req) => {
           dayCursor.setDate(dayCursor.getDate() + 1)
         }
       } else {
+        // Non-private (studios, hotels, gyms): expand recurring slots for
+        // 52 weeks ahead. Earlier this was capped at 4 weeks which meant
+        // approved venues silently ran out of bookable dates after a month
+        // unless the partner re-saved. A full year is well within Postgres
+        // scale (each venue ~ hundreds of rows) and gives customers a
+        // continuous booking horizon that "just works".
+        const HORIZON_WEEKS = 52
         for (const sl of (record.slots ?? [])) {
           for (const day of (sl.days ?? [])) {
             const target = DAY_IDX[day] ?? 1
             const curr = today.getDay()
             const daysAhead = (target - curr + 7) % 7 || 7
-            for (let week = 0; week < 4; week++) {
+            for (let week = 0; week < HORIZON_WEEKS; week++) {
               const d = new Date(today)
               d.setDate(today.getDate() + daysAhead + week * 7)
               rows.push({

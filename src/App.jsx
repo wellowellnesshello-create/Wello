@@ -1068,6 +1068,22 @@ function BizPanel({ biz, onClose, onBook }) {
         <div style={{padding:"clamp(14px,3vw,20px) clamp(16px,3vw,24px)"}}>
           <p style={{fontFamily:F2,fontSize:14,color:"#54584F",lineHeight:1.7,margin:"0 0 20px"}}>{biz.desc}</p>
 
+          {/* Full postal address — non-private venues only. Private instructors
+              come to the customer so we show their coverage areas below instead. */}
+          {biz.cat !== "Private Instructor" && biz.address && (
+            <div style={{background:"#F5F3EE",border:"1px solid rgba(195,200,188,0.4)",borderRadius:10,padding:"14px 16px",marginBottom:20,display:"flex",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+              <div style={{flex:"1 1 220px",minWidth:0}}>
+                <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>Where to find us</p>
+                <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#213C18",margin:"0 0 4px",lineHeight:1.5}}>📍 {biz.address}</p>
+                {biz.loc && <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0}}>{biz.loc}, Mallorca</p>}
+              </div>
+              <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(biz.address + ", Mallorca")}`} target="_blank" rel="noopener noreferrer"
+                style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",background:"#fff",border:"1px solid rgba(33,60,24,0.3)",padding:"7px 14px",borderRadius:999,textDecoration:"none",whiteSpace:"nowrap",letterSpacing:"0.3px"}}>
+                Open in Maps →
+              </a>
+            </div>
+          )}
+
           {/* Private instructors: surface coverage areas as pills so guests
               know exactly where the instructor travels to */}
           {biz.cat === "Private Instructor" && Array.isArray(biz.coverage_areas) && biz.coverage_areas.length > 0 && (
@@ -4180,6 +4196,27 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     else { setStatusLive(true); flashSaveMsg("golive", "Submitted for review. Watch your inbox."); }
   }
 
+  // Pause a live listing — hides it from the marketplace but keeps the
+  // dashboard fully accessible. Resume flips it back to approved which
+  // triggers notify-partner-status to reactivate + regenerate slots.
+  async function pauseListing() {
+    if (isPreview || !bizData?.id) return;
+    if (!confirm("Pause your listing? Customers will no longer see it or book new sessions until you resume. Existing confirmed bookings are unaffected.")) return;
+    setSaving(true);
+    const { error } = await supabase.from('businesses').update({ status: 'paused' }).eq('id', bizData.id);
+    setSaving(false);
+    if (error) flashSaveMsg("err", "Couldn't pause. " + error.message);
+    else { setStatusLive(false); flashSaveMsg("settings", "Listing paused. Resume any time from Settings."); }
+  }
+  async function resumeListing() {
+    if (isPreview || !bizData?.id) return;
+    setSaving(true);
+    const { error } = await supabase.from('businesses').update({ status: 'approved' }).eq('id', bizData.id);
+    setSaving(false);
+    if (error) flashSaveMsg("err", "Couldn't resume. " + error.message);
+    else { setStatusLive(true); flashSaveMsg("golive", "Listing resumed. Back live on the marketplace."); }
+  }
+
   // For Add slot: convert a 0-6 weekday index (Mon=0) to an ISO date string for THIS week.
   function dateForWeekday(dayIdx) {
     const today  = new Date();
@@ -4376,8 +4413,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               </div>
               <h1 style={{fontFamily:F2,fontSize:24,fontWeight:700,color:"#fff",letterSpacing:"-0.5px",margin:"0 0 6px"}}>{bizData.name}</h1>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
-                <span style={{width:6,height:6,borderRadius:"50%",background:"#A3B18A",display:"inline-block"}}/>
-                <span style={{fontFamily:F2,fontSize:11,color:"rgba(255,255,255,0.6)"}}>Live on marketplace</span>
+                <span style={{width:6,height:6,borderRadius:"50%",background:bizData.status==='paused'?'#B8925C':'#A3B18A',display:"inline-block"}}/>
+                <span style={{fontFamily:F2,fontSize:11,color:"rgba(255,255,255,0.6)"}}>
+                  {bizData.status==='paused' ? 'Paused — hidden from marketplace' : 'Live on marketplace'}
+                </span>
               </div>
             </div>
             <div style={{display:"flex",gap:8}}>
@@ -5408,25 +5447,45 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         {/* ── SETTINGS ── */}
         {tab==="settings"&&(
           <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:560}}>
-            {/* Listing status + Go-live CTA */}
-            {!isPreview && (
-              <div style={{background:statusLive?"#CAECBA":"#FADEC0",border:`1px solid ${statusLive?"#A3B18A":"#DCC2A6"}`,borderRadius:12,padding:"16px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
-                <div>
-                  <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#213C18",margin:"0 0 4px"}}>Listing status</p>
-                  <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#213C18",margin:0,lineHeight:1.5}}>
-                    {bizData.status === 'approved' ? "Live on marketplace" :
-                     bizData.status === 'submitted' ? "Submitted for review. We'll be in touch within 2 working days." :
-                     "Draft. Submit when you're ready and we'll review."}
-                  </p>
+            {/* Listing status + Go-live / Pause / Resume CTA */}
+            {!isPreview && (() => {
+              const s = bizData.status;
+              const isPausedNow = s === 'paused';
+              const isLive      = s === 'approved';
+              const bg     = isLive ? "#CAECBA" : isPausedNow ? "#F7EDD8" : "#FADEC0";
+              const border = isLive ? "#A3B18A" : isPausedNow ? "#D6B47C" : "#DCC2A6";
+              const label  =
+                isLive        ? "Live on marketplace" :
+                isPausedNow   ? "Paused — hidden from the marketplace. Resume any time." :
+                s === 'submitted' ? "Submitted for review. We'll be in touch within 2 working days." :
+                "Draft. Submit when you're ready and we'll review.";
+              return (
+                <div style={{background:bg,border:`1px solid ${border}`,borderRadius:12,padding:"16px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+                  <div>
+                    <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#213C18",margin:"0 0 4px"}}>Listing status</p>
+                    <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#213C18",margin:0,lineHeight:1.5}}>{label}</p>
+                  </div>
+                  {s !== 'approved' && s !== 'submitted' && s !== 'paused' && (
+                    <button onClick={goLive} disabled={saving}
+                      style={{padding:"10px 20px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:saving?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
+                      {saving ? "Submitting" : "Submit for review"}
+                    </button>
+                  )}
+                  {isLive && (
+                    <button onClick={pauseListing} disabled={saving}
+                      style={{padding:"10px 20px",background:"transparent",color:"#213C18",border:"1px solid #213C18",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:saving?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
+                      {saving ? "…" : "Pause listing"}
+                    </button>
+                  )}
+                  {isPausedNow && (
+                    <button onClick={resumeListing} disabled={saving}
+                      style={{padding:"10px 20px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:saving?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
+                      {saving ? "…" : "Resume listing"}
+                    </button>
+                  )}
                 </div>
-                {(bizData.status !== 'approved' && bizData.status !== 'submitted') && (
-                  <button onClick={goLive} disabled={saving}
-                    style={{padding:"10px 20px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:saving?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
-                    {saving ? "Submitting" : "Submit for review"}
-                  </button>
-                )}
-              </div>
-            )}
+              );
+            })()}
             {saveMsg.kind === "golive" && <p style={{fontFamily:F2,fontSize:12,color:"#213C18",margin:0,textAlign:"center"}}>{saveMsg.text}</p>}
 
             {/* Profile + contact — Settings tab per spec: name, description, address, website, instagram, phone, email */}
@@ -7271,7 +7330,11 @@ function BusinessPortal({ onSetView }) {
   // Status → screen mapping. Reused on initial load and whenever the active
   // venue switches, so all routing decisions stay consistent.
   function screenForStatus(status) {
-    if (status === 'approved')   return 'dashboard';
+    // 'paused' is a soft-hide of the listing — partner still owns their
+    // dashboard, they just aren't visible on the marketplace. So we route
+    // them to the dashboard the same as an approved partner; the dashboard
+    // itself shows a "listing paused" banner to make the state obvious.
+    if (status === 'approved' || status === 'paused') return 'dashboard';
     if (status === 'setting_up') return 'onboarding';
     if (status === 'submitted')  return 'submitted';
     return 'pending';
@@ -8324,9 +8387,14 @@ export default function App() {
         }
       } catch { /* non-critical: ignore */ }
     }
+    // Pull parent business fields (address, contact, email) via the
+    // business_id FK so the customer venue-details page can show the full
+    // address without needing us to mirror every column into listings.
+    // Also lets us tell demo seed rows apart from real partner signups
+    // (real partners never have a demo- prefixed email).
     const { data: listingRows, error } = await supabase
       .from("listings")
-      .select("*, slots(*)")
+      .select("*, slots(*), businesses(address, phone, website, instagram, email)")
       .eq("status","active")
       .order("id");
     if (error) {
@@ -8340,6 +8408,14 @@ export default function App() {
         cat: row.category || row.cat || "Other",
         cat2: row.cat2 || null,
         loc: row.location || row.loc || "",
+        // Full postal address + contact fields for the venue details page.
+        // Sourced live from the businesses row so partner edits in Settings
+        // propagate immediately without needing to mirror every column.
+        address:   row.businesses?.address   || row.address   || "",
+        phone:     row.businesses?.phone     || row.phone     || "",
+        website:   row.businesses?.website   || row.website   || "",
+        instagram: row.businesses?.instagram || row.instagram || "",
+        _isDemo:   /^demo-/i.test(row.businesses?.email || ""),
         desc: row.description || "",
         img: row.img || "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80",
         rating: parseFloat(row.rating) || 4.5,
@@ -8359,8 +8435,16 @@ export default function App() {
           acuity_type_id: s.acuity_type_id ?? null,
         }))
       }));
-      setListings(transformed);
-      try { localStorage.setItem("wello_listings", JSON.stringify(transformed)); } catch { /* non-critical: ignore */ }
+      // Ordering: real partners first, demo seeds last. Real partners are
+      // anyone whose parent business email doesn't start with "demo-" (the
+      // convention used by the seed script). Within each group we sort by
+      // id ASC so the display order stays stable across refreshes.
+      const sorted = transformed.slice().sort((a, b) => {
+        if (a._isDemo !== b._isDemo) return a._isDemo ? 1 : -1;
+        return (a.id || 0) - (b.id || 0);
+      });
+      setListings(sorted);
+      try { localStorage.setItem("wello_listings", JSON.stringify(sorted)); } catch { /* non-critical: ignore */ }
     } else {
       if (!localStorage.getItem("wello_listings")) setListings(LISTINGS);
     }
