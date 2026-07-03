@@ -1507,10 +1507,12 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave, compact = false }) 
           <span style={{fontSize:s.locIcon}}>📍</span> {biz.loc}
         </p>
         <div style={{display:"flex",gap:s.pillGap,flexWrap:"wrap",marginBottom:s.pillMargin}}>
-          <span style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:600,color:"#766149",background:"rgba(250,222,192,0.5)",padding:s.pillPad,borderRadius:999}}>{biz.cat}</span>
-          {biz.cat === "Private Instructor" && (
-            <span style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:700,color:"#fff",background:"#213C18",padding:s.pillPad,borderRadius:999}}>Private</span>
-          )}
+          {/* Category pill uses the customer-facing label ("Private Classes"
+              instead of the technical "Private Instructor"). The old extra
+              "Private" badge next to it was redundant and pushed the pill
+              row onto a second line on narrower columns, which cascaded to
+              make private-tile rows taller than everything else. */}
+          <span style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:600,color:"#766149",background:"rgba(250,222,192,0.5)",padding:s.pillPad,borderRadius:999}}>{catLabel(biz.cat)}</span>
           {biz.tags?.slice(0,s.tagsToShow).map(t=>(
             <span key={t} style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:500,color:"#54584F",background:"rgba(228,226,221,0.6)",padding:s.pillPad,borderRadius:999}}>{t}</span>
           ))}
