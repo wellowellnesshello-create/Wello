@@ -5190,8 +5190,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                             const notesBlob = b.notes || "";
                             const locLine = notesBlob.split('\n').find(l => /^Customer location:/i.test(l)) || "";
                             const noteLine = notesBlob.split('\n').find(l => /^Notes:/i.test(l)) || "";
+                            const peopleLine = notesBlob.split('\n').find(l => /^People:/i.test(l)) || "";
                             const customerLocation = locLine.replace(/^Customer location:\s*/i, "").trim();
                             const customerNote = noteLine.replace(/^Notes:\s*/i, "").trim();
+                            const peopleCount = parseInt(peopleLine.replace(/^People:\s*/i, "").trim(), 10) || 0;
                             return (
                               <div key={b.id} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"8px 10px",borderRadius:6,background:"#F5F3EE"}}>
                                 <div style={{textAlign:"center",minWidth:44,paddingTop:2}}>
@@ -5209,7 +5211,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                       <a href={`tel:${b._customer.phone.replace(/\s+/g,'')}`} style={{color:"#213C18",fontWeight:600,textDecoration:"none"}}>📞 {b._customer.phone}</a>
                                     </p>
                                   )}
-                                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 2px"}}>{sessionName}</p>
+                                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 2px"}}>{sessionName}{peopleCount > 1 ? ` · 👥 ${peopleCount} people` : ""}</p>
                                   {customerLocation && (
                                     <p style={{fontFamily:F2,fontSize:11,color:"#766149",margin:0,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                                       <span>📍 {customerLocation}</span>
@@ -5344,8 +5346,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   const notesBlob = req.notes || '';
                   const locLine = notesBlob.split('\n').find(l => /^Customer location:/i.test(l)) || '';
                   const noteLine = notesBlob.split('\n').find(l => /^Notes:/i.test(l)) || '';
+                  const peopleLine = notesBlob.split('\n').find(l => /^People:/i.test(l)) || '';
                   const customerLocation = locLine.replace(/^Customer location:\s*/i, '').trim() || 'Not provided';
                   const customerNote = noteLine.replace(/^Notes:\s*/i, '').trim();
+                  const peopleCount = parseInt(peopleLine.replace(/^People:\s*/i, '').trim(), 10) || 0;
                   return (
                     <div key={req.id} style={{padding:"16px 18px",background:"#fff",border:"1px solid #E4E2DD",borderRadius:8}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:10,flexWrap:"wrap"}}>
@@ -5375,6 +5379,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                           <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>Credits</p>
                           <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#766149",margin:0}}>◈ {req.credits_used||'-'}</p>
                         </div>
+                        {peopleCount > 1 && (
+                          <div>
+                            <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>People</p>
+                            <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#213C18",margin:0}}>👥 {peopleCount}</p>
+                          </div>
+                        )}
                       </div>
                       <div style={{marginBottom:14}}>
                         <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:3}}>
@@ -9551,11 +9561,14 @@ export default function App() {
 
       // For private bookings the customer's location is required and saved to
       // bookings.notes so the instructor sees it on their dashboard + in the
-      // SMS. We also append the optional arrival notes underneath when
-      // present (gate code, parking, etc.).
+      // SMS. Group size lands here too when the offering allows more than one
+      // person; single-person bookings skip the line so it stays clean.
+      // Arrival notes get appended underneath when present (gate code, parking).
+      const peopleCount = Number(form?.guests) || 1;
       const notes = isPrivateBooking
         ? [
             form?.location ? `Customer location: ${form.location}` : null,
+            peopleCount > 1 ? `People: ${peopleCount}` : null,
             form?.locationNote ? `Notes: ${form.locationNote}` : null,
           ].filter(Boolean).join('\n') || null
         : (form?.note || null);
