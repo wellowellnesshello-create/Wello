@@ -909,9 +909,31 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
   // venue group classes (where the studio can fall back to email).
   const [myPhone, setMyPhone] = useState(profile?.phone || "");
   const isPrivateBooking = biz.cat === "Private Instructor";
+  // Extra guests requested for a private session (separate from the studio
+  // guest chip list). Only visible when the matched offering allows it.
+  const [privateExtras, setPrivateExtras] = useState(0);
+  // Look up the offering behind this slot so we can apply group-pricing
+  // (extra_person_eur, max_people). We match on the slot name pattern used
+  // during generation: "${type} · ${length_min} min".
+  const matchedOffering = (() => {
+    if (!isPrivateBooking) return null;
+    const offs = Array.isArray(biz.session_offerings) ? biz.session_offerings : [];
+    if (offs.length === 0) return null;
+    const target = String(slot.name || "").toLowerCase();
+    return offs.find(o => {
+      const label = `${o.type || ""} · ${o.length_min || ""} min`.toLowerCase();
+      return label === target;
+    }) || null;
+  })();
+  const extraPersonPrice = matchedOffering && Number.isFinite(matchedOffering.extra_person_eur) && matchedOffering.extra_person_eur > 0
+    ? matchedOffering.extra_person_eur : 0;
+  const offeringMax = matchedOffering && Number.isFinite(matchedOffering.max_people) && matchedOffering.max_people > 1
+    ? matchedOffering.max_people : (extraPersonPrice > 0 ? 8 : 1);
   const avail = isPrivateBooking ? 1 : slot.spots - slot.booked;
-  const totalPeople = isPrivateBooking ? 1 : (1 + guests.length);
-  const cost = biz.cr * totalPeople;
+  const totalPeople = isPrivateBooking ? (1 + privateExtras) : (1 + guests.length);
+  const cost = isPrivateBooking
+    ? (biz.cr + privateExtras * extraPersonPrice)
+    : biz.cr * totalPeople;
   const canAfford = credits >= cost;
   const canAddMore = !isPrivateBooking && totalPeople < avail;
   // Require a usable address for private bookings — at least 6 chars so
@@ -1064,6 +1086,28 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                 </>
               )}
 
+              {/* Private group pricing — shown only when the instructor's
+                  offering allows more than 1 person (extra_person_eur > 0). */}
+              {isPrivateBooking && extraPersonPrice > 0 && (
+                <div style={{marginBottom:16}}>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Number of people</p>
+                  <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+                    <div>
+                      <p style={{fontFamily:F2,fontSize:13,color:"#1B1C19",fontWeight:600,margin:"0 0 3px"}}>{1 + privateExtras} {1 + privateExtras === 1 ? "person" : "people"}</p>
+                      <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0}}>◈ {biz.cr} for you{privateExtras > 0 ? ` + ${privateExtras} × ◈ ${extraPersonPrice} extra` : ""}</p>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <button type="button" onClick={()=>setPrivateExtras(p=>Math.max(0, p-1))} disabled={privateExtras <= 0}
+                        style={{width:32,height:32,borderRadius:"50%",border:"1px solid rgba(33,60,24,0.3)",background:"#fff",color:"#213C18",fontFamily:F2,fontSize:16,fontWeight:700,cursor:privateExtras<=0?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,opacity:privateExtras<=0?0.4:1}}>−</button>
+                      <span style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",minWidth:26,textAlign:"center"}}>{1 + privateExtras}</span>
+                      <button type="button" onClick={()=>setPrivateExtras(p=>Math.min(offeringMax - 1, p+1))} disabled={1 + privateExtras >= offeringMax}
+                        style={{width:32,height:32,borderRadius:"50%",border:"1px solid rgba(33,60,24,0.3)",background:"#fff",color:"#213C18",fontFamily:F2,fontSize:16,fontWeight:700,cursor:(1+privateExtras>=offeringMax)?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,opacity:(1+privateExtras>=offeringMax)?0.4:1}}>+</button>
+                    </div>
+                  </div>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:"6px 0 0",lineHeight:1.5}}>Up to {offeringMax} people. The instructor adjusts the session for the group.</p>
+                </div>
+              )}
+
               {/* Bring friends — group classes only; private sessions are 1-to-1 */}
               {!isPrivateBooking && (
                 <>
@@ -1097,7 +1141,11 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
               {/* Order summary */}
               <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 14px",marginBottom:16}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                  <span style={{fontFamily:F2,fontSize:13,color:"#54584F"}}>{totalPeople} × ◈ {biz.cr} credits</span>
+                  <span style={{fontFamily:F2,fontSize:13,color:"#54584F"}}>
+                    {isPrivateBooking && privateExtras > 0
+                      ? `◈ ${biz.cr} + ${privateExtras} × ◈ ${extraPersonPrice}`
+                      : `${totalPeople} × ◈ ${biz.cr} credits`}
+                  </span>
                   <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>◈ {cost}</span>
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid rgba(195,200,188,0.3)",paddingTop:6}}>
@@ -4157,12 +4205,16 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       ? bizData.session_duration_min : 60
   );
   // Mirror of session_offerings — see wizard equivalent for the shape.
+  // extra_person_eur is the additional cost per extra guest beyond the first
+  // person. Nullable: offerings without a value are strictly 1-to-1.
   const [dashSessionOfferings, setDashSessionOfferings] = useState(
     Array.isArray(bizData?.session_offerings) && bizData.session_offerings.length > 0
       ? bizData.session_offerings.map(o => ({
           type: o?.type || (bizData?.category || ""),
           length_min: Number.isFinite(o?.length_min) && o.length_min > 0 ? o.length_min : 60,
           price_eur:  Number.isFinite(o?.price_eur)  && o.price_eur  > 0 ? o.price_eur  : (bizData?.cr || 50),
+          extra_person_eur: Number.isFinite(o?.extra_person_eur) && o.extra_person_eur > 0 ? o.extra_person_eur : null,
+          max_people:       Number.isFinite(o?.max_people)       && o.max_people       > 0 ? o.max_people       : null,
         }))
       : []
   );
@@ -4174,7 +4226,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // dashed "+ Add offering" / "+ Add availability window" buttons.
   const [showAddOffering, setShowAddOffering] = useState(false);
   const [showAddWindow,   setShowAddWindow]   = useState(false);
-  const [newOff, setNewOff] = useState({ type: "", length_min: 60, price_eur: 50 });
+  const [newOff, setNewOff] = useState({ type: "", length_min: 60, price_eur: 50, extra_person_eur: "", max_people: "" });
   // Inline "add new window" form state — supports multi-day in one go
   // ("Mon Wed Fri 09:00 → 12:00" creates 3 windows in one action).
   const [newWindow, setNewWindow] = useState({ days: [], start: "09:00", end: "12:00" });
@@ -4200,8 +4252,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     const length_min = parseInt(newOff.length_min, 10) || 60;
     const price_eur  = parseInt(newOff.price_eur, 10)  || 0;
     if (price_eur <= 0) return;
-    setDashSessionOfferings(prev => [...prev, { type, length_min, price_eur }]);
-    setNewOff({ type: "", length_min: 60, price_eur: 50 });
+    const extraRaw = parseInt(newOff.extra_person_eur, 10);
+    const extra_person_eur = Number.isFinite(extraRaw) && extraRaw > 0 ? extraRaw : null;
+    const maxRaw   = parseInt(newOff.max_people, 10);
+    const max_people       = Number.isFinite(maxRaw)   && maxRaw   > 1 ? maxRaw   : null;
+    setDashSessionOfferings(prev => [...prev, { type, length_min, price_eur, extra_person_eur, max_people }]);
+    setNewOff({ type: "", length_min: 60, price_eur: 50, extra_person_eur: "", max_people: "" });
     setShowAddOffering(false);
   }
   function dashAddOffering() {
@@ -5411,6 +5467,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                       <span style={{color:"#54584F",fontWeight:400}}>{off.length_min} min</span>
                       <span style={{color:"#54584F",fontWeight:400}}>·</span>
                       <span style={{color:"#766149"}}>€{off.price_eur}</span>
+                      {off.extra_person_eur > 0 && (
+                        <>
+                          <span style={{color:"#54584F",fontWeight:400}}>·</span>
+                          <span style={{color:"#54584F",fontWeight:500}}>+€{off.extra_person_eur}/extra</span>
+                        </>
+                      )}
                       <button type="button" onClick={()=>dashRemoveOffering(idx)} aria-label={`Remove ${off.type}`}
                         style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 9px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase",marginLeft:4}}>
                         Remove
@@ -5448,11 +5510,29 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                       <input type="number" min="1" value={newOff.price_eur}
                         onChange={e=>setNewOff(p=>({...p,price_eur:parseInt(e.target.value,10)||0}))}
                         onKeyDown={e=>{ if (e.key === 'Enter') commitNewOffering(); }}
+                        placeholder="base"
                         style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
                     </div>
                   </div>
+                  {/* Optional group-pricing row. Leave both blank for a strict
+                      1-to-1 session. Set "Extra per person" to charge more per
+                      additional guest; set "Max people" to cap the group size. */}
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Group pricing (optional)</p>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:10}}>
+                    <div style={{position:"relative",flex:"1 1 160px",minWidth:120}}>
+                      <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
+                      <input type="number" min="0" value={newOff.extra_person_eur}
+                        onChange={e=>setNewOff(p=>({...p,extra_person_eur:e.target.value}))}
+                        placeholder="Extra per person"
+                        style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
+                    </div>
+                    <input type="number" min="2" value={newOff.max_people}
+                      onChange={e=>setNewOff(p=>({...p,max_people:e.target.value}))}
+                      placeholder="Max people"
+                      style={{...INP,marginBottom:0,flex:"1 1 120px",minWidth:100}}/>
+                  </div>
                   <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                    <button type="button" onClick={()=>{setShowAddOffering(false);setNewOff({type:"",length_min:60,price_eur:50});}}
+                    <button type="button" onClick={()=>{setShowAddOffering(false);setNewOff({type:"",length_min:60,price_eur:50,extra_person_eur:"",max_people:""});}}
                       style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer",padding:"6px 12px"}}>
                       Cancel
                     </button>
@@ -9219,7 +9299,7 @@ export default function App() {
     // (real partners never have a demo- prefixed email).
     const { data: listingRows, error } = await supabase
       .from("listings")
-      .select("*, slots(*), businesses(address, phone, website, instagram, email, gallery)")
+      .select("*, slots(*), businesses(address, phone, website, instagram, email, gallery, session_offerings)")
       .eq("status","active")
       .order("id");
     if (error) {
@@ -9244,6 +9324,9 @@ export default function App() {
         // up to 4 during onboarding). Kept as an array so BizPanel can render
         // them as a swipeable carousel alongside the primary img.
         gallery:   Array.isArray(row.businesses?.gallery) ? row.businesses.gallery.filter(Boolean) : (Array.isArray(row.gallery) ? row.gallery.filter(Boolean) : []),
+        // Private-instructor session offerings — used by BookingModal to
+        // look up group-pricing (extra_person_eur, max_people) from the slot.
+        session_offerings: Array.isArray(row.businesses?.session_offerings) ? row.businesses.session_offerings : [],
         _isDemo:   /^demo-/i.test(row.businesses?.email || ""),
         desc: row.description || "",
         img: row.img || "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80",
