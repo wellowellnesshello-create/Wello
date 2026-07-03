@@ -929,10 +929,22 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
     ? matchedOffering.extra_person_eur : 0;
   const offeringMax = matchedOffering && Number.isFinite(matchedOffering.max_people) && matchedOffering.max_people > 1
     ? matchedOffering.max_people : (extraPersonPrice > 0 ? 8 : 1);
+  // Extended travel surcharge — case-insensitive substring match of the
+  // customer's typed address against the instructor's travel_areas list.
+  // Core-coverage matches skip the fee. Falls through to no fee (and a
+  // "may be outside coverage" warning) if nothing matches.
+  const travelFee = Number(biz.travel_fee_eur) || 0;
+  const travelAreas = Array.isArray(biz.travel_areas) ? biz.travel_areas : [];
+  const coverageAreasList = Array.isArray(biz.coverage_areas) ? biz.coverage_areas : [];
+  const addr = (myLocation || "").toLowerCase().trim();
+  const inCore     = isPrivateBooking && addr.length > 0 && coverageAreasList.some(a => a && addr.includes(String(a).toLowerCase()));
+  const inExtended = isPrivateBooking && !inCore && addr.length > 0 && travelAreas.some(a => a && addr.includes(String(a).toLowerCase())) && travelFee > 0;
+  const outsideCoverage = isPrivateBooking && addr.length >= 6 && !inCore && !inExtended;
+  const appliedTravelFee = inExtended ? travelFee : 0;
   const avail = isPrivateBooking ? 1 : slot.spots - slot.booked;
   const totalPeople = isPrivateBooking ? (1 + privateExtras) : (1 + guests.length);
   const cost = isPrivateBooking
-    ? (biz.cr + privateExtras * extraPersonPrice)
+    ? (biz.cr + privateExtras * extraPersonPrice + appliedTravelFee)
     : biz.cr * totalPeople;
   const canAfford = credits >= cost;
   const canAddMore = !isPrivateBooking && totalPeople < avail;
@@ -1146,13 +1158,30 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                       ? `◈ ${biz.cr} + ${privateExtras} × ◈ ${extraPersonPrice}`
                       : `${totalPeople} × ◈ ${biz.cr} credits`}
                   </span>
-                  <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>◈ {cost}</span>
+                  <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>◈ {isPrivateBooking ? (biz.cr + privateExtras * extraPersonPrice) : cost}</span>
                 </div>
+                {appliedTravelFee > 0 && (
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                    <span style={{fontFamily:F2,fontSize:13,color:"#54584F"}}>Extended travel fee</span>
+                    <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#B8925C"}}>+ ◈ {appliedTravelFee}</span>
+                  </div>
+                )}
                 <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid rgba(195,200,188,0.3)",paddingTop:6}}>
-                  <span style={{fontFamily:F2,fontSize:13,color:"#54584F"}}>Balance after</span>
-                  <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:canAfford?"#213C18":"#e05c5c"}}>{canAfford?`◈ ${credits-cost}`:"Insufficient credits"}</span>
+                  <span style={{fontFamily:F2,fontSize:13,color:"#54584F"}}>Total</span>
+                  <span style={{fontFamily:F2,fontSize:13,fontWeight:800,color:"#213C18"}}>◈ {cost}</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",paddingTop:4}}>
+                  <span style={{fontFamily:F2,fontSize:12,color:"#54584F"}}>Balance after</span>
+                  <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:canAfford?"#213C18":"#e05c5c"}}>{canAfford?`◈ ${credits-cost}`:"Insufficient credits"}</span>
                 </div>
               </div>
+              {outsideCoverage && (
+                <div style={{background:"#FFE6D9",border:"1px solid #DCC2A6",borderRadius:10,padding:"10px 14px",marginBottom:16}}>
+                  <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:0,lineHeight:1.55}}>
+                    Your address may be outside the instructor's usual coverage. They'll review the request and let you know if they can travel there.
+                  </p>
+                </div>
+              )}
 
               {(() => {
                 const ok = myName && myEmail && canAfford && locationOk && phoneOk;
@@ -1181,6 +1210,7 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                             phone: isPrivateBooking ? myPhone.trim() : undefined,
                             location: isPrivateBooking ? myLocation.trim() : undefined,
                             locationNote: isPrivateBooking ? myLocationNote.trim() : undefined,
+                            travelFee: appliedTravelFee || 0,
                           },
                         });
                         setSt(2);
@@ -1402,6 +1432,16 @@ function BizPanel({ biz, onClose, onBook }) {
                   <span key={loc} style={{fontFamily:F2,fontSize:11,fontWeight:500,color:"#54584F",background:"rgba(228,226,221,0.6)",padding:"4px 10px",borderRadius:999}}>{loc}</span>
                 ))}
               </div>
+              {Array.isArray(biz.travel_areas) && biz.travel_areas.length > 0 && Number(biz.travel_fee_eur) > 0 && (
+                <>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#B8925C",letterSpacing:"1.5px",textTransform:"uppercase",margin:"14px 0 8px"}}>Also travels for +◈ {Number(biz.travel_fee_eur)}</p>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                    {biz.travel_areas.map(loc => (
+                      <span key={loc} style={{fontFamily:F2,fontSize:11,fontWeight:500,color:"#766149",background:"rgba(214,180,124,0.2)",border:"1px solid rgba(184,146,92,0.4)",padding:"4px 10px",borderRadius:999}}>{loc}</span>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -4192,6 +4232,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const [coverageAreas, setCoverageAreas] = useState(
     Array.isArray(bizData?.coverage_areas) ? bizData.coverage_areas : []
   );
+  // Extended travel — places the instructor will also travel to for an
+  // additional surcharge on top of the base session price.
+  const [travelAreas, setTravelAreas] = useState(
+    Array.isArray(bizData?.travel_areas) ? bizData.travel_areas : []
+  );
+  const [travelFeeEur, setTravelFeeEur] = useState(
+    bizData?.travel_fee_eur != null && bizData.travel_fee_eur !== "" ? String(bizData.travel_fee_eur) : ""
+  );
   const [availabilityWindows, setAvailabilityWindows] = useState(
     Array.isArray(bizData?.availability_windows) ? bizData.availability_windows : []
   );
@@ -4276,6 +4324,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
 
   function toggleCoverageArea(loc) {
     setCoverageAreas(prev => prev.includes(loc) ? prev.filter(x => x !== loc) : [...prev, loc]);
+    // If they add a place to core coverage, drop it from extended-travel so
+    // the two lists never overlap.
+    setTravelAreas(prev => prev.filter(x => x !== loc));
+  }
+  function toggleTravelArea(loc) {
+    if (coverageAreas.includes(loc)) return;
+    setTravelAreas(prev => prev.includes(loc) ? prev.filter(x => x !== loc) : [...prev, loc]);
   }
   function addAvailabilityWindow(day) {
     setAvailabilityWindows(prev => [...prev, { day, start: '09:00', end: '12:00' }]);
@@ -4582,17 +4637,31 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       : (coverageAreas.length <= 3
           ? coverageAreas.join(', ')
           : `${coverageAreas.slice(0,3).join(', ')} +${coverageAreas.length - 3}`);
+    const feeParsed = parseInt(travelFeeEur, 10);
+    const feePayload = Number.isFinite(feeParsed) && feeParsed > 0 ? feeParsed : null;
     const { error: bizErr } = await supabase.from('businesses')
-      .update({ coverage_areas: coverageAreas })
+      .update({
+        coverage_areas: coverageAreas,
+        travel_areas:   travelAreas,
+        travel_fee_eur: feePayload,
+      })
       .eq('id', bizData.id);
     if (!bizErr) {
+      // Mirror onto listings so the customer-facing card + BizPanel show
+      // the extended-travel note without waiting for a re-approval cycle.
       await supabase.from('listings')
-        .update({ coverage_areas: coverageAreas, loc: displayLoc })
+        .update({
+          coverage_areas: coverageAreas,
+          loc: displayLoc,
+          travel_areas:   travelAreas,
+          travel_fee_eur: feePayload,
+        })
         .eq('business_id', bizData.id);
+      setBizData(prev => ({ ...prev, coverage_areas: coverageAreas, travel_areas: travelAreas, travel_fee_eur: feePayload }));
     }
     setSaving(false);
     if (bizErr) flashSaveMsg("err", "Couldn't save coverage areas. " + bizErr.message);
-    else flashSaveMsg("listing", "Coverage areas updated.");
+    else flashSaveMsg("listing", "Coverage and travel updated.");
   }
 
   // Private-instructor only. Saves windows + session length, then re-expands
@@ -5202,9 +5271,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                             const locLine = notesBlob.split('\n').find(l => /^Customer location:/i.test(l)) || "";
                             const noteLine = notesBlob.split('\n').find(l => /^Notes:/i.test(l)) || "";
                             const peopleLine = notesBlob.split('\n').find(l => /^People:/i.test(l)) || "";
+                            const travelLine = notesBlob.split('\n').find(l => /^Travel fee:/i.test(l)) || "";
                             const customerLocation = locLine.replace(/^Customer location:\s*/i, "").trim();
                             const customerNote = noteLine.replace(/^Notes:\s*/i, "").trim();
                             const peopleCount = parseInt(peopleLine.replace(/^People:\s*/i, "").trim(), 10) || 0;
+                            const travelFeePaid = parseInt(travelLine.replace(/^Travel fee:\s*€?/i, "").trim(), 10) || 0;
                             return (
                               <div key={b.id} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"8px 10px",borderRadius:6,background:"#F5F3EE"}}>
                                 <div style={{textAlign:"center",minWidth:44,paddingTop:2}}>
@@ -5222,7 +5293,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                       <a href={`tel:${b._customer.phone.replace(/\s+/g,'')}`} style={{color:"#213C18",fontWeight:600,textDecoration:"none"}}>📞 {b._customer.phone}</a>
                                     </p>
                                   )}
-                                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 2px"}}>{sessionName}{peopleCount > 1 ? ` · 👥 ${peopleCount} people` : ""}</p>
+                                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 2px"}}>{sessionName}{peopleCount > 1 ? ` · 👥 ${peopleCount} people` : ""}{travelFeePaid > 0 ? ` · 🚗 +€${travelFeePaid} travel` : ""}</p>
                                   {customerLocation && (
                                     <p style={{fontFamily:F2,fontSize:11,color:"#766149",margin:0,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                                       <span>📍 {customerLocation}</span>
@@ -5358,9 +5429,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   const locLine = notesBlob.split('\n').find(l => /^Customer location:/i.test(l)) || '';
                   const noteLine = notesBlob.split('\n').find(l => /^Notes:/i.test(l)) || '';
                   const peopleLine = notesBlob.split('\n').find(l => /^People:/i.test(l)) || '';
+                  const travelLine = notesBlob.split('\n').find(l => /^Travel fee:/i.test(l)) || '';
                   const customerLocation = locLine.replace(/^Customer location:\s*/i, '').trim() || 'Not provided';
                   const customerNote = noteLine.replace(/^Notes:\s*/i, '').trim();
                   const peopleCount = parseInt(peopleLine.replace(/^People:\s*/i, '').trim(), 10) || 0;
+                  const travelFeePaid = parseInt(travelLine.replace(/^Travel fee:\s*€?/i, '').trim(), 10) || 0;
                   return (
                     <div key={req.id} style={{padding:"16px 18px",background:"#fff",border:"1px solid #E4E2DD",borderRadius:8}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:10,flexWrap:"wrap"}}>
@@ -5394,6 +5467,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                           <div>
                             <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>People</p>
                             <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#213C18",margin:0}}>👥 {peopleCount}</p>
+                          </div>
+                        )}
+                        {travelFeePaid > 0 && (
+                          <div>
+                            <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>Travel fee</p>
+                            <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#B8925C",margin:0}}>🚗 +€{travelFeePaid}</p>
                           </div>
                         )}
                       </div>
@@ -6223,13 +6302,49 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     );
                   })}
                 </div>
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                {/* Extended travel — optional. Places the instructor will
+                    also travel to for an additional surcharge on top of the
+                    session price. The surcharge is added automatically to
+                    the customer's booking when their address matches one of
+                    these areas. */}
+                <div style={{marginTop:20,paddingTop:18,borderTop:"1px solid #E4E2DD"}}>
+                  <h4 style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Extended travel (optional)</h4>
+                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Add places outside your usual coverage that you'll travel to for a fee. Guests booking to one of these areas pay the surcharge automatically on top of the session price.</p>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+                    {MALLORCA_LOCATIONS.map(loc => {
+                      const isCore    = coverageAreas.includes(loc);
+                      const isExtra   = travelAreas.includes(loc);
+                      const disabled  = isCore;
+                      return (
+                        <button key={loc} type="button" onClick={()=>toggleTravelArea(loc)} disabled={disabled}
+                          style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${isExtra?"#B8925C":"rgba(195,200,188,0.5)"}`,background:isExtra?"#B8925C":"#fff",color:isExtra?"#fff":(disabled?"#A3B18A":"#1B1C19"),fontFamily:F2,fontSize:11,fontWeight:isExtra?600:400,cursor:disabled?"not-allowed":"pointer",transition:"all .12s",opacity:disabled?0.5:1}}>
+                          {isExtra?"✓ ":""}{loc}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                    <label style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F"}}>Travel surcharge</label>
+                    <div style={{position:"relative",width:120}}>
+                      <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
+                      <input type="number" min="0" step="1" value={travelFeeEur}
+                        onChange={e=>setTravelFeeEur(e.target.value)}
+                        placeholder="0"
+                        style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
+                    </div>
+                    <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:0,flex:"1 1 200px"}}>Applied per booking. Leave blank if you don't charge extra.</p>
+                  </div>
+                </div>
+
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginTop:18}}>
                   <p style={{fontFamily:F2,fontSize:11,color:coverageAreas.length>0?"#213C18":"#6F5B44",fontWeight:600,margin:0}}>
-                    {coverageAreas.length > 0 ? `${coverageAreas.length} area${coverageAreas.length===1?"":"s"} selected` : "At least one area is required"}
+                    {coverageAreas.length > 0
+                      ? `${coverageAreas.length} core area${coverageAreas.length===1?"":"s"}${travelAreas.length>0?` · ${travelAreas.length} extended`:""}`
+                      : "At least one area is required"}
                   </p>
                   <button onClick={saveCoverageAreas} disabled={saving||isPreview||coverageAreas.length===0}
                     style={{padding:"10px 22px",background:(saving||isPreview||coverageAreas.length===0)?"#E4E2DD":"#213C18",color:(saving||isPreview||coverageAreas.length===0)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview||coverageAreas.length===0)?"not-allowed":"pointer"}}>
-                    {saving ? "Saving" : "Save coverage areas"}
+                    {saving ? "Saving" : "Save coverage and travel"}
                   </button>
                 </div>
               </div>
@@ -9320,7 +9435,7 @@ export default function App() {
     // (real partners never have a demo- prefixed email).
     const { data: listingRows, error } = await supabase
       .from("listings")
-      .select("*, slots(*), businesses(address, phone, website, instagram, email, gallery, session_offerings)")
+      .select("*, slots(*), businesses(address, phone, website, instagram, email, gallery, session_offerings, travel_areas, travel_fee_eur)")
       .eq("status","active")
       .order("id");
     if (error) {
@@ -9348,6 +9463,11 @@ export default function App() {
         // Private-instructor session offerings — used by BookingModal to
         // look up group-pricing (extra_person_eur, max_people) from the slot.
         session_offerings: Array.isArray(row.businesses?.session_offerings) ? row.businesses.session_offerings : [],
+        // Extended travel: areas the instructor will travel to for an extra
+        // fee. BookingModal applies the surcharge when the customer's typed
+        // address matches one of these areas.
+        travel_areas:   Array.isArray(row.businesses?.travel_areas) ? row.businesses.travel_areas : (Array.isArray(row.travel_areas) ? row.travel_areas : []),
+        travel_fee_eur: row.businesses?.travel_fee_eur != null ? Number(row.businesses.travel_fee_eur) : (row.travel_fee_eur != null ? Number(row.travel_fee_eur) : 0),
         _isDemo:   /^demo-/i.test(row.businesses?.email || ""),
         desc: row.description || "",
         img: row.img || "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80",
@@ -9572,14 +9692,16 @@ export default function App() {
 
       // For private bookings the customer's location is required and saved to
       // bookings.notes so the instructor sees it on their dashboard + in the
-      // SMS. Group size lands here too when the offering allows more than one
-      // person; single-person bookings skip the line so it stays clean.
+      // SMS. Group size + extended-travel fee land here too when applicable;
+      // single-person / core-area bookings skip those lines so it stays clean.
       // Arrival notes get appended underneath when present (gate code, parking).
       const peopleCount = Number(form?.guests) || 1;
+      const travelFeeApplied = Number(form?.travelFee) || 0;
       const notes = isPrivateBooking
         ? [
             form?.location ? `Customer location: ${form.location}` : null,
             peopleCount > 1 ? `People: ${peopleCount}` : null,
+            travelFeeApplied > 0 ? `Travel fee: €${travelFeeApplied}` : null,
             form?.locationNote ? `Notes: ${form.locationNote}` : null,
           ].filter(Boolean).join('\n') || null
         : (form?.note || null);

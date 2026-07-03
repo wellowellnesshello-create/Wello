@@ -71,15 +71,18 @@ serve(async (req) => {
     const customerName = profile?.full_name || profile?.email || 'A Wello member'
     const customerPhone = profile?.phone || ''
     const sessionName  = slot?.name || 'a session'
-    // Notes come in as multi-line: "Customer location: …", "People: N" and
-    // "Notes: …". People is only present for group bookings (>1 person).
+    // Notes come in as multi-line: "Customer location: …", "People: N",
+    // "Travel fee: €N" and "Notes: …". The optional lines are only present
+    // when they apply (group > 1, extended-travel fee > 0).
     const notesBlob = booking.notes || ''
     const locLine    = notesBlob.split('\n').find((l: string) => /^Customer location:/i.test(l)) || ''
     const noteLine   = notesBlob.split('\n').find((l: string) => /^Notes:/i.test(l)) || ''
     const peopleLine = notesBlob.split('\n').find((l: string) => /^People:/i.test(l)) || ''
-    const customerLoc  = locLine.replace(/^Customer location:\s*/i, '').trim() || 'not provided'
-    const arrivalNote  = noteLine.replace(/^Notes:\s*/i, '').trim()
-    const peopleCount  = parseInt(peopleLine.replace(/^People:\s*/i, '').trim(), 10) || 1
+    const travelLine = notesBlob.split('\n').find((l: string) => /^Travel fee:/i.test(l)) || ''
+    const customerLoc   = locLine.replace(/^Customer location:\s*/i, '').trim() || 'not provided'
+    const arrivalNote   = noteLine.replace(/^Notes:\s*/i, '').trim()
+    const peopleCount   = parseInt(peopleLine.replace(/^People:\s*/i, '').trim(), 10) || 1
+    const travelFeePaid = parseInt(travelLine.replace(/^Travel fee:\s*€?/i, '').trim(), 10) || 0
     const dateStr = fmtDate(booking.booking_date)
     const timeStr = (booking.start_time || '').slice(0,5)
 
@@ -96,6 +99,7 @@ serve(async (req) => {
             <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Date</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">${dateStr} at ${timeStr}</td></tr>
             <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Location</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;">${customerLoc}</td></tr>
             ${peopleCount > 1 ? `<tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">People</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">${peopleCount} people (group booking)</td></tr>` : ''}
+            ${travelFeePaid > 0 ? `<tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Travel fee</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">€${travelFeePaid} (extended area)</td></tr>` : ''}
             ${customerPhone ? `<tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Customer phone</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;"><a href="tel:${customerPhone}" style="color:#213C18;">${customerPhone}</a></td></tr>` : ''}
             ${arrivalNote ? `<tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Notes</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-style:italic;">${arrivalNote}</td></tr>` : ''}
           </table>
