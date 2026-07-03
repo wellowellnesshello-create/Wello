@@ -5879,6 +5879,68 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 );
               })()}
             </div>
+
+            {/* Coverage areas — sits on the Schedule tab so partners set
+                where they travel to at the same time as when they're
+                available. Extended-travel picker sits underneath. */}
+            <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:18}}>
+              <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Coverage areas</h3>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 14px",lineHeight:1.6}}>The Mallorca areas you travel to. Guests filter by location, so update this whenever your radius changes.</p>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+                {MALLORCA_LOCATIONS.map(loc => {
+                  const on = coverageAreas.includes(loc);
+                  return (
+                    <button key={loc} type="button" onClick={()=>toggleCoverageArea(loc)}
+                      style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${on?"#213C18":"rgba(195,200,188,0.5)"}`,background:on?"#213C18":"#fff",color:on?"#fff":"#1B1C19",fontFamily:F2,fontSize:11,fontWeight:on?600:400,cursor:"pointer",transition:"all .12s"}}>
+                      {on?"✓ ":""}{loc}
+                    </button>
+                  );
+                })}
+              </div>
+              {/* Extended travel — optional. Places the instructor will also
+                  travel to for an additional surcharge on top of the session
+                  price. The surcharge is added automatically to the customer's
+                  booking when their address matches one of these areas. */}
+              <div style={{marginTop:20,paddingTop:18,borderTop:"1px solid #E4E2DD"}}>
+                <h4 style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Extended travel (optional)</h4>
+                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Add places outside your usual coverage that you'll travel to for a fee. Guests booking to one of these areas pay the surcharge automatically on top of the session price.</p>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+                  {MALLORCA_LOCATIONS.map(loc => {
+                    const isCore   = coverageAreas.includes(loc);
+                    const isExtra  = travelAreas.includes(loc);
+                    const disabled = isCore;
+                    return (
+                      <button key={loc} type="button" onClick={()=>toggleTravelArea(loc)} disabled={disabled}
+                        style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${isExtra?"#B8925C":"rgba(195,200,188,0.5)"}`,background:isExtra?"#B8925C":"#fff",color:isExtra?"#fff":(disabled?"#A3B18A":"#1B1C19"),fontFamily:F2,fontSize:11,fontWeight:isExtra?600:400,cursor:disabled?"not-allowed":"pointer",transition:"all .12s",opacity:disabled?0.5:1}}>
+                        {isExtra?"✓ ":""}{loc}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                  <label style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F"}}>Travel surcharge</label>
+                  <div style={{position:"relative",width:120}}>
+                    <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
+                    <input type="number" min="0" step="1" value={travelFeeEur}
+                      onChange={e=>setTravelFeeEur(e.target.value)}
+                      placeholder="0"
+                      style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
+                  </div>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:0,flex:"1 1 200px"}}>Applied per booking. Leave blank if you don't charge extra.</p>
+                </div>
+              </div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginTop:18}}>
+                <p style={{fontFamily:F2,fontSize:11,color:coverageAreas.length>0?"#213C18":"#6F5B44",fontWeight:600,margin:0}}>
+                  {coverageAreas.length > 0
+                    ? `${coverageAreas.length} core area${coverageAreas.length===1?"":"s"}${travelAreas.length>0?` · ${travelAreas.length} extended`:""}`
+                    : "At least one area is required"}
+                </p>
+                <button onClick={saveCoverageAreas} disabled={saving||isPreview||coverageAreas.length===0}
+                  style={{padding:"10px 22px",background:(saving||isPreview||coverageAreas.length===0)?"#E4E2DD":"#213C18",color:(saving||isPreview||coverageAreas.length===0)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview||coverageAreas.length===0)?"not-allowed":"pointer"}}>
+                  {saving ? "Saving" : "Save coverage and travel"}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -6286,69 +6348,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               </div>
             )}
 
-            {/* Coverage areas — private instructors only. Spans both columns. */}
-            {dashIsPrivate && (
-              <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",gridColumn:"1 / -1"}}>
-                <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Coverage areas</h3>
-                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 14px",lineHeight:1.6}}>The Mallorca areas you travel to. Guests filter by location, so update this whenever your radius changes.</p>
-                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
-                  {MALLORCA_LOCATIONS.map(loc => {
-                    const on = coverageAreas.includes(loc);
-                    return (
-                      <button key={loc} type="button" onClick={()=>toggleCoverageArea(loc)}
-                        style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${on?"#213C18":"rgba(195,200,188,0.5)"}`,background:on?"#213C18":"#fff",color:on?"#fff":"#1B1C19",fontFamily:F2,fontSize:11,fontWeight:on?600:400,cursor:"pointer",transition:"all .12s"}}>
-                        {on?"✓ ":""}{loc}
-                      </button>
-                    );
-                  })}
-                </div>
-                {/* Extended travel — optional. Places the instructor will
-                    also travel to for an additional surcharge on top of the
-                    session price. The surcharge is added automatically to
-                    the customer's booking when their address matches one of
-                    these areas. */}
-                <div style={{marginTop:20,paddingTop:18,borderTop:"1px solid #E4E2DD"}}>
-                  <h4 style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Extended travel (optional)</h4>
-                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Add places outside your usual coverage that you'll travel to for a fee. Guests booking to one of these areas pay the surcharge automatically on top of the session price.</p>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
-                    {MALLORCA_LOCATIONS.map(loc => {
-                      const isCore    = coverageAreas.includes(loc);
-                      const isExtra   = travelAreas.includes(loc);
-                      const disabled  = isCore;
-                      return (
-                        <button key={loc} type="button" onClick={()=>toggleTravelArea(loc)} disabled={disabled}
-                          style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${isExtra?"#B8925C":"rgba(195,200,188,0.5)"}`,background:isExtra?"#B8925C":"#fff",color:isExtra?"#fff":(disabled?"#A3B18A":"#1B1C19"),fontFamily:F2,fontSize:11,fontWeight:isExtra?600:400,cursor:disabled?"not-allowed":"pointer",transition:"all .12s",opacity:disabled?0.5:1}}>
-                          {isExtra?"✓ ":""}{loc}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                    <label style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F"}}>Travel surcharge</label>
-                    <div style={{position:"relative",width:120}}>
-                      <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
-                      <input type="number" min="0" step="1" value={travelFeeEur}
-                        onChange={e=>setTravelFeeEur(e.target.value)}
-                        placeholder="0"
-                        style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
-                    </div>
-                    <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:0,flex:"1 1 200px"}}>Applied per booking. Leave blank if you don't charge extra.</p>
-                  </div>
-                </div>
-
-                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginTop:18}}>
-                  <p style={{fontFamily:F2,fontSize:11,color:coverageAreas.length>0?"#213C18":"#6F5B44",fontWeight:600,margin:0}}>
-                    {coverageAreas.length > 0
-                      ? `${coverageAreas.length} core area${coverageAreas.length===1?"":"s"}${travelAreas.length>0?` · ${travelAreas.length} extended`:""}`
-                      : "At least one area is required"}
-                  </p>
-                  <button onClick={saveCoverageAreas} disabled={saving||isPreview||coverageAreas.length===0}
-                    style={{padding:"10px 22px",background:(saving||isPreview||coverageAreas.length===0)?"#E4E2DD":"#213C18",color:(saving||isPreview||coverageAreas.length===0)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview||coverageAreas.length===0)?"not-allowed":"pointer"}}>
-                    {saving ? "Saving" : "Save coverage and travel"}
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* Coverage areas + extended travel now live on the Schedule
+                sub-tab so partners set where they go alongside when they're
+                free. */}
           </div>
         )}
 
