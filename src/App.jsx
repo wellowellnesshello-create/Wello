@@ -4602,16 +4602,27 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   async function saveAvailability() {
     if (isPreview || !bizData?.id) return;
     setSaving(true);
-    const { error: bizErr } = await supabase.from('businesses').update({
+    // .select() so we can detect the silent-zero-rows case (Supabase RLS
+    // blocking the UPDATE without throwing). Without it a policy mismatch
+    // returns error=null and we'd regenerate slots + tell the partner
+    // everything saved, but businesses.session_offerings would still be empty
+    // → offerings vanish from Manage Schedule on next mount.
+    const { data: bizUpdated, error: bizErr } = await supabase.from('businesses').update({
       availability_windows: availabilityWindows,
       session_duration_min: sessionDurationMin,
       session_offerings: dashSessionOfferings,
       availability_from: availabilityFrom || null,
       availability_to:   availabilityTo   || null,
-    }).eq('id', bizData.id);
+    }).eq('id', bizData.id).select('id');
     if (bizErr) {
       setSaving(false);
       flashSaveMsg("err", "Couldn't save availability. " + bizErr.message);
+      return;
+    }
+    if (!bizUpdated || bizUpdated.length === 0) {
+      setSaving(false);
+      console.warn('saveAvailability: 0 rows updated on businesses. Check RLS policy: create policy "Partners can update own venue" on businesses for update to authenticated using (user_id = auth.uid());');
+      flashSaveMsg("err", "Your availability couldn't be saved — an RLS policy on the businesses table is blocking the update. Contact hello@wello-wellness.com.");
       return;
     }
     // Regenerate slot rows: delete old, expand new windows × offerings.
