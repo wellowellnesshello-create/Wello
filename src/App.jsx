@@ -4816,6 +4816,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     if (!confirm("Pause your listing? Customers will no longer see it or book new sessions until you resume. Existing confirmed bookings are unaffected.")) return;
     setSaving(true);
     const { error } = await supabase.from('businesses').update({ status: 'paused' }).eq('id', bizData.id);
+    if (!error) {
+      // Belt-and-braces: also flip the listing to inactive from the client so
+      // Explore hides the venue immediately even if the notify-partner-status
+      // webhook hasn't fired yet. Non-fatal if RLS blocks — the webhook will
+      // catch up on its own.
+      await supabase.from('listings').update({ status: 'inactive' }).eq('business_id', bizData.id);
+      setBizData(prev => ({ ...prev, status: 'paused' }));
+    }
     setSaving(false);
     if (error) flashSaveMsg("err", "Couldn't pause. " + error.message);
     else { setStatusLive(false); flashSaveMsg("settings", "Listing paused. Resume any time from Settings."); }
@@ -4824,6 +4832,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     if (isPreview || !bizData?.id) return;
     setSaving(true);
     const { error } = await supabase.from('businesses').update({ status: 'approved' }).eq('id', bizData.id);
+    if (!error) {
+      // Reactivate the listing on the marketplace immediately too, mirroring
+      // the pause path so we don't wait on the webhook.
+      await supabase.from('listings').update({ status: 'active' }).eq('business_id', bizData.id);
+      setBizData(prev => ({ ...prev, status: 'approved' }));
+    }
     setSaving(false);
     if (error) flashSaveMsg("err", "Couldn't resume. " + error.message);
     else { setStatusLive(true); flashSaveMsg("golive", "Listing resumed. Back live on the marketplace."); }
