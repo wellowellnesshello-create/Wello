@@ -8554,9 +8554,15 @@ function BusinessPortal({ onSetView }) {
       const { error: slotsDelErr } = await supabase
         .from('slots').delete().in('listing_id', listingIds);
       if (slotsDelErr) console.warn('deleteVenue: slot cleanup failed', slotsDelErr.message);
-      const { error: listingsDelErr } = await supabase
-        .from('listings').delete().eq('business_id', id);
+      // .select() so a silent RLS block on listings DELETE gets surfaced
+      // rather than leaving orphaned listing rows on the marketplace after
+      // the businesses row disappears.
+      const { data: listingsDeleted, error: listingsDelErr } = await supabase
+        .from('listings').delete().eq('business_id', id).select('id');
       if (listingsDelErr) console.warn('deleteVenue: listing cleanup failed', listingsDelErr.message);
+      else if (!listingsDeleted || listingsDeleted.length === 0) {
+        console.warn('deleteVenue: 0 listings deleted for business', id, '— RLS likely blocked the DELETE. Check the "Partners can delete own listings" policy on listings.');
+      }
     }
     // .select() so we can detect the silent-zero-rows case (RLS blocking
     // the DELETE without throwing). Without it, Supabase returns success
@@ -9430,20 +9436,19 @@ export default function App() {
   const [isBiz,setIsBiz]       = useState(false);
   const [bizPreview,setBizPreview] = useState(false);
 
-  // Fetch listings + slots from Supabase (with localStorage cache for instant
-  // load). Callable from anywhere so we can re-run it when the customer
-  // navigates back to Explore / Home — otherwise partner-side edits to
-  // availability won't show up until a full page refresh.
-  const fetchListings = useCallback(async ({ skipCache = false } = {}) => {
-    if (!skipCache) {
-      try {
-        const cached = localStorage.getItem("wello_listings_v2");
-        if (cached) {
-          setListings(JSON.parse(cached));
-          setListingsLoading(false);
-        }
-      } catch { /* non-critical: ignore */ }
-    }
+  // Fetch listings + slots from Supabase. No localStorage cache — the
+  // "instant paint from cache, then refresh" pattern caused too many stale
+  // -data bugs (deleted listings kept showing up for anyone who'd loaded
+  // the page before the delete). We always fetch fresh instead; Supabase
+  // is fast enough that the skeleton state is barely perceptible.
+  //
+  // Also runs a best-effort cleanup on any legacy caches sitting in
+  // localStorage so returning users get a clean slate.
+  const fetchListings = useCallback(async () => {
+    try {
+      localStorage.removeItem("wello_listings");
+      localStorage.removeItem("wello_listings_v2");
+    } catch { /* non-critical */ }
     // Pull parent business fields (address, contact, email) via the
     // business_id FK so the customer venue-details page can show the full
     // address without needing us to mirror every column into listings.
@@ -9456,7 +9461,7 @@ export default function App() {
       .order("id");
     if (error) {
       console.error("Error fetching listings:", error);
-      if (!localStorage.getItem("wello_listings_v2")) setListings(LISTINGS);
+      setListings(LISTINGS);
     } else if (listingRows && listingRows.length > 0) {
       const transformed = listingRows.map(row => ({
         id: row.id,
@@ -9516,9 +9521,8 @@ export default function App() {
         return (b.id || 0) - (a.id || 0);
       });
       setListings(sorted);
-      try { localStorage.setItem("wello_listings_v2", JSON.stringify(sorted)); } catch { /* non-critical: ignore */ }
     } else {
-      if (!localStorage.getItem("wello_listings_v2")) setListings(LISTINGS);
+      setListings(LISTINGS);
     }
     setListingsLoading(false);
   }, []);
@@ -9528,7 +9532,7 @@ export default function App() {
   // or Home — this is the moment partner-side availability changes need to
   // land in the UI without a manual reload.
   useEffect(() => {
-    if (view === "explore" || view === "home") fetchListings({ skipCache: true });
+    if (view === "explore" || view === "home") fetchListings();
   }, [view, fetchListings]);
 
   const onSyncUpdate=useCallback((bizId,slotId,delta)=>{
