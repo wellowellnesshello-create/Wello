@@ -56,24 +56,24 @@ function useWindowWidth() {
 // ── SEO Meta Tags ─────────────────────────────────────────────
 function SEO({ title, description, path="" }) {
   useEffect(()=>{
-    document.title = title || "Wello — The Wellness Pass";
+    document.title = title || "Wello · The Wellness Pass";
     const setMeta = (name, content, prop=false) => {
       const sel = prop ? `meta[property="${name}"]` : `meta[name="${name}"]`;
       let el = document.querySelector(sel);
       if(!el){ el=document.createElement("meta"); prop?el.setAttribute("property",name):el.setAttribute("name",name); document.head.appendChild(el); }
       el.setAttribute("content", content);
     };
-    const desc = description || "Wello is your wellness pass. Book studio classes, gym access, hotel pools, spa treatments and outdoor adventures wherever you are.";
+    const desc = description || "Wello, the wellness pass. Studios, gyms, spa treatments and hotel pools across Mallorca. No membership. No commitment.";
     const url = "https://wello-seven.vercel.app" + path;
     setMeta("description", desc);
-    setMeta("keywords", "wellness pass, studio classes, yoga, pilates, gym day pass, spa, outdoor adventures, hotel pool, island wellness, ClassPass alternative");
-    setMeta("og:title", title || "Wello — The Wellness Pass", true);
+    setMeta("keywords", "wellness pass, day pass, yoga, pilates, gym day pass, spa, hotel pool, Mallorca, ClassPass alternative");
+    setMeta("og:title", title || "Wello · The Wellness Pass", true);
     setMeta("og:description", desc, true);
     setMeta("og:url", url, true);
     setMeta("og:type", "website", true);
     setMeta("og:site_name", "Wello", true);
     setMeta("twitter:card", "summary_large_image");
-    setMeta("twitter:title", title || "Wello — The Wellness Pass");
+    setMeta("twitter:title", title || "Wello · The Wellness Pass");
     setMeta("twitter:description", desc);
     // Structured data — WebSite schema
     let sd = document.getElementById("wello-schema");
@@ -82,7 +82,7 @@ function SEO({ title, description, path="" }) {
       "@context":"https://schema.org",
       "@type":"WebSite",
       "name":"Wello",
-      "description":"Your wellness pass for the good life",
+      "description":"The wellness pass. Studios, gyms, spa treatments and hotel pools across Mallorca.",
       "url":"https://wello-seven.vercel.app",
       "potentialAction":{ "@type":"SearchAction", "target":"https://wello-seven.vercel.app/?q={search_term_string}", "query-input":"required name=search_term_string" }
     });
@@ -680,7 +680,7 @@ function AuthModal({ initialMode = "signin", onClose, onSuccess }) {
     : mode==="set_password" ? "Set a new password"
     : "Sign in";
   const subhead = mode==="signin" ? "Welcome back."
-    : mode==="signup" ? "Wello members buy credits and book wellness across Mallorca."
+    : mode==="signup" ? "Wello members buy credits and book studios, gyms, spa treatments and hotel pools across Mallorca."
     : mode==="magic"  ? "We'll send a one-tap sign-in link."
     : mode==="forgot" ? "Enter your email and we'll send a reset link."
     : mode==="set_password" ? "Choose a new password for your account."
@@ -1617,7 +1617,7 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave, compact = false }) 
 // ─── AI Chatbot ───────────────────────────────────────────────────────────────
 function Chatbot({ listings, credits, bookings, onSelectBiz }) {
   const [open,setOpen]=useState(false);
-  const [msgs,setMsgs]=useState([{r:"ai",t:"Hola! I'm your Mallorca wellness concierge. Ask me to find classes, recommend experiences, or help with anything. 🌿"}]);
+  const [msgs,setMsgs]=useState([{r:"ai",t:"Hola. I'm your Mallorca wellness concierge. Ask me to find classes, recommend experiences, or help with anything. 🌿"}]);
   const [inp,setInp]=useState(""); const [loading,setLoading]=useState(false); const [sugBiz,setSugBiz]=useState(null);
   const btm=useRef(null);
   useEffect(()=>{btm.current?.scrollIntoView({behavior:"smooth"});},[msgs]);
@@ -1627,7 +1627,7 @@ function Chatbot({ listings, credits, bookings, onSelectBiz }) {
     setMsgs(p=>[...p,{r:"user",t:u}]); setLoading(true);
     const ls=listings.map(b=>`ID:${b.id} "${b.name}" ${b.cat} ${b.loc} ◈${b.cr}`).join("\n");
     const convo=msgs.map(m=>`${m.r==="user"?"User":"AI"}: ${m.t}`).join("\n");
-    const res=await aiJSON(`Warm Mallorca wellness concierge. Under 55 words. Return ONLY JSON: {"message":"response","suggestedId":null}`,`Listings:\n${ls}\nCredits:◈${credits}\nConvo:\n${convo}\nUser:${u}`);
+    const res=await aiJSON(`Warm Mallorca wellness concierge for Wello, one pass covering studios (yoga, pilates), gyms, spa treatments, hotel pools, meditation and private instructors across the island. Focus recommendations on the venues in the listings supplied. Under 55 words. Return ONLY JSON: {"message":"response","suggestedId":null}`,`Listings:\n${ls}\nCredits:◈${credits}\nConvo:\n${convo}\nUser:${u}`);
     if(res){setMsgs(p=>[...p,{r:"ai",t:res.message}]);if(res.suggestedId)setSugBiz(listings.find(b=>b.id===res.suggestedId)||null);}
     else setMsgs(p=>[...p,{r:"ai",t:"Sorry, could you try again?"}]);
     setLoading(false);
@@ -1732,8 +1732,8 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
         <div style={{position:"relative",zIndex:1,maxWidth:840,width:"100%",textAlign:"center",padding:"0 4px"}}>
           <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#A3B18A",letterSpacing:"4px",textTransform:"uppercase",margin:"0 0 8px"}}>The Wellness Pass</p>
           <h1 style={{fontFamily:F2,fontWeight:800,fontSize:"clamp(40px,11vw,160px)",color:"#213C18",lineHeight:1,letterSpacing:"clamp(-2px,-0.04em,-6px)",margin:"0 0 clamp(6px,2vw,20px)",userSelect:"none"}}>wello</h1>
-          <p style={{fontFamily:F2,fontSize:"clamp(12px,2vw,18px)",color:"#54584F",fontWeight:500,lineHeight:1.5,maxWidth:520,margin:"0 auto clamp(10px,2.5vw,32px)",letterSpacing:"-0.2px",padding:"0 8px"}}>
-            No membership. Just one pass. Book yoga, gyms, hotel pools, spa treatments, outdoor adventures or a private instructor who comes to you, all across Mallorca. Cancel any time.
+          <p style={{fontFamily:F2,fontSize:"clamp(12px,2vw,18px)",color:"#54584F",fontWeight:500,lineHeight:1.5,maxWidth:560,margin:"0 auto clamp(10px,2.5vw,32px)",letterSpacing:"-0.2px",padding:"0 8px"}}>
+            Studios, gyms, spa treatments and hotel pools across Mallorca. However long you're here. No membership. No commitment.
           </p>
           {/* CTAs — the home page used to host an AI search bar here, but
               it filtered the Featured strip in place rather than navigating,
@@ -1814,7 +1814,7 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
             <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#D6B47C",letterSpacing:"3px",textTransform:"uppercase",margin:"0 0 10px"}}>New on Wello</p>
             <h3 style={{fontFamily:F2,fontSize:"clamp(24px,3.5vw,36px)",fontWeight:700,color:"#fff",letterSpacing:"-1px",margin:"0 0 12px",lineHeight:1.1}}>Book a private instructor</h3>
             <p style={{fontFamily:F2,fontSize:"clamp(13px,1.5vw,15px)",color:"rgba(255,255,255,0.7)",fontWeight:400,lineHeight:1.65,margin:"0 0 18px",maxWidth:520}}>
-              Yoga, pilates, surf, fitness — request a 1-to-1 session and our local instructors come to you. Same pass. Same credits. Pick a slot, tell us where you're based, and your instructor confirms within 48 hours.
+              Yoga, pilates, fitness, meditation. Request a 1-to-1 session and our local instructors come to you. Same pass. Same credits. Pick a slot, tell us where you're based, and your instructor confirms within 48 hours.
             </p>
             <button onClick={()=>{ onSetView("explore"); setTimeout(()=>{ const evt=new CustomEvent('wello-set-cat',{detail:'Private Instructor'}); window.dispatchEvent(evt); },50); }}
               style={{padding:"11px 22px",background:"#D6B47C",color:"#213C18",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer",letterSpacing:"-0.2px"}}
@@ -1932,7 +1932,7 @@ function AboutPage({ onSetView }) {
         <div style={{textAlign:"center",padding:"clamp(48px,8vw,96px) 0 clamp(32px,5vw,64px)"}}>
           <span style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"4px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:12}}>About Wello</span>
           <h1 style={{fontFamily:F2,fontSize:"clamp(32px,5vw,60px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:"0 0 16px",lineHeight:1.05}}>Our wellness community.</h1>
-          <p style={{fontFamily:F2,fontSize:"clamp(14px,1.8vw,17px)",color:"#54584F",margin:"0 auto",maxWidth:560,lineHeight:1.75}}>We're a local platform built for Mallorca's wellness and fitness community - connecting people with the best studios, gyms, pools and outdoor experiences on the island.</p>
+          <p style={{fontFamily:F2,fontSize:"clamp(14px,1.8vw,17px)",color:"#54584F",margin:"0 auto",maxWidth:560,lineHeight:1.75}}>We're a local platform built for Mallorca's wellness community, connecting people with the best studios, gyms, spas and hotel pools on the island.</p>
         </div>
 
         {/* Why Wello cards */}
@@ -1961,7 +1961,7 @@ function AboutPage({ onSetView }) {
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,220px),1fr))",gap:16}}>
             {[
               {n:"01",icon:"◈",title:"Buy your pass",desc:"Choose how many credits you want. Load them onto your Wello pass - no subscription, no commitment."},
-              {n:"02",icon:"⊞",title:"Browse and book",desc:"Explore studios, gyms, hotel pools, spas and outdoor adventures. Book any slot in seconds."},
+              {n:"02",icon:"⊞",title:"Browse and book",desc:"Explore studios, gyms, hotel pools and spa treatments. Book any slot in seconds."},
               {n:"03",icon:"✓",title:"Walk in ready",desc:"Show your booking confirmation at the venue and enjoy. Credits are deducted automatically."},
             ].map(({n,icon,title,desc})=>(
               <div key={n} style={{background:"#fff",borderRadius:16,padding:"clamp(20px,3vw,32px)",position:"relative",overflow:"hidden",border:"1px solid rgba(195,200,188,0.3)"}}>
@@ -3172,7 +3172,7 @@ function PartnersPage({ onSetView }) {
   const BENEFITS = [
     {
       title: "Reach new customers",
-      body:  "The Airbnb guest staying two weeks. Yacht crew in port for the night. The expat who just arrived. People actively searching for somewhere new to practice, sweat or unwind on the island.",
+      body:  "The Airbnb guest staying two weeks. Yacht crew in port for the night. The expat who just arrived. People actively looking for their next wellness experience on the island.",
       icon:  "✧",
     },
     {
@@ -3181,7 +3181,7 @@ function PartnersPage({ onSetView }) {
       icon:  "⌗",
     },
     {
-      title: "On your terms",
+      title: "Simple and fair",
       body:  "You set your own credit price. Members redeem credits at your venue, and we settle every Friday. No monthly fee, no upfront cost.",
       icon:  "◈",
     },
@@ -3222,7 +3222,7 @@ function PartnersPage({ onSetView }) {
         <div style={{maxWidth:760}}>
           <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#6F5B44",letterSpacing:"4px",textTransform:"uppercase",display:"block",marginBottom:18}}>For wellness venues</span>
           <h1 style={{fontFamily:F2,fontSize:"clamp(34px,6vw,56px)",fontWeight:800,color:"#213C18",letterSpacing:"-2px",margin:"0 0 18px",lineHeight:1.02}}>Partner with Wello.</h1>
-          <p style={{fontFamily:F2,fontSize:"clamp(15px,1.9vw,19px)",color:"#43483F",lineHeight:1.6,margin:"0 0 12px",maxWidth:620,fontWeight:400}}>Join a growing network of wellness venues and reach visitors and locals who are actively looking for new experiences in Mallorca.</p>
+          <p style={{fontFamily:F2,fontSize:"clamp(15px,1.9vw,19px)",color:"#43483F",lineHeight:1.6,margin:"0 0 12px",maxWidth:620,fontWeight:400}}>We bring you customers actively looking for their next wellness experience in Mallorca. Studios, gyms, hotel pools, spas and private instructors all welcome.</p>
           <p style={{fontFamily:F2,fontSize:"clamp(14px,1.7vw,17px)",color:"#54584F",lineHeight:1.6,margin:"0 0 32px",maxWidth:620,fontWeight:400}}>Register your interest and we'll be in touch within two working days to walk through Wello together and get you set up.</p>
           <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
             <button onClick={goRegister}
@@ -3394,7 +3394,7 @@ function CreditsPage({ credits, listings=[], authSession, onCheckout, onSetView 
     try {
       const { data, error } = await supabase.functions.invoke('ai-chat', {
         body: {
-          system: `You are Wello's wellness concierge for Mallorca, Spain. The user has just told you a bit about their time on the island. Ask ONE warm, specific follow-up question that surfaces either (a) their main wellness goal for the trip (recover, build strength, gain flexibility, clear the head, sleep better, try something new) OR (b) a specific adventure they might want to try (sunrise hike up Cap Formentor, paddleboarding in Pollença bay, sunset yoga in Deià, padel under the lights, a thermal spa morning). Mention Mallorca naturally. Maximum 2 sentences. Just the question, no preamble. No exclamation marks. No em dashes.`,
+          system: `You are Wello's wellness concierge for Mallorca, Spain. Wello is one pass to wellness, covering studios (yoga, pilates), gyms, hotel pools, spa treatments, meditation and private instructors across the island. The user has just told you a bit about their time on the island. Ask ONE warm, specific follow-up question that surfaces either (a) their main wellness goal for the trip (recover, build strength, gain flexibility, clear the head, sleep better, try something new) OR (b) the kind of session that might suit them (sunset yoga in Deià, a reformer pilates class in Palma, a hotel spa morning, a rooftop pool day, a strength session with a private instructor). Mention Mallorca naturally. Maximum 2 sentences. Just the question, no preamble. No exclamation marks. No em dashes.`,
           messages: [{ role: 'user', content: tripAnswer.trim() }],
           max_tokens: 220,
         },
@@ -3420,7 +3420,7 @@ function CreditsPage({ credits, listings=[], authSession, onCheckout, onSetView 
     try {
       const { data, error } = await supabase.functions.invoke('ai-chat', {
         body: {
-          system: `You are Wello's wellness concierge for Mallorca, Spain. Wello is a wellness pass that lets people book yoga, pilates, spa, paddleboarding, gym, meditation and other wellness experiences across Mallorca using credits. Each credit costs one euro. Based on the user's two answers, build ONE personalised wellness itinerary for their time in Mallorca.
+          system: `You are Wello's wellness concierge for Mallorca, Spain. Wello is one pass to wellness that lets people book yoga, pilates, spa, gyms, hotel pools, meditation and private instructors across Mallorca using credits. Focus recommendations on categories that Wello actually offers today (studios, gyms, hotel pools, spa treatments, meditation, private instructors). Do not recommend surf, climbing, paddleboarding, kayaking or other outdoor-adventure categories, as those are not part of the current partner network. Each credit costs one euro. Based on the user's two answers, build ONE personalised wellness itinerary for their time in Mallorca.
 
 STRICT OUTPUT RULES (read carefully):
 - Respond with raw JSON only. No prose before or after.
@@ -3689,7 +3689,7 @@ CRITICAL: every "credits" value and "total_credits" MUST be a single positive in
               <span style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase"}}>Wello Concierge</span>
             </div>
             <h2 style={{fontFamily:F2,fontSize:"clamp(20px,3vw,26px)",fontWeight:700,color:"#213C18",letterSpacing:"-0.5px",margin:"0 0 12px",lineHeight:1.25}}>Let's plan your Mallorca wellness.</h2>
-            <p style={{fontFamily:F2,fontSize:15,color:"#43483F",lineHeight:1.55,margin:"0 0 22px"}}>Tell me about your time in Mallorca. Are you here for a few days, a longer stay, or do you live here? And what does wellness mean to you on this trip?</p>
+            <p style={{fontFamily:F2,fontSize:15,color:"#43483F",lineHeight:1.55,margin:"0 0 22px"}}>Tell me about your time in Mallorca. Are you here for a few days, a longer stay, or do you live here? And what does wellness look like for you on this trip?</p>
 
             <textarea value={tripAnswer} onChange={e => setTripAnswer(e.target.value)}
               placeholder="e.g. five days with my partner. Mostly want to recover from a busy quarter, but would love to feel a bit stronger by the end too. Curious about paddleboarding."
@@ -8753,7 +8753,7 @@ function BusinessPortal({ onSetView }) {
         <div style={{flex:"1 1 300px",background:T.sage,padding:"clamp(40px,6vw,72px) clamp(28px,5vw,56px)",display:"flex",flexDirection:"column",justifyContent:"center"}}>
           <div style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:11,fontWeight:400,color:T.ochreL,letterSpacing:"5px",textTransform:"uppercase",marginBottom:20}}>For businesses</div>
           <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:"clamp(26px,3.5vw,42px)",fontWeight:700,color:"#fff",lineHeight:1.1,letterSpacing:"-1px",margin:"0 0 18px"}}>Fill your off-peak slots.<br/>Reach more people.</h1>
-          <p style={{fontFamily:F.body,fontSize:13,color:"rgba(255,255,255,.65)",lineHeight:1.75,margin:"0 0 32px",fontWeight:300,maxWidth:380}}>Wello connects your studio, gym or pool to local fitness enthusiasts, expats and tourists who want flexibility on the island.</p>
+          <p style={{fontFamily:F.body,fontSize:13,color:"rgba(255,255,255,.65)",lineHeight:1.75,margin:"0 0 32px",fontWeight:300,maxWidth:380}}>Wello connects your studio, gym, pool or spa to locals, expats and visitors actively looking for their next wellness experience on the island.</p>
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
             {[
               ["Grow your customer base","Reach people actively searching for new wellness experiences who haven't discovered you yet"],
@@ -9848,7 +9848,7 @@ export default function App() {
         input,select,textarea,button{font-family:'Jost',system-ui,sans-serif;}
       `}</style>
 
-      <SEO title="Wello — The Wellness Pass" />
+      <SEO title="Wello · The Wellness Pass" />
       <Toast t={toast}/>
 
       {/* PASSWORD RECOVERY SCREEN */}
@@ -10068,7 +10068,7 @@ export default function App() {
             </div>
             <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"#A3B18A",margin:"0 0 24px"}}>Last updated: April 2026 · Wello (wello-wellness.com)</p>
             {[
-              ["Who we are", "Wello is a wellness marketplace based in Mallorca, Spain. We connect members with local wellness venues including yoga studios, gyms, spas and outdoor experiences. Our contact email is hello@wello-wellness.com."],
+              ["Who we are", "Wello is a wellness marketplace based in Mallorca, Spain. We connect members with local venues including yoga studios, gyms, hotel pools and spas. Our contact email is hello@wello-wellness.com."],
               ["What data we collect", "We collect the following personal data when you use Wello: your name and email address when you register or make an enquiry; payment information processed securely by Stripe (we never store your card details); booking history including which venues you visit and credits used; and device and usage data collected via PostHog analytics to help us improve the platform."],
               ["How we use your data", "Your data is used to: process and confirm bookings; send transactional emails via Resend (booking confirmations, receipts); manage your credit balance and account; improve platform performance through anonymised analytics; and comply with legal obligations. We never sell your personal data to third parties, and we never use it for advertising."],
               ["Third-party services", "Wello uses the following third-party services which may process your data: Supabase (database and authentication — hosted in EU); Stripe (payment processing — PCI DSS compliant); Resend (transactional email); PostHog (product analytics — data anonymised where possible). Each service operates under its own privacy policy and data processing agreement."],
@@ -10098,7 +10098,7 @@ export default function App() {
             </div>
             <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"#A3B18A",margin:"0 0 24px"}}>Last updated: April 2026 · Wello (wello-wellness.com)</p>
             {[
-              ["About Wello", "Wello is a wellness marketplace that allows members to purchase credits and use them to book classes, gym access, spa treatments and outdoor experiences with partner venues in Mallorca. By using Wello you agree to these terms."],
+              ["About Wello", "Wello is a wellness marketplace that allows members to purchase credits and use them to book classes, gym access, hotel pools and spa treatments with partner venues in Mallorca. By using Wello you agree to these terms."],
               ["Credits", "Wello credits are purchased in advance at a rate of 1 credit = £1/€1. Credits are valid for 6 months from the date of purchase. Credits are non-refundable once purchased except in the case of platform error. Credits have no cash value and cannot be transferred between accounts."],
               ["Bookings", "Bookings are confirmed immediately upon credit redemption. Your credits are deducted at the time of booking, not at the time of attendance. This means credits are used whether or not you attend — please cancel in advance if you cannot make a session."],
               ["Cancellations & no-shows", "Cancellations made more than 24 hours before a session will receive a full credit refund. Cancellations within 24 hours of a session are non-refundable. No-shows forfeit the credits used. Venue partners are paid regardless of attendance."],
