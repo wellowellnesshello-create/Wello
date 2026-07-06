@@ -218,7 +218,7 @@ function cancelStatusFor(booking, cat) {
 // Bump this string whenever the agreement body changes. Partners keep the
 // version they accepted on their businesses row so we can tell if they need
 // to re-accept an updated document.
-const TERMS_VERSION = 'v1.0-2026-07';
+const TERMS_VERSION = 'v1.1-2026-07';
 // Body of the Wello Partner Agreement. Placeholder sections below — paste the
 // approved copy into each `body` (array of paragraphs). Schedule 1 is rendered
 // separately from live partner data and does not live in this array.
@@ -227,7 +227,7 @@ const AGREEMENT_SECTIONS = [
     id: '1',
     title: 'Definitions',
     body: [
-      '1.1  "Wello", "we", "us" means Wello-Wellness Ltd, a company registered in England and Wales, operating the Wello platform at wello-wellness.com and associated applications.',
+      '1.1  "Wello", "we", "us" means Wello-Wellness Ltd, a company registered in England and Wales (company number 17318025), operating the Wello platform at wello-wellness.com and associated applications.',
       '1.2  "Partner", "you" means the venue, business or individual instructor named in Schedule 1.',
       '1.3  "Platform" means the Wello website, web application, and any associated booking, payment and communication systems operated by Wello.',
       '1.4  "Member" means a customer who holds a Wello account and uses credits to book Sessions.',
@@ -277,8 +277,9 @@ const AGREEMENT_SECTIONS = [
     body: [
       '5.1  Members may cancel a confirmed Booking through the Platform up to 24 hours before the scheduled Session start time. For private instructor Sessions, the cancellation window is 48 hours before the scheduled Session start time, reflecting that the instructor holds the slot exclusively for one Member. Cancellations made within these windows result in the Member\'s credits being returned in full, and no Commission or payout arises. Cancellations made after these windows have closed are not permitted through the Platform, and the Booking is treated as a Completed Booking under clause 5.2.',
       '5.2  Where a Member fails to attend a confirmed Session without cancelling within the applicable window (a no-show), the Booking is treated as a Completed Booking. The Member\'s credits are deducted and the Partner is paid in full for that Booking. The Partner does not bear the cost of Member no-shows. This clause applies to confirmed Bookings only, and does not apply to private instructor requests that are automatically declined under clause 4.4, for which credits are returned to the Member.',
-      '5.3  If the Partner cancels a confirmed Booking, the Member\'s credits are returned in full. Repeated Partner cancellations may result in reduced visibility on the Platform or suspension under clause 11.',
-      '5.4  If the Partner needs to cancel a Session, it will give Wello and affected Members as much notice as reasonably possible through the partner portal or by contacting Wello directly.',
+      '5.3  If the Partner cancels a confirmed Booking other than through the safety window described in clause 5.4, the Member\'s credits are returned in full. Repeated Partner cancellations of this kind may result in reduced visibility on the Platform or suspension under clause 11.',
+      '5.4  Where the Partner has opted into the booking safety window feature, the Partner may cancel a newly confirmed Booking within the window communicated in the booking alert (currently 2 hours, counted within the hours of 9:00 to 19:00 Spanish time) where it has a genuine scheduling conflict. On such a cancellation the Member\'s credits are returned in full and Wello may suggest alternative Sessions to the Member. A cancellation made properly within the safety window is not a breach of this Agreement and does not of itself trigger the consequences described in clause 5.3, although Wello may review persistent use of the safety window with the Partner.',
+      '5.5  If the Partner needs to cancel a Session, it will give Wello and affected Members as much notice as reasonably possible through the partner portal or by contacting Wello directly.',
     ],
   },
   {
@@ -338,7 +339,7 @@ const AGREEMENT_SECTIONS = [
     title: 'Liability',
     body: [
       '10.1  The Partner is solely responsible for the delivery of Sessions and for the safety of Members while attending Sessions. The Partner will indemnify Wello against claims arising from personal injury, property damage or other direct loss suffered by a Member as a result of the Partner\'s delivery of a Session, or the Partner\'s breach of clause 7, except to the extent caused by Wello\'s negligence.',
-      '10.2  Wello is responsible for the operation of the Platform and the handling of payments. Wello\'s total liability to the Partner under this Agreement in any 12 month period is limited to the total Commission received by Wello from the Partner in that period.',
+      '10.2  Wello is responsible for the operation of the Platform and the handling of payments. Wello\'s total liability to the Partner under this Agreement in any 12 month period is limited to the greater of EUR 500 and the total Commission received by Wello from the Partner in that period.',
       '10.3  Neither party excludes or limits liability for death or personal injury caused by its negligence, for fraud, or for any liability that cannot lawfully be excluded or limited.',
       '10.4  Neither party is liable for indirect or consequential loss, loss of profit or loss of anticipated savings, save that this clause does not limit the Partner\'s payment obligations or the indemnity in clause 10.1.',
     ],
@@ -362,7 +363,9 @@ const AGREEMENT_SECTIONS = [
       '12.2  Assignment. Wello may assign this Agreement to a successor entity, including a Spanish company within the same ownership, on notice to the Partner. The Partner may not assign this Agreement without Wello\'s consent, not to be unreasonably withheld.',
       '12.3  Entire agreement. This Agreement, including Schedule 1, is the entire agreement between the parties in relation to its subject matter.',
       '12.4  Notices. Notices may be given by email to the addresses in Schedule 1 (for the Partner) and hello@wello-wellness.com (for Wello).',
-      '12.5  Governing law and jurisdiction. This Agreement is governed by the laws of England and Wales, and the parties submit to the non-exclusive jurisdiction of the English courts.',
+      '12.5  Confidentiality. Each party will keep confidential the individually agreed Commercial Terms in Schedule 1, including the Commission rate and any Founding Partner incentive, and will not disclose them to any third party except to its professional advisers, as required by law, or with the other party\'s prior written consent.',
+      '12.6  Execution and electronic acceptance. This Agreement may be executed by signature or by electronic acceptance through the Wello partner portal. Acceptance recorded through the partner portal, including the date and time of acceptance, the version of the terms accepted and the Commercial Terms in Schedule 1 as displayed at the time of acceptance, constitutes valid execution of this Agreement by the Partner and has the same effect as a signature.',
+      '12.7  Governing law and jurisdiction. This Agreement is governed by the laws of England and Wales, and the parties submit to the non-exclusive jurisdiction of the English courts.',
     ],
   },
 ];
@@ -4862,9 +4865,17 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     : null;
   const agreementAccepted      = !!bizData?.terms_accepted_at;
   const acceptedCommission     = bizData?.terms_accepted_commission == null ? null : Number(bizData.terms_accepted_commission);
-  // Needs re-acceptance when the commission rate has changed since acceptance.
-  const needsReacceptance      = agreementAccepted && hasCommission && Number.isFinite(acceptedCommission)
+  const acceptedVersion        = bizData?.terms_version || null;
+  // Needs re-acceptance when either (a) the commission rate has changed since
+  // acceptance or (b) the version recorded on the row does not match the
+  // current TERMS_VERSION. A null acceptedVersion also counts as outdated:
+  // those rows accepted before the version-write path was reliable and have
+  // no audit trail tying them to a specific terms version, so the safe legal
+  // default is to prompt them to re-accept the current text.
+  const versionOutdated        = agreementAccepted && acceptedVersion !== TERMS_VERSION;
+  const commissionChanged      = agreementAccepted && hasCommission && Number.isFinite(acceptedCommission)
     && Number(commissionRateNum) !== Number(acceptedCommission);
+  const needsReacceptance      = commissionChanged || versionOutdated;
   const [agreementSaving, setAgreementSaving] = useState(false);
   const [agreementChecked, setAgreementChecked] = useState(false);
   const [agreementErr,     setAgreementErr]     = useState("");
