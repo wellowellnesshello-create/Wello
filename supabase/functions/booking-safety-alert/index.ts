@@ -9,16 +9,24 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 //
 // Builds a one-time HMAC token, stores it on the booking row alongside a
 // 2-hour expiry bounded to 9am-7pm Europe/Madrid business hours, then sends
-// a WhatsApp alert with a cancel link. If Twilio returns an error for
-// WhatsApp (channel not registered, template missing, etc.) we automatically
-// retry as SMS on the same number so studios keep getting alerts while Meta
-// Business verification is finalised.
+// the alert. Delivery channels:
+//
+//   PRIMARY:  Resend email to the business email address.
+//   SECONDARY (opt-in via env): Twilio WhatsApp with SMS fallback, sent in
+//             addition to the email. Behind WHATSAPP_ALERTS_ENABLED so we can
+//             flip WhatsApp on once Meta Business verification clears
+//             without touching any code — just a secret change.
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const RESEND_API_KEY            = Deno.env.get('RESEND_API_KEY')      || ''
 const TWILIO_ACCOUNT_SID        = Deno.env.get('TWILIO_ACCOUNT_SID')  || ''
 const TWILIO_AUTH_TOKEN         = Deno.env.get('TWILIO_AUTH_TOKEN')   || ''
 const TWILIO_PHONE_NUMBER       = Deno.env.get('TWILIO_PHONE_NUMBER') || ''
+// Feature flag: only try WhatsApp/SMS in addition to email when explicitly
+// enabled. Any value other than empty/"false"/"0" turns it on so ops can
+// toggle by setting the secret without redeploying.
+const WHATSAPP_ALERTS_ENABLED   = !['', 'false', '0', 'no', 'off'].includes((Deno.env.get('WHATSAPP_ALERTS_ENABLED') || '').toLowerCase())
 // Secret used to sign the cancel-link tokens. Must match studio-cancel-booking.
 const SAFETY_CANCEL_SECRET      = Deno.env.get('SAFETY_CANCEL_SECRET') || ''
 
@@ -147,6 +155,38 @@ function arrayBufferToBase64Url(buf: ArrayBuffer): string {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+async function sendResend(to: string, subject: string, htmlBody: string): Promise<{ ok: boolean; id?: string; error?: string; status?: number }> {
+  if (!RESEND_API_KEY) return { ok: false, error: 'RESEND_API_KEY not configured' }
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: 'Wello <hello@wello-wellness.com>', to, subject, html: htmlBody }),
+  }).catch(e => { console.error('Resend fetch error:', e); return null })
+  if (!r) return { ok: false, error: 'network_error' }
+  const respBody = await r.json().catch(() => ({}))
+  if (!r.ok) return { ok: false, status: r.status, error: respBody?.message || `Resend ${r.status}` }
+  return { ok: true, id: respBody?.id }
+}
+
+// Brand-consistent HTML for the safety-window alert email. Forest green,
+// Alabaster, Manrope — matches the confirmation email style used by
+// instructor-booking-response.
+function buildAlertEmail({ sessionName, dateStr, timeStr, customerName, cancelUrl, windowEnds }: {
+  sessionName: string; dateStr: string; timeStr: string; customerName: string; cancelUrl: string; windowEnds: string;
+}): string {
+  return `<div style="font-family:Manrope,Arial,sans-serif;max-width:540px;margin:0 auto;padding:28px 24px;color:#1B1C19;background:#FBF9F4;">
+    <h2 style="color:#213C18;font-size:20px;margin:0 0 14px;letter-spacing:-0.3px;">New booking confirmed</h2>
+    <p style="margin:0 0 16px;line-height:1.6;color:#43483F;">This booking is confirmed and no action is needed. If there is a genuine conflict, you have until <strong style="color:#213C18;">${windowEnds}</strong> to cancel.</p>
+    <table style="width:100%;border-collapse:collapse;background:#fff;border:1px solid #E4E2DD;border-radius:10px;margin:0 0 20px;">
+      <tr><td style="padding:10px 16px;font-size:12px;color:#54584F;width:120px;letter-spacing:1px;text-transform:uppercase;">Session</td><td style="padding:10px 16px;font-size:14px;color:#1B1C19;font-weight:600;">${sessionName}</td></tr>
+      <tr><td style="padding:10px 16px;font-size:12px;color:#54584F;letter-spacing:1px;text-transform:uppercase;border-top:1px solid #F0EDE6;">When</td><td style="padding:10px 16px;font-size:14px;color:#1B1C19;font-weight:600;border-top:1px solid #F0EDE6;">${dateStr} at ${timeStr}</td></tr>
+      <tr><td style="padding:10px 16px;font-size:12px;color:#54584F;letter-spacing:1px;text-transform:uppercase;border-top:1px solid #F0EDE6;">Customer</td><td style="padding:10px 16px;font-size:14px;color:#1B1C19;font-weight:600;border-top:1px solid #F0EDE6;">${customerName}</td></tr>
+    </table>
+    <a href="${cancelUrl}" style="display:inline-block;padding:12px 22px;background:#213C18;color:#FBF9F4;text-decoration:none;border-radius:999px;font-weight:700;font-size:14px;letter-spacing:0.2px;">Cancel this booking</a>
+    <p style="margin:22px 0 0;font-size:11px;color:#A3B18A;line-height:1.6;">This link is one-time-use and expires at ${windowEnds}. After that the booking stands as normal.</p>
+  </div>`
+}
+
 async function sendTwilio(to: string, body: string, useWhatsApp: boolean): Promise<{ ok: boolean; sid?: string; error?: string; status?: number }> {
   const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`
   const from = useWhatsApp ? `whatsapp:${TWILIO_PHONE_NUMBER}` : TWILIO_PHONE_NUMBER
@@ -195,7 +235,7 @@ serve(async (req) => {
 
     const { data: business, error: bizErr } = await supabase
       .from('businesses')
-      .select('id, name, phone, category, cancellation_safety_window')
+      .select('id, name, email, phone, category, cancellation_safety_window')
       .eq('id', booking.business_id)
       .maybeSingle()
     if (bizErr || !business) return json({ error: 'Business not found' }, 404)
@@ -203,8 +243,10 @@ serve(async (req) => {
     if (!business.cancellation_safety_window) {
       return json({ skipped: 'business has not opted into the safety window' })
     }
-    if (!business.phone) {
-      return json({ skipped: 'business has no phone number on file' })
+    // Email is the primary channel — the studio must have one on file. Phone
+    // is only checked below if the WhatsApp/SMS secondary channel is turned on.
+    if (!business.email) {
+      return json({ skipped: 'business has no email address on file' })
     }
 
     // Load customer + slot for the alert body.
@@ -245,34 +287,61 @@ serve(async (req) => {
     // Supabase's function runtime.
     const cancelUrl  = `${SUPABASE_URL}/functions/v1/studio-cancel-booking?t=${token}`
     const windowEnds = fmtWindowEnd(expiryIso)
-    const bodyText = `New booking confirmed: ${sessionName} on ${dateStr} at ${timeStr} with ${customerName}. If there is a conflict, you have until ${windowEnds} to cancel: ${cancelUrl}`
 
     const results: Record<string, unknown> = {}
 
-    if (TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_PHONE_NUMBER) {
-      // Try WhatsApp first, fall back to SMS on any Twilio error.
-      const waResult = await sendTwilio(business.phone, bodyText, true)
-      if (waResult.ok) {
-        results.channel = 'whatsapp'
-        results.sid = waResult.sid
+    // ── PRIMARY: email via Resend ──────────────────────────────────────
+    // Always send the email. If Resend fails we still return 200 with the
+    // error surfaced in results so the caller (browser) doesn't retry, but
+    // we log loudly so it shows up in function logs.
+    const emailHtml = buildAlertEmail({ sessionName, dateStr, timeStr, customerName, cancelUrl, windowEnds })
+    const emailSubject = `New booking confirmed — ${sessionName}, ${dateStr}`
+    const emailResult = await sendResend(business.email, emailSubject, emailHtml)
+    if (emailResult.ok) {
+      results.email = 'sent'
+      results.email_id = emailResult.id
+    } else {
+      console.error('booking-safety-alert: Resend failed:', emailResult.error)
+      results.email = 'failed'
+      results.email_error = emailResult.error
+    }
+
+    // ── SECONDARY: Twilio WhatsApp with SMS fallback (behind feature flag) ─
+    // Off by default. Once Meta Business verification clears, set
+    // WHATSAPP_ALERTS_ENABLED=true on the function secrets and the SMS/
+    // WhatsApp path re-activates alongside email. Missing phone number or
+    // missing Twilio config short-circuits with a reason logged in results,
+    // but never fails the request — email has already gone out.
+    if (WHATSAPP_ALERTS_ENABLED) {
+      if (!business.phone) {
+        results.messaging = 'skipped_no_phone'
+      } else if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
+        results.messaging = 'skipped_twilio_not_configured'
       } else {
-        console.warn('WhatsApp send failed, falling back to SMS:', waResult.error)
-        const smsResult = await sendTwilio(business.phone, bodyText, false)
-        if (smsResult.ok) {
-          results.channel = 'sms'
-          results.sid = smsResult.sid
-          results.whatsapp_fallback_reason = waResult.error || `status_${waResult.status}`
+        const bodyText = `New booking confirmed: ${sessionName} on ${dateStr} at ${timeStr} with ${customerName}. If there is a conflict, you have until ${windowEnds} to cancel: ${cancelUrl}`
+        const waResult = await sendTwilio(business.phone, bodyText, true)
+        if (waResult.ok) {
+          results.messaging = 'whatsapp'
+          results.messaging_sid = waResult.sid
         } else {
-          console.error('Both WhatsApp and SMS failed:', waResult.error, smsResult.error)
-          return json({ error: 'Twilio send failed on both channels', whatsapp: waResult.error, sms: smsResult.error }, 502)
+          console.warn('booking-safety-alert: WhatsApp failed, trying SMS:', waResult.error)
+          const smsResult = await sendTwilio(business.phone, bodyText, false)
+          if (smsResult.ok) {
+            results.messaging = 'sms'
+            results.messaging_sid = smsResult.sid
+            results.whatsapp_fallback_reason = waResult.error || `status_${waResult.status}`
+          } else {
+            console.error('booking-safety-alert: both WhatsApp and SMS failed:', waResult.error, smsResult.error)
+            results.messaging = 'failed'
+            results.messaging_error = smsResult.error
+          }
         }
       }
     } else {
-      results.channel = 'not_configured'
-      results.warning = 'Twilio not configured; token stored but no message sent'
+      results.messaging = 'disabled'
     }
 
-    console.log(`booking-safety-alert: booking ${booking.id} channel=${results.channel} expires=${expiryIso}`)
+    console.log(`booking-safety-alert: booking ${booking.id} email=${results.email} messaging=${results.messaging} expires=${expiryIso}`)
     return json({ success: true, expiry: expiryIso, ...results })
   } catch (e) {
     console.error('booking-safety-alert exception:', e)
