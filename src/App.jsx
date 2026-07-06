@@ -219,6 +219,12 @@ function cancelStatusFor(booking, cat) {
 // version they accepted on their businesses row so we can tell if they need
 // to re-accept an updated document.
 const TERMS_VERSION = 'v1.1-2026-07';
+
+// Consumer-facing Terms of Use version stamped on profiles.consumer_terms_version
+// at signup. Bump this string when the customer TOU materially changes; the
+// upsert path in App.jsx will then record a new acceptance on next
+// authenticated session for anyone whose stored version is older or null.
+const CONSUMER_TERMS_VERSION = 'v1.0-2026-07';
 // Body of the Wello Partner Agreement. Placeholder sections below — paste the
 // approved copy into each `body` (array of paragraphs). Schedule 1 is rendered
 // separately from live partner data and does not live in this array.
@@ -542,7 +548,7 @@ const INP = {width:"100%",padding:"9px 11px",border:`1px solid ${T.border}`,bord
 // separate (no shared UI). The Supabase auth session itself is shared per
 // browser, but only customers with a row in `profiles` see the member
 // experience; only partners with a row in `businesses` see the portal.
-function AuthModal({ initialMode = "signin", onClose, onSuccess }) {
+function AuthModal({ initialMode = "signin", onClose, onSuccess, onOpenTerms }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   // signin | signup | magic | magic_sent | signup_check | forgot | forgot_sent | set_password | set_password_done
   const [mode, setMode] = useState(initialMode);
@@ -754,6 +760,15 @@ function AuthModal({ initialMode = "signin", onClose, onSuccess }) {
             style={{padding:"12px",background:busy?T.border:T.sage,color:busy?T.stone:"#fff",border:"none",borderRadius:4,fontFamily:F2,fontSize:13,fontWeight:700,cursor:busy?"not-allowed":"pointer",marginTop:4,letterSpacing:"0.2px"}}>
             {busy ? "Please wait…" : primaryLabel}
           </button>
+
+          {mode==="signup" && (
+            <p style={{fontFamily:F2,fontSize:11,color:T.stone,margin:"6px 0 0",lineHeight:1.55,textAlign:"center"}}>
+              By creating an account you agree to the{" "}
+              <button type="button" onClick={()=>onOpenTerms?.()} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>
+                Wello Terms of Use
+              </button>.
+            </p>
+          )}
 
           {mode==="signin" && (
             <>
@@ -1194,6 +1209,12 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                   : isPrivateBooking   ? `Request booking · ◈ ${cost} held`
                   : `Confirm · ◈ ${cost} credits`;
                 const cancelWindow = cancelWindowHoursFor(biz.cat);
+                // Detect "late booking" — slot start is within 24h of now.
+                // Copy mirrors clause 6.1 of the consumer terms so customers
+                // see it before confirming a booking that can't be
+                // cancelled.
+                const slotStart = sessionDateTime(slot?.date, slot?.time);
+                const isLateBooking = slotStart && (slotStart.getTime() - Date.now()) < 24 * 60 * 60 * 1000;
                 return (
                   <>
                   <div style={{background:"#F5F3EE",border:"1px solid rgba(195,200,188,0.5)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
@@ -1202,6 +1223,11 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                       Cancel up to <strong>{cancelWindow} hours before</strong> the session and your credits come back in full. Cancellations after that aren't refundable.
                     </p>
                   </div>
+                  {isLateBooking && !isPrivateBooking && (
+                    <p style={{fontFamily:F2,fontSize:12,color:"#54584F",lineHeight:1.55,margin:"0 0 12px",fontStyle:"italic"}}>
+                      This session starts in under 24 hours, so this booking is final once confirmed.
+                    </p>
+                  )}
                   <button onClick={()=>{
                       if (ok) {
                         onConfirm({
@@ -1922,6 +1948,152 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
         );
       })()}
 
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PAGE: CONSUMER TERMS OF USE
+// ═══════════════════════════════════════════════════════════════
+// Public, static, always accessible via /terms (view === "terms"). Rendered
+// from the CONSUMER_TERMS_SECTIONS array below so the text lives in one
+// place and can be reused (e.g. for an emailable PDF later) without
+// duplicating the copy.
+const CONSUMER_TERMS_SECTIONS = [
+  {
+    title: 'Who we are and what these terms cover',
+    body: [
+      '1.1  Wello is operated by Wello-Wellness Ltd, a company registered in England and Wales ("Wello", "we", "us"). Our contact email is hello@wello-wellness.com.',
+      '1.2  These terms apply when you create a Wello account, purchase or receive Wello credits, or book a session with a venue or instructor listed on the Wello platform (each a "Partner").',
+      '1.3  Wello is a marketplace. We list sessions offered by independent Partners, take bookings and collect payment on their behalf. The Partner, not Wello, delivers your session and is responsible for the session itself. Wello is responsible for the platform, your credits and the booking process.',
+      '1.4  If you are a consumer in Spain or elsewhere in the EU, nothing in these terms affects the mandatory consumer rights you have under the law of the country you live in.',
+    ],
+  },
+  {
+    title: 'Your account',
+    body: [
+      '2.1  You must be at least 18 years old to create an account and book sessions.',
+      '2.2  You are responsible for keeping your login details secure and for activity on your account. Tell us promptly at hello@wello-wellness.com if you believe your account has been used without your permission.',
+      '2.3  The information on your account must be accurate. For sessions delivered at your location (private instructors), you must provide an accurate meeting location within the instructor\'s stated coverage area.',
+    ],
+  },
+  {
+    title: 'Credits',
+    body: [
+      '3.1  Wello credits are the currency of the platform. One credit always equals one euro of session value. Session prices are set by Partners and shown in credits.',
+      '3.2  Credits are purchased through the platform. Payment is processed by Stripe. We may charge a service fee on credit purchases; any service fee is shown clearly before you pay.',
+      '3.3  Credits do not expire and remain available on your account until used or refunded under these terms.',
+      '3.4  Credits are personal to your account and cannot be transferred to another account, except by using the gifting feature described in clause 8 or where we agree otherwise.',
+      '3.5  Credits are available to spend immediately after purchase. By purchasing credits you acknowledge and agree that credits you have spent on bookings are deducted at full value from any refund of your purchase.',
+    ],
+  },
+  {
+    title: 'Your right of withdrawal on credit purchases',
+    body: [
+      '4.1  If you are a consumer, you have a legal right to withdraw from a purchase of credits within 14 days of the purchase, without giving a reason.',
+      '4.2  To exercise this right, email hello@wello-wellness.com from the email address on your account within 14 days of the purchase, stating that you wish to withdraw from the purchase.',
+      '4.3  If you withdraw, we will refund the amount you paid for the purchase, less the full value of any credits from that purchase you have already spent on bookings (in line with your acknowledgment in clause 3.5), using the original payment method, within 14 days of your request.',
+      '4.4  The right of withdrawal applies to the purchase of credits. It does not apply to individual bookings, which are services related to leisure activities with a specific date or period of performance and are instead governed by the cancellation policy in clause 6.',
+    ],
+  },
+  {
+    title: 'Bookings',
+    body: [
+      '5.1  A booking is confirmed when you complete the booking flow and receive a confirmation on the platform or by email. Credits equal to the session price are deducted from your balance when the booking is made.',
+      '5.2  Private instructor sessions work by request. The instructor has up to 48 hours to accept. If the instructor does not accept within 48 hours, the request is automatically declined and your credits are returned in full.',
+      '5.3  Some venues use a short safety window after a booking is confirmed, during which the venue may cancel if it has a genuine scheduling conflict. If this happens your credits are returned in full and we will suggest alternative sessions. This is rare and exists to prevent double bookings.',
+      '5.4  Session details, including what is included, duration, location and any requirements (such as fitness level or equipment), are set out in the Partner\'s listing. Check the listing before booking.',
+      '5.5  You are expected to arrive on time and to follow the Partner\'s reasonable rules at the venue, including health and safety instructions.',
+    ],
+  },
+  {
+    title: 'Cancellations, no-shows and refunds',
+    body: [
+      '6.1  You can cancel a booking through the platform. The cancellation window is shown at the time of booking. Unless the listing states otherwise, bookings can be cancelled up to 24 hours before the session start time for a full credit refund. Bookings made within 24 hours of the session start time are final once confirmed and cannot be cancelled; this is made clear before you confirm such a booking.',
+      '6.2  If you cancel within the cancellation window, your credits are returned to your account in full.',
+      '6.3  If you do not attend a booked session and have not cancelled within the window (a no-show), the credits for that session are not refunded. The Partner has reserved that time and capacity for you and is paid for the booking.',
+      '6.4  If a Partner cancels your booking (including under the safety window in clause 5.3), your credits are returned in full.',
+      '6.5  If a session materially fails to match its listing or is not delivered, contact us at hello@wello-wellness.com within 7 days. Where we agree the session was not delivered as described, we will refund the credits for that booking. This does not limit your statutory rights.',
+      '6.6  Refunds under these terms are made in credits to your Wello account, except refunds under clause 4 (withdrawal from a credit purchase), which are made to your original payment method.',
+    ],
+  },
+  {
+    title: 'Prices and payment',
+    body: [
+      '7.1  Session prices in credits are set by Partners and may change, but the price you pay is the price shown when you book.',
+      '7.2  Credit purchase prices and any service fee are shown before you pay. Payment is taken immediately at purchase by our payment provider, Stripe. We do not store your card details.',
+      '7.3  Prices shown include applicable VAT or IVA unless stated otherwise.',
+    ],
+  },
+  {
+    title: 'Gifting',
+    body: [
+      '8.1  You can purchase credits as a gift for another person. Gifted credits are delivered to the recipient as described in the gifting flow and are subject to these terms once accepted.',
+      '8.2  The right of withdrawal in clause 4 applies to gift purchases and belongs to the purchaser, but ends once the recipient has accepted or begun to spend the gifted credits.',
+    ],
+  },
+  {
+    title: 'Health and safety',
+    body: [
+      '9.1  Wellness and fitness activities carry inherent physical risk. You are responsible for ensuring you are physically able to take part in a session, and for informing the Partner of any relevant health condition, injury or limitation before the session begins.',
+      '9.2  If in doubt about your fitness to participate, seek medical advice before booking. Partners may decline participation where they reasonably consider it unsafe.',
+    ],
+  },
+  {
+    title: 'Our responsibility to you',
+    body: [
+      '10.1  Wello is responsible for operating the platform with reasonable skill and care, for handling your credits and payments correctly, and for the booking process.',
+      '10.2  The Partner is responsible for delivering the session safely and as described. Wello does not deliver, supervise or control sessions. Claims relating to the delivery of a session, including personal injury at a session, should be addressed to the Partner. We will provide reasonable assistance in connecting you with the Partner.',
+      '10.3  Nothing in these terms excludes or limits our liability for death or personal injury caused by our negligence, for fraud, or for any liability that cannot be excluded or limited by law, and nothing in these terms affects your statutory consumer rights.',
+      '10.4  We are not responsible for losses that are not caused by our breach of these terms, or that were not reasonably foreseeable to both parties when these terms applied to you.',
+    ],
+  },
+  {
+    title: 'Fair use and account suspension',
+    body: [
+      '11.1  You agree not to misuse the platform, including by making fraudulent bookings, abusing refund or withdrawal processes, harassing Partners or their staff, or attempting to interfere with the operation or security of the platform.',
+      '11.2  We may suspend or close your account where we reasonably believe these terms have been seriously or repeatedly breached. If we do, any unspent purchased credits will be refunded to your original payment method, less amounts we are legally entitled to withhold.',
+    ],
+  },
+  {
+    title: 'Changes and general',
+    body: [
+      '12.1  We may update these terms from time to time. If we make a material change, we will give you reasonable notice by email or through the platform. Changes do not affect bookings already made.',
+      '12.2  We may transfer our rights and obligations under these terms to a successor business, including a Spanish company within the same ownership, on notice to you. This will not reduce your rights.',
+      '12.3  These terms are governed by the laws of England and Wales. If you are a consumer, you also benefit from any mandatory protections of the law of the country where you live, and you may bring proceedings in the courts of that country.',
+      '12.4  If you have a complaint, contact hello@wello-wellness.com and we will do our best to resolve it. The EU online dispute resolution platform is also available to EU consumers.',
+    ],
+  },
+];
+
+function TermsPage() {
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  return (
+    <div style={{background:"#FBF9F4",paddingTop:24,paddingBottom:"calc(80px + env(safe-area-inset-bottom))"}}>
+      <div style={{maxWidth:800,margin:"0 auto",padding:"clamp(24px,5vw,48px) clamp(20px,4vw,32px)"}}>
+        <header style={{marginBottom:"clamp(28px,4vw,44px)"}}>
+          <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"4px",textTransform:"uppercase",color:"#54584F",margin:"0 0 10px"}}>Legal</p>
+          <h1 style={{fontFamily:F2,fontSize:"clamp(28px,4vw,42px)",fontWeight:800,color:"#213C18",letterSpacing:"-1.4px",margin:"0 0 8px",lineHeight:1.1}}>Wello Terms of Use</h1>
+          <p style={{fontFamily:F2,fontSize:14,color:"#54584F",margin:0,fontWeight:500}}>Version 1.0, July 2026</p>
+        </header>
+
+        {CONSUMER_TERMS_SECTIONS.map((section, i) => (
+          <section key={section.title} style={{marginBottom:"clamp(28px,3.5vw,40px)"}}>
+            <h2 style={{fontFamily:F2,fontSize:"clamp(18px,2.4vw,22px)",fontWeight:700,color:"#213C18",letterSpacing:"-0.4px",margin:"0 0 14px",lineHeight:1.3}}>
+              {i + 1}. {section.title}
+            </h2>
+            {section.body.map((clause, ci) => (
+              <p key={ci} style={{fontFamily:F2,fontSize:15,color:"#1B1C19",lineHeight:1.75,margin:"0 0 12px",fontWeight:400}}>
+                {clause}
+              </p>
+            ))}
+          </section>
+        ))}
+
+        <p style={{fontFamily:F2,fontSize:12,color:"#54584F",lineHeight:1.6,margin:"32px 0 0",paddingTop:20,borderTop:"1px solid rgba(195,200,188,0.4)"}}>
+          Questions about these terms? Email <a href="mailto:hello@wello-wellness.com" style={{color:"#213C18",fontWeight:600,textDecoration:"underline"}}>hello@wello-wellness.com</a>.
+        </p>
+      </div>
     </div>
   );
 }
@@ -3655,12 +3827,19 @@ CRITICAL: every "credits" value and "total_credits" MUST be a single positive in
                 </div>
               </div>
 
+              {/* Withdrawal-right acknowledgment. Sits directly above the
+                  pay button so the customer sees it in the moment of
+                  purchase; text mirrors clause 3.5 of the consumer terms. */}
+              <p style={{fontFamily:F2,fontSize:11,color:"#54584F",lineHeight:1.6,margin:"0 0 10px"}}>
+                Credits are available to spend immediately. Credits you have spent are deducted at full value from any refund. Booked sessions follow the cancellation policy shown at booking.
+              </p>
+
               <button onClick={startCheckout} disabled={buyLoading || qtyNum < 1}
                 style={primaryBtn(qtyNum>=1 && !buyLoading)}>
                 {buyLoading ? "Opening checkout" : `Buy credits · €${grandTotal.toFixed(2)}`}
               </button>
 
-              <p style={{fontFamily:F2,fontSize:11,color:"rgba(33,60,24,0.55)",textAlign:"center",margin:"14px 0 0"}}>Secure card payment. Credits valid 6 months. 1 credit = €{PRICE_PER_CREDIT}.</p>
+              <p style={{fontFamily:F2,fontSize:11,color:"rgba(33,60,24,0.55)",textAlign:"center",margin:"14px 0 0"}}>Secure card payment. Credits do not expire. 1 credit = €{PRICE_PER_CREDIT}.</p>
 
               {onSetView && (
                 <button type="button" onClick={()=>onSetView("gift")}
@@ -9270,7 +9449,6 @@ export default function App() {
   const [cookieConsent,setCookieConsent] = useState(()=>localStorage.getItem("wello_cookie_consent")||null);
   const [showContact,setShowContact] = useState(false);
   const [showPrivacy,setShowPrivacy] = useState(false);
-  const [showTerms,setShowTerms] = useState(false);
   const [contactForm,setContactForm] = useState({name:"",email:"",message:""});
   const [contactSent,setContactSent] = useState(false);
   const [recovering,setRecovering] = useState(false);
@@ -9319,11 +9497,24 @@ export default function App() {
     let cancelled = false;
     (async () => {
       const u = authSession.user;
+      // Check whether we've already recorded a consumer terms acceptance
+      // for this profile. If not (first sign-in, or the row predates the
+      // consumer_terms_version column), stamp the current version + now on
+      // this write. Otherwise leave the existing values alone so the audit
+      // trail keeps the original acceptance timestamp — the upsert path
+      // runs on every authSession change, and blindly rewriting these
+      // would clobber that.
+      const { data: existingProfile } = await supabase
+        .from('profiles').select('consumer_terms_version').eq('id', uid).maybeSingle();
       const payload = {
         id: uid,
         email: u.email ?? null,
         full_name: u.user_metadata?.full_name || (u.email?.split('@')[0] ?? 'Member'),
       };
+      if (!existingProfile?.consumer_terms_version) {
+        payload.consumer_terms_version     = CONSUMER_TERMS_VERSION;
+        payload.consumer_terms_accepted_at = new Date().toISOString();
+      }
       const { data: row, error: upsertErr } = await supabase
         .from('profiles')
         .upsert(payload, { onConflict: 'id' })
@@ -10048,6 +10239,7 @@ export default function App() {
           {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
           {view==="credits"    &&<CreditsPage credits={credits} listings={listings} authSession={authSession} onCheckout={(qty)=>{ if (!authSession) requireAuthForCheckout(qty); else doCheckout(qty); }} onSetView={setView}/>}
           {view==="about"      &&<AboutPage onSetView={setView}/>}
+          {view==="terms"      &&<TermsPage/>}
           {view==="partners"   &&<PartnersPage onSetView={setView}/>}
           {view==="gift"       &&(lastGift
             ? <GiftSentPage gift={lastGift} onSetView={(v)=>{ setLastGift(null); setView(v); }}/>
@@ -10067,7 +10259,7 @@ export default function App() {
               <a onClick={()=>setView("about")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>About</a>
               <a onClick={()=>setView("partners")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>For partners</a>
               <a onClick={()=>setShowPrivacy(true)} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Privacy</a>
-              <a onClick={()=>setShowTerms(true)} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Terms</a>
+              <a onClick={()=>setView("terms")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Terms of Use</a>
               <a onClick={()=>setShowContact(true)} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Contact</a>
             </div>
             <div>
@@ -10155,40 +10347,9 @@ export default function App() {
         </div>
       )}
 
-      {/* TERMS MODAL */}
-      {showTerms&&(
-        <div style={{position:"fixed",inset:0,zIndex:2000,background:"rgba(27,28,25,0.75)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowTerms(false)}>
-          <div style={{background:"#fff",borderRadius:20,maxWidth:600,width:"100%",padding:"36px 32px",boxShadow:"0 32px 80px rgba(0,0,0,0.22)",maxHeight:"85vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-              <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:22,fontWeight:700,color:"#213C18",margin:0}}>Terms of Use</h2>
-              <button onClick={()=>setShowTerms(false)} style={{background:"transparent",border:"none",fontSize:20,cursor:"pointer",color:"#54584F"}}>×</button>
-            </div>
-            <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"#A3B18A",margin:"0 0 24px"}}>Last updated: April 2026 · Wello (wello-wellness.com)</p>
-            {[
-              ["About Wello", "Wello is a wellness marketplace that allows members to purchase credits and use them to book classes, gym access, spa treatments and outdoor experiences with partner venues in Mallorca. By using Wello you agree to these terms."],
-              ["Credits", "Wello credits are purchased in advance at a rate of 1 credit = £1/€1. Credits are valid for 6 months from the date of purchase. Credits are non-refundable once purchased except in the case of platform error. Credits have no cash value and cannot be transferred between accounts."],
-              ["Bookings", "Bookings are confirmed immediately upon credit redemption. Your credits are deducted at the time of booking, not at the time of attendance. This means credits are used whether or not you attend — please cancel in advance if you cannot make a session."],
-              ["Cancellations & no-shows", "Cancellations made more than 24 hours before a session will receive a full credit refund. Cancellations within 24 hours of a session are non-refundable. No-shows forfeit the credits used. Venue partners are paid regardless of attendance."],
-              ["Venue partners", "Wello acts as a marketplace connecting members with independent venue partners. Wello is not responsible for the quality, safety, availability or conduct of individual venues or their staff. Any disputes regarding a specific experience should be raised directly with the venue in the first instance, and then with Wello at hello@wello-wellness.com."],
-              ["Payments", "All payments are processed securely by Stripe. Wello does not store your card details. By purchasing credits you authorise Wello to charge your payment method for the stated amount."],
-              ["Account responsibility", "You are responsible for maintaining the confidentiality of your account credentials. You must not share your account with others. Wello reserves the right to suspend accounts that are used fraudulently or in breach of these terms."],
-              ["Acceptable use", "Wello may only be used for personal wellness bookings. Commercial use, resale of credits, or any fraudulent use is strictly prohibited and will result in immediate account suspension."],
-              ["Changes to the platform", "Wello reserves the right to modify, suspend or discontinue any part of the platform at any time. We will provide reasonable notice of material changes where possible."],
-              ["Governing law", "These terms are governed by the laws of England and Wales. Any disputes will be subject to the exclusive jurisdiction of the courts of England and Wales."],
-              ["Contact", "For any questions about these terms: hello@wello-wellness.com"],
-            ].map(([title,body])=>(
-              <div key={title} style={{marginBottom:20,paddingBottom:20,borderBottom:"1px solid #F5F3EE"}}>
-                <h3 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,fontWeight:700,color:"#213C18",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.5px"}}>{title}</h3>
-                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#54584F",margin:0,lineHeight:1.75}}>{body}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {selBiz   &&<BizPanel biz={selBiz}        onClose={()=>setSelBiz(null)}  onBook={onBook}/>}
       {bkData   &&<BookingModal biz={bkData.biz} slot={bkData.slot} onClose={()=>setBkData(null)} onConfirm={onConfirm} credits={credits} onBuyCredits={()=>{setBkData(null);setView("credits");}} profile={profile} authSession={authSession} onOpenSignIn={()=>{setBkData(null);setAuthModal({mode:"signin"});}}/>}
-      {authModal&&<AuthModal initialMode={authModal.mode} onClose={()=>setAuthModal(null)} onSuccess={()=>setAuthModal(null)}/>}
+      {authModal&&<AuthModal initialMode={authModal.mode} onClose={()=>setAuthModal(null)} onSuccess={()=>setAuthModal(null)} onOpenTerms={()=>{setAuthModal(null);setView("terms");}}/>}
       <SyncEngine listings={listings} onUpdate={onSyncUpdate}/>
       <Chatbot listings={listings} credits={credits} bookings={bookings} onSelectBiz={onSelect}/>
 
