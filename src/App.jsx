@@ -217,6 +217,15 @@ const TERMS_VERSION = 'v1.1-2026-07';
 // upsert path in App.jsx will then record a new acceptance on next
 // authenticated session for anyone whose stored version is older or null.
 const CONSUMER_TERMS_VERSION = 'v1.0-2026-07';
+
+// Feature flag: when true, partners must complete Stripe Connect onboarding
+// before their venue can be submitted for review, and the "Payouts" step
+// shows the Stripe hosted flow. When false, the step shows a "coming soon"
+// note and submission goes through as before. Kept off at merge time so the
+// gate doesn't strand any partner who registers before Stripe Connect is
+// enabled on the platform account. Flip to true (redeploy) once Connect is
+// live in the Stripe Dashboard and the account.updated webhook is wired up.
+const STRIPE_GATE_ENABLED = false;
 // Body of the Wello Partner Agreement. Placeholder sections below — paste the
 // approved copy into each `body` (array of paragraphs). Schedule 1 is rendered
 // separately from live partner data and does not live in this array.
@@ -5362,8 +5371,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     // Without an active connected account we have nowhere to send the
     // partner's payouts, and the Partner Agreement commits us to weekly
     // Stripe payouts (clause 6.4). Show a clear toast + jump the wizard
-    // back to step 6 so the fix is one click away.
-    if (bizData?.stripe_account_status !== 'active') {
+    // back to step 6 so the fix is one click away. Guarded by
+    // STRIPE_GATE_ENABLED so we can merge this feature without stranding
+    // partners who register before Connect is live on the platform account.
+    if (STRIPE_GATE_ENABLED && bizData?.stripe_account_status !== 'active') {
       flashSaveMsg('err', "Complete Stripe payout setup before submitting your listing.");
       setStep(6);
       window.scrollTo(0, 0);
@@ -8868,10 +8879,28 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
   }
 
   if (step===6) {
-    // Stripe Connect onboarding. Status lives on bizData.stripe_account_status
-    // (null / 'pending' / 'active' / 'restricted') and is updated by the
-    // account.updated webhook when Stripe reports progress. The button here
-    // just hands the partner off to Stripe's hosted flow.
+    // Feature-flagged. STRIPE_GATE_ENABLED off = show a "coming soon" panel
+    // and let the wizard continue. On = live Stripe Connect onboarding, plus
+    // the goLive gate above. Kept off at merge time; flip to true once
+    // Connect is enabled on the platform account.
+    if (!STRIPE_GATE_ENABLED) {
+      return (
+        <OWrap title="Payout details" sub="Payouts will be handled through Stripe. We are finishing the setup on our side." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} listingTypeLabel={listingTypeLabel} onChangeType={onChangeType} onPreview={()=>setPreviewOpen(true)}
+          footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
+                   <OBtn key="n" saving={saving} onClick={()=>goNext({})} label="Save & continue →"/>]}>
+          <div style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:6,padding:"14px 16px"}}>
+            <p style={{fontFamily:F.body,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:T.clay,margin:"0 0 4px"}}>Coming soon</p>
+            <p style={{fontFamily:F.body,fontSize:12,color:T.clay,fontWeight:400,lineHeight:1.65,margin:0}}>Payouts run through Stripe. We will email you when payouts setup is ready and you can complete it in a couple of minutes. In the meantime you can carry on and submit your venue for review.</p>
+          </div>
+        </OWrap>
+      );
+    }
+
+    // Stripe Connect onboarding (flag on). Status lives on
+    // bizData.stripe_account_status (null / 'pending' / 'active' /
+    // 'restricted') and is updated by the account.updated webhook when
+    // Stripe reports progress. The button here just hands the partner off
+    // to Stripe's hosted flow.
     const stripeStatus = bizData?.stripe_account_status || null;
     const stripeActive = stripeStatus === 'active';
     const stripeRestricted = stripeStatus === 'restricted';
