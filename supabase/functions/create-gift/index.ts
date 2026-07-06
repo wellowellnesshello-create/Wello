@@ -10,9 +10,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const STRIPE_SECRET_KEY         = Deno.env.get('STRIPE_SECRET_KEY')!
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-// Same price row as regular credit top-ups: 1 credit = €1. The service fee
-// is added as a separate line item so the sender sees the breakdown.
-const PRICE_ID = 'price_1TnKWEAevsrt3aGkxH47QVpr'
+// 1 credit = €1.00, built inline via price_data so this function is portable
+// across Stripe accounts (test, live, future accounts) — matches the pattern
+// in create-checkout-session. The service fee is added as a separate line
+// item so the sender sees the breakdown on Stripe Checkout.
+const CREDIT_UNIT_AMOUNT_CENTS = 100
 
 const stripe = new Stripe(STRIPE_SECRET_KEY, {
   apiVersion: '2024-09-30.acacia',
@@ -76,21 +78,30 @@ serve(async (req) => {
       code = generateGiftCode()
     }
 
-    // Service fee = 10% of credit value, capped at €50 — same rule as the
+    // Service fee = 10% of credit value, capped at €2.50 — same rule as the
     // regular credit top-up flow. Added as a separate Stripe line item so
     // the sender sees the breakdown on the checkout page.
     const creditValueEuros = credits * 1 // 1 credit = €1
-    const feeEuros = Math.min(creditValueEuros * 0.10, 50)
+    const feeEuros = Math.min(creditValueEuros * 0.10, 2.5)
     const feeCents = Math.round(feeEuros * 100)
 
+    // Credits line is defined inline so the function does not depend on a
+    // pre-created Stripe Price living in a specific Stripe account.
     const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
-      { price: PRICE_ID, quantity: credits },
+      {
+        price_data: {
+          currency: 'eur',
+          product_data: { name: 'Wello credits (gift)', description: `${credits} × €${(CREDIT_UNIT_AMOUNT_CENTS / 100).toFixed(2)} credit` },
+          unit_amount: CREDIT_UNIT_AMOUNT_CENTS,
+        },
+        quantity: credits,
+      },
     ]
     if (feeCents > 0) {
       lineItems.push({
         price_data: {
           currency: 'eur',
-          product_data: { name: 'Service fee', description: '10% of credits, capped at €50' },
+          product_data: { name: 'Service fee', description: '10% of credits, capped at €2.50' },
           unit_amount: feeCents,
         },
         quantity: 1,
