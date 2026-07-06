@@ -6960,6 +6960,12 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
   // string[] in businesses.tags and surfaced as pills on the listing.
   const [tags, setTags] = useState(Array.isArray(bizData.tags) ? bizData.tags : []);
   const [customTag, setCustomTag] = useState("");
+  // Opt-in safety window (studio/hotel/spa only; instructors already have
+  // their own 48h pending_instructor flow). When on, bookings under 2 hours
+  // from now stop appearing on Explore, and every confirmed booking fires a
+  // WhatsApp alert with a one-time cancel link valid for 2 hours of 9-19
+  // Madrid business time.
+  const [safetyWindow, setSafetyWindow] = useState(!!bizData.cancellation_safety_window);
   // Locked to the DB row's business_type (set at registration) so the
   // wizard's flavor can't drift if the partner edits the free-text Category
   // input later. Legacy fallback: rows without business_type fall back to
@@ -7462,7 +7468,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
     <OWrap title={isPrivateInstructor ? "Your instructor profile" : "Your venue details"} sub={isPrivateInstructor ? "Tell guests who you are and where you travel. Your phone number stays private — we use it to text you booking requests." : "Confirm and complete your listing details — this is what guests will see on Wello."} step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} listingTypeLabel={listingTypeLabel} onChangeType={onChangeType} onPreview={()=>setPreviewOpen(true)}
       footer={[
         <OBtn key="b" saving={saving} onClick={()=>setStep(1)} label="← Back" variant="secondary"/>,
-        <OBtn key="n" saving={saving} onClick={()=>goNext({name:venueName,category:venueCategory,location:venueLocation,description:desc,address,website,instagram,tags,bio,phone,coverage_areas:coverageAreas})} label="Save & continue →" disabled={!step2CanContinue}/>,
+        <OBtn key="n" saving={saving} onClick={()=>goNext({name:venueName,category:venueCategory,location:venueLocation,description:desc,address,website,instagram,tags,bio,phone,coverage_areas:coverageAreas,cancellation_safety_window: isPrivateInstructor ? false : safetyWindow})} label="Save & continue →" disabled={!step2CanContinue}/>,
         missingHint && <span key="h" style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:500,alignSelf:"center"}}>{missingHint}</span>,
       ]}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
@@ -7552,6 +7558,30 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
       <label style={FL}>Instagram (optional)</label>
       <input value={instagram} onChange={e=>setInstagram(e.target.value)} placeholder="@yourhandle"
         style={{...INP,marginBottom:24}} onFocus={onFi} onBlur={onBl}/>
+
+      {/* ── Booking safety window (non-instructor only) ─────────
+          Optional insurance for genuine conflicts. When on, Explore
+          hides slots under 2 hours from now, and every confirmed
+          booking sends a WhatsApp alert with a one-time cancel link
+          valid for 2 hours of 9-19 Madrid business time. Default off. */}
+      {!isPrivateInstructor && (
+        <div style={{borderTop:`1px solid ${T.border}`,paddingTop:20,marginTop:4,marginBottom:24}}>
+          <label style={{...FL,marginBottom:6}}>Booking safety window (optional)</label>
+          <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:400,lineHeight:1.6,margin:"0 0 12px"}}>
+            Would you like a short window to review new bookings before they are locked in? Bookings are shown as confirmed to customers right away. You will get a WhatsApp alert with the option to cancel within 2 hours if there is a genuine conflict. If you do not respond, the booking simply stands, no action needed in the normal case.
+          </p>
+          <button type="button" onClick={()=>setSafetyWindow(v=>!v)}
+            style={{display:"inline-flex",alignItems:"center",gap:10,padding:"10px 14px",background:safetyWindow?T.sage:T.paper,color:safetyWindow?"#fff":T.ink,border:`1px solid ${safetyWindow?T.sage:T.border}`,borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:"pointer",transition:"all .12s"}}>
+            <span style={{width:14,height:14,borderRadius:2,background:safetyWindow?"#fff":T.paper,border:`1px solid ${safetyWindow?"#fff":T.border2}`,display:"inline-flex",alignItems:"center",justifyContent:"center",color:T.sage,fontSize:11,fontWeight:800}}>{safetyWindow?"✓":""}</span>
+            {safetyWindow ? "Safety window is on" : "Turn on safety window"}
+          </button>
+          {safetyWindow && (
+            <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"10px 0 0",lineHeight:1.6}}>
+              Slots less than 2 hours from now will not appear as bookable on Explore. Alerts go to the phone number on file for this venue.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* ── Amenities & offerings ──────────────────────────────── */}
       <div style={{borderTop:`1px solid ${T.border}`,paddingTop:20,marginTop:4}}>
@@ -9456,7 +9486,7 @@ export default function App() {
     // (real partners never have a demo- prefixed email).
     const { data: listingRows, error } = await supabase
       .from("listings")
-      .select("*, slots(*), businesses(address, phone, website, instagram, email, gallery, session_offerings, travel_areas, travel_fee_eur)")
+      .select("*, slots(*), businesses(address, phone, website, instagram, email, gallery, session_offerings, travel_areas, travel_fee_eur, cancellation_safety_window)")
       .eq("status","active")
       .order("id");
     if (error) {
@@ -9497,17 +9527,28 @@ export default function App() {
         cr: row.cr || row.credits_per_session || 3,
         tags: row.tags || [],
         coverage_areas: Array.isArray(row.coverage_areas) ? row.coverage_areas : [],
-        slots: (row.slots || []).map(s => ({
-          id: s.id.toString(),
-          name: s.name,
-          date: s.date,
-          time: s.time,
-          dur: s.dur,
-          spots: s.spots,
-          booked: s.booked,
-          credits: s.credits,
-          acuity_type_id: s.acuity_type_id ?? null,
-        }))
+        // Studio-side safety window: when true, we hide slots starting less
+        // than 2 hours from now so the studio always has time to review a
+        // new booking before it starts. The Postgres BEFORE INSERT trigger
+        // on bookings is the authoritative check; this is the UX layer.
+        cancellation_safety_window: !!row.businesses?.cancellation_safety_window,
+        slots: (row.slots || [])
+          .filter(s => {
+            if (!row.businesses?.cancellation_safety_window) return true;
+            const start = new Date(`${s.date}T${(s.time || '00:00').slice(0,5)}:00`);
+            return start.getTime() - Date.now() >= 2 * 60 * 60 * 1000;
+          })
+          .map(s => ({
+            id: s.id.toString(),
+            name: s.name,
+            date: s.date,
+            time: s.time,
+            dur: s.dur,
+            spots: s.spots,
+            booked: s.booked,
+            credits: s.credits,
+            acuity_type_id: s.acuity_type_id ?? null,
+          }))
       }));
       // Ordering: real partners first, demo seeds last. Real partners are
       // anyone whose parent business email doesn't start with "demo-" (the
@@ -9814,6 +9855,17 @@ export default function App() {
           // status) on the row. Tick again so ProfilePage shows the latest.
           setBookingsVersion(v => v + 1);
         });
+        // Studio safety-window alert. No-op server-side if the business has
+        // not opted in — cheap enough to always invoke and let the function
+        // decide, which keeps this callsite ignorant of the feature flag.
+        if (biz.cancellation_safety_window) {
+          supabase.functions.invoke('booking-safety-alert', {
+            body: { booking_id: inserted.id },
+          }).then(({ data, error }) => {
+            if (error) console.warn('[booking-safety-alert] invoke failed:', error.message);
+            else console.log('[booking-safety-alert] result:', data);
+          });
+        }
       }
     } catch (e) {
       console.error('[onConfirm] unexpected exception:', e);
