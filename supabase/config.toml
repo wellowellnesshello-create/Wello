@@ -1,0 +1,17 @@
+# Wello function configuration.
+#
+# Only functions that need to be publicly reachable (i.e. hit from a
+# non-authenticated browser or a third-party webhook source) opt out of JWT
+# verification here. Anything not listed keeps the platform default.
+
+[functions.studio-cancel-booking]
+# Tapped from a WhatsApp/SMS message on the studio's phone. No Wello session
+# on that device — auth is handled inside the function by verifying the HMAC
+# signature on the token in the URL.
+verify_jwt = false
+
+[functions.booking-safety-alert]
+# Invoked by the client (browser) after a booking is inserted. The client
+# has a JWT so verification could stay on, but keeping it off matches the
+# invocation pattern already used by notify-instructor-sms / bookings-sync.
+verify_jwt = false
