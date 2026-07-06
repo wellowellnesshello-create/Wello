@@ -108,6 +108,34 @@ serve(async (req) => {
       return new Response('Invalid signature', { status: 400 })
     }
 
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+
+    // ── Connected-account updates (Stripe Connect onboarding progress) ──
+    // Fired when a partner completes any step of Stripe's hosted onboarding,
+    // when Stripe re-verifies documents, when payouts become enabled, and
+    // when Stripe restricts an account for compliance reasons. We coarse-
+    // grain-mirror this into businesses.stripe_account_status so the
+    // portal can render a "pending / active / restricted" pill without
+    // hitting the Stripe API on every render.
+    if (event.type === 'account.updated') {
+      const account = event.data.object as Stripe.Account
+      let status: 'active' | 'pending' | 'restricted' = 'pending'
+      if (account.charges_enabled && account.payouts_enabled) status = 'active'
+      if (account.requirements?.disabled_reason)              status = 'restricted'
+      const { data: updated, error: updErr } = await supabase
+        .from('businesses')
+        .update({ stripe_account_status: status })
+        .eq('stripe_account_id', account.id)
+        .select('id')
+      if (updErr) console.error('stripe-webhook (account.updated): update failed', updErr.message)
+      else console.log(`stripe-webhook (account.updated): ${account.id} -> ${status}${updated?.length ? '' : ' (no row matched)'}`)
+      return new Response(JSON.stringify({ ok: true, status }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
     if (event.type !== 'checkout.session.completed') {
       return new Response(JSON.stringify({ ignored: event.type }), {
         status: 200, headers: { 'Content-Type': 'application/json' },
@@ -124,9 +152,6 @@ serve(async (req) => {
     }
 
     const meta = session.metadata || {}
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { autoRefreshToken: false, persistSession: false },
-    })
 
     // ── Gift flow ──────────────────────────────────────────────
     if (meta.type === 'gift') {

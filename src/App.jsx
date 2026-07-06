@@ -5352,10 +5352,21 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
 
   async function goLive() {
     if (isPreview || !bizData?.id) return;
-    // Gate: partner has to accept the current Partner Agreement before we
+    // Gate 1: partner has to accept the current Partner Agreement before we
     // let their venue go live. Force-open the agreement modal so they can.
     if (!bizData?.terms_accepted_at) {
       setShowAgreementRef(true);
+      return;
+    }
+    // Gate 2: Stripe Connect onboarding must be active before submission.
+    // Without an active connected account we have nowhere to send the
+    // partner's payouts, and the Partner Agreement commits us to weekly
+    // Stripe payouts (clause 6.4). Show a clear toast + jump the wizard
+    // back to step 6 so the fix is one click away.
+    if (bizData?.stripe_account_status !== 'active') {
+      flashSaveMsg('err', "Complete Stripe payout setup before submitting your listing.");
+      setStep(6);
+      window.scrollTo(0, 0);
       return;
     }
     if (!confirm("Submit your listing for review? The Wello team will email you within 2 working days.")) return;
@@ -8856,24 +8867,59 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
     );
   }
 
-  if (step===6) return (
-    <OWrap title="Payout details" sub="Enter your bank details so we can pay you for bookings made through Wello." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} listingTypeLabel={listingTypeLabel} onChangeType={onChangeType} onPreview={()=>setPreviewOpen(true)}
-      footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
-               <OBtn key="n" saving={saving} onClick={()=>goNext({})} label="Save & continue →"/>]}>
-      <div style={{pointerEvents:"none",opacity:1}}>
-        {[{l:"Account name",p:"e.g. My Studio SL"},{l:"IBAN",p:"e.g. ES12 3456 7890 1234 5678 9012"},{l:"BIC / SWIFT",p:"e.g. CAIXESBBXXX"}].map(({l,p})=>(
-          <div key={l} style={{marginBottom:14}}>
-            <label style={FL}>{l}</label>
-            <input disabled placeholder={p}
-              style={{...INP,background:T.bg2,color:T.stone2,cursor:"not-allowed",borderColor:T.border}}/>
+  if (step===6) {
+    // Stripe Connect onboarding. Status lives on bizData.stripe_account_status
+    // (null / 'pending' / 'active' / 'restricted') and is updated by the
+    // account.updated webhook when Stripe reports progress. The button here
+    // just hands the partner off to Stripe's hosted flow.
+    const stripeStatus = bizData?.stripe_account_status || null;
+    const stripeActive = stripeStatus === 'active';
+    const stripeRestricted = stripeStatus === 'restricted';
+    async function startStripeOnboarding() {
+      setSaving(true);
+      try {
+        const { data, error } = await supabase.functions.invoke('create-connect-onboarding', {
+          body: { business_id: bizData.id },
+        });
+        if (error || !data?.url) throw new Error(error?.message || 'Could not start Stripe onboarding');
+        window.location.href = data.url;
+      } catch (e) {
+        console.error('startStripeOnboarding failed:', e);
+        flashSaveMsg('err', "Couldn't open Stripe onboarding. " + (e?.message || ''));
+        setSaving(false);
+      }
+    }
+    return (
+      <OWrap title="Set up payouts" sub="We pay every Friday for the previous week's bookings, straight to your bank via Stripe. Complete Stripe's short onboarding to enable payouts on your venue." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} listingTypeLabel={listingTypeLabel} onChangeType={onChangeType} onPreview={()=>setPreviewOpen(true)}
+        footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
+                 <OBtn key="n" saving={saving} onClick={()=>goNext({})} label={stripeActive ? "Save & continue →" : "Skip for now →"} variant={stripeActive ? "primary" : "secondary"}/>]}>
+        <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:"18px 20px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
+          <div style={{minWidth:0,flex:"1 1 220px"}}>
+            <p style={{fontFamily:F.body,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:T.stone,margin:"0 0 4px"}}>Payout status</p>
+            {stripeActive ? (
+              <p style={{fontFamily:F.body,fontSize:13,color:T.sage,fontWeight:700,margin:0}}>✓ Active. Bank details on file with Stripe.</p>
+            ) : stripeRestricted ? (
+              <p style={{fontFamily:F.body,fontSize:13,color:T.clay,fontWeight:700,margin:0}}>Restricted. Stripe needs more information to enable payouts.</p>
+            ) : stripeStatus === 'pending' ? (
+              <p style={{fontFamily:F.body,fontSize:13,color:T.ochre,fontWeight:700,margin:0}}>In progress. Continue where you left off with Stripe.</p>
+            ) : (
+              <p style={{fontFamily:F.body,fontSize:13,color:T.ink,fontWeight:600,margin:0}}>Not started yet.</p>
+            )}
           </div>
-        ))}
-      </div>
-      <div style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:6,padding:"12px 14px",marginTop:4}}>
-        <p style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:300,lineHeight:1.65,margin:0}}>Payout details will be activated once we're fully operational — we'll be in touch when this is ready.</p>
-      </div>
-    </OWrap>
-  );
+          <button onClick={startStripeOnboarding} disabled={saving}
+            style={{padding:"11px 22px",background:saving?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:saving?"wait":"pointer",whiteSpace:"nowrap",flexShrink:0}}
+            onMouseEnter={e=>{if(!saving)e.target.style.background=T.sage2;}}
+            onMouseLeave={e=>{if(!saving)e.target.style.background=T.sage;}}>
+            {stripeActive ? "Manage on Stripe →" : stripeStatus ? "Continue on Stripe →" : "Set up on Stripe →"}
+          </button>
+        </div>
+        <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.7}}>
+          <p style={{margin:"0 0 8px"}}>Stripe is our payment partner. On their site you will confirm your business or personal details, upload one ID document, and enter the bank account you want payouts sent to. It takes about 5 minutes.</p>
+          <p style={{margin:0}}>Your venue can be submitted for review without this, but payouts will not run until Stripe onboarding is complete.</p>
+        </div>
+      </OWrap>
+    );
+  }
 
   if (step===7) return (
     <>
