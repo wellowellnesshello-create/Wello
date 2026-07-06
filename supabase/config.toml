@@ -15,3 +15,11 @@ verify_jwt = false
 # has a JWT so verification could stay on, but keeping it off matches the
 # invocation pattern already used by notify-instructor-sms / bookings-sync.
 verify_jwt = false
+
+[functions.stripe-webhook]
+# Stripe cannot send a Supabase JWT. Auth is handled inside the function
+# by verifying Stripe's HMAC signature (stripe-signature header) against
+# STRIPE_WEBHOOK_SECRET. Without this line the platform default rejects
+# every Stripe webhook at 401 before the function ever runs, so Supabase's
+# log viewer shows nothing and credits fail to land after a paid checkout.
+verify_jwt = false
