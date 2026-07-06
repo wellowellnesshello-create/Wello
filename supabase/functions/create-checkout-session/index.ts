@@ -3,15 +3,18 @@ import Stripe from 'https://esm.sh/stripe@17.3.0?target=denonext'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // Creates a Stripe Checkout Session for a Wello credit top-up.
-// Client passes { quantity }. We use the configured Stripe price (1 unit =
-// 1 credit @ €5) and tell Stripe the quantity. The customer's user_id and
-// purchased credits are stored on the session metadata so the webhook can
-// credit the right profile when the payment lands.
+// Client passes { quantity }. Price is built inline via price_data so this
+// function is portable across Stripe accounts (test, live, whatever comes
+// next) without a per-account Price ID to keep in sync. 1 credit = €1.00.
+// The customer's user_id and purchased credits are stored on the session
+// metadata so the webhook can credit the right profile when the payment
+// lands.
 
 const STRIPE_SECRET_KEY        = Deno.env.get('STRIPE_SECRET_KEY')!
 const SUPABASE_URL             = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const PRICE_ID = 'price_1TnKWEAevsrt3aGkxH47QVpr'
+// 1 credit = €1.00, expressed as Stripe's minor-unit integer (cents).
+const CREDIT_UNIT_AMOUNT_CENTS = 100
 
 const stripe = new Stripe(STRIPE_SECRET_KEY, {
   apiVersion: '2024-09-30.acacia',
@@ -66,9 +69,20 @@ serve(async (req) => {
     const feeEuros = Math.min(creditValueEuros * 0.10, 50)
     const feeCents = Math.round(feeEuros * 100)
 
+    // Credits line is defined inline so the function does not depend on a
+    // pre-created Stripe Price living in a specific Stripe account.
     const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [
-      { price: PRICE_ID, quantity: q },
+      {
+        price_data: {
+          currency: 'eur',
+          product_data: { name: 'Wello credits', description: `${q} × €${(CREDIT_UNIT_AMOUNT_CENTS / 100).toFixed(2)} credit` },
+          unit_amount: CREDIT_UNIT_AMOUNT_CENTS,
+        },
+        quantity: q,
+      },
     ]
+    // Service fee: unchanged from before — separate line item so the customer
+    // sees the breakdown on Stripe Checkout.
     if (feeCents > 0) {
       lineItems.push({
         price_data: {
