@@ -1795,7 +1795,11 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
             </div>
           : <div style={{display:"flex",overflowX:"auto",gap:16,paddingBottom:12,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
               {featured.slice(0,4).map((biz,i)=>(
-                <div key={biz.id} style={{minWidth:"clamp(200px,60vw,260px)",flexShrink:0}}>
+                // width (not just minWidth) so long venue names or wrapped
+                // pill rows can't push some cards wider than others. Without
+                // a fixed width, each card grows to its content-size and the
+                // image containers end up different sizes on mobile.
+                <div key={biz.id} style={{width:"clamp(200px,60vw,260px)",flexShrink:0}}>
                   <Card biz={biz} onSelect={onSelect} syncing={!!syncingIds[biz.id]} saved={savedIds.includes(biz.id)} onToggleSave={onToggleSave}/>
                 </div>
               ))}
@@ -2465,7 +2469,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
                   </div>
                   <div style={{display:"flex",gap:8,overflowX:"auto",scrollbarWidth:"none",paddingBottom:4}}>
                     {items.map(b=>(
-                      <div key={b.id} style={{minWidth:"clamp(140px,20vw,170px)",maxWidth:170,flexShrink:0}}>
+                      <div key={b.id} style={{width:"clamp(140px,20vw,170px)",flexShrink:0}}>
                         <Card biz={b} onSelect={onSelect} syncing={!!syncingIds[b.id]} saved={savedIds.includes(b.id)} onToggleSave={onToggleSave} compact/>
                       </div>
                     ))}
