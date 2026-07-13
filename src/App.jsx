@@ -7137,30 +7137,23 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 16px",lineHeight:1.6}}>Connect your existing booking system so your schedule stays in sync automatically.</p>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {[
-                  {id:"acuity",  name:"Acuity Scheduling",desc:"Auto-sync your classes from Acuity",  status:"available",  icon:"📅"},
-                  {id:"manual",  name:"Manage manually",   desc:"Add & edit slots directly in Wello",  status:"available",  icon:"✏️"},
-                  {id:"mindbody",name:"Mindbody",          desc:"Most yoga & pilates studios",         status:"coming_soon",icon:"🧘"},
-                  {id:"glofox",  name:"Glofox",            desc:"Gym & boutique fitness",              status:"coming_soon",icon:"🏋️"},
-                  {id:"eversports",name:"Eversports",      desc:"Studios across Europe",               status:"coming_soon",icon:"⚡"},
-                  {id:"fresha",  name:"Fresha",            desc:"Spas, massage & beauty",              status:"coming_soon",icon:"💆"},
-                  {id:"momoyoga",name:"Momoyoga",          desc:"Yoga studios",                        status:"coming_soon",icon:"🧘‍♀️"},
+                  {id:"acuity", name:"Acuity Scheduling",desc:"Auto-sync your classes from Acuity", icon:"📅"},
+                  {id:"manual", name:"Manage manually",  desc:"Add & edit slots directly in Wello", icon:"✏️"},
                 ].map(item=>(
-                  <div key={item.id} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:integration===item.id?"rgba(33,60,24,0.05)":"#F5F3EE",borderRadius:10,border:integration===item.id?"1px solid rgba(33,60,24,0.2)":"1px solid transparent",transition:"all .15s",cursor:item.status==="coming_soon"?"default":"pointer"}}
-                    onClick={()=>item.status!=="coming_soon"&&setIntegration(item.id)}>
+                  <div key={item.id} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:integration===item.id?"rgba(33,60,24,0.05)":"#F5F3EE",borderRadius:10,border:integration===item.id?"1px solid rgba(33,60,24,0.2)":"1px solid transparent",transition:"all .15s",cursor:"pointer"}}
+                    onClick={()=>setIntegration(item.id)}>
                     <span style={{fontSize:22,flexShrink:0}}>{item.icon}</span>
                     <div style={{flex:1}}>
-                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
-                        <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:0}}>{item.name}</p>
-                        {item.status==="coming_soon"&&<span style={{fontFamily:F2,fontSize:9,fontWeight:700,color:"#B8925C",background:"#FADEC0",padding:"2px 6px",borderRadius:999}}>Coming soon</span>}
-                      </div>
+                      <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:"0 0 2px"}}>{item.name}</p>
                       <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0}}>{item.desc}</p>
                     </div>
-                    {item.status!=="coming_soon"&&(
-                      <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600}}>{integration===item.id?"✓ Selected":"Select →"}</span>
-                    )}
+                    <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600}}>{integration===item.id?"✓ Selected":"Select →"}</span>
                   </div>
                 ))}
               </div>
+              <p style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:300,margin:"12px 0 0",lineHeight:1.55}}>
+                On Mindbody, Eversports, Glofox, Fresha, Momoyoga, or something else? Tell us in the onboarding wizard's "Different system?" field. We prioritise integrations by what partners are actually using.
+              </p>
               {integration==="acuity"&&(
                 <div style={{marginTop:14,padding:"14px 16px",background:"#F5F3EE",borderRadius:10}}>
                   <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Acuity Scheduling</p>
@@ -7552,12 +7545,21 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
   const [photoErr, setPhotoErr]     = useState("");
   const [primaryUploading, setPrimaryUploading] = useState(false);
   const [galleryUploadCount, setGalleryUploadCount] = useState(0);
-  // Default to Acuity tab (the primary integration option). Partners with manual
-  // slots already saved (no acuity_key, slots present) will still default to
-  // Acuity — they can click Manual to see their existing slots.
-  // Private instructors are solo and don't sync external schedules — we lock
-  // them to the manual tab via the effect below.
-  const [availType, setAvailType] = useState(isPrivateInstructorCat(bizData.category) ? "manual" : "acuity");
+  // Availability tab default. Priorities:
+  //   - Private instructors: locked to manual (they don't sync external
+  //     schedules; the effect below re-enforces this).
+  //   - Partners who already have slots on file (populated by the admin
+  //     tool or a previous manual session) with no Acuity credentials:
+  //     default to manual so those slots are visible immediately. This
+  //     was the "I filled it out via admin, why is nothing here?" bug.
+  //   - Everyone else: Acuity (the primary integration option).
+  const [availType, setAvailType] = useState(() => {
+    if (isPrivateInstructorCat(bizData.category)) return "manual";
+    const hasSlots  = Array.isArray(bizData.slots) && bizData.slots.length > 0;
+    const hasAcuity = !!bizData.acuity_key;
+    if (hasSlots && !hasAcuity) return "manual";
+    return "acuity";
+  });
   const [acuityKey, setAcuityKey] = useState(bizData.acuity_key || "");
   const [acuityUserId, setAcuityUserId] = useState(bizData.acuity_user_id || "");
   const [acuityTypes, setAcuityTypes] = useState(bizData.acuity_appointment_types || []);
@@ -8470,44 +8472,28 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
       {!isPrivateInstructor && <label style={FL}>Connect to booking system</label>}
       {!isPrivateInstructor && <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
         {[
-          {id:"acuity",    name:"Acuity Scheduling",desc:"Auto-sync your classes from Acuity",   status:"available",   icon:"📅"},
-          {id:"ical",      name:"iCal Feed",        desc:"One-way sync from any calendar (Google, Apple, Outlook…)", status:"available", icon:"🔗"},
-          {id:"manual",    name:"Manage manually",  desc:"Add & edit slots directly in Wello",   status:"available",   icon:"✏️"},
-          {id:"mindbody",  name:"Mindbody",         desc:"Most yoga & pilates studios",          status:"coming_soon", icon:"🧘"},
-          {id:"glofox",    name:"Glofox",           desc:"Gym & boutique fitness",               status:"coming_soon", icon:"🏋️"},
-          {id:"eversports",name:"Eversports",       desc:"Studios across Europe",                status:"coming_soon", icon:"⚡"},
-          {id:"fresha",    name:"Fresha",           desc:"Spas, massage & beauty",               status:"coming_soon", icon:"💆"},
-          {id:"momoyoga",  name:"Momoyoga",         desc:"Yoga studios",                         status:"coming_soon", icon:"🧘‍♀️"},
+          {id:"acuity", name:"Acuity Scheduling", desc:"Auto-sync your classes from Acuity",                                    icon:"📅"},
+          {id:"ical",   name:"iCal Feed",         desc:"One-way sync from any calendar (Google, Apple, Outlook…)",              icon:"🔗"},
+          {id:"manual", name:"Manage manually",   desc:"Add & edit slots directly in Wello",                                    icon:"✏️"},
         ].map(item => {
           const selected = availType === item.id;
-          const disabled = item.status === "coming_soon";
           return (
             <div key={item.id}
-              onClick={() => !disabled && setAvailType(item.id)}
+              onClick={() => setAvailType(item.id)}
               style={{
                 display:"flex",alignItems:"center",gap:12,padding:"12px 14px",
                 background: selected ? "rgba(33,60,24,0.06)" : T.bg2,
                 border: `1px solid ${selected ? T.sage : T.border}`,
-                borderRadius:8,
-                cursor: disabled ? "default" : "pointer",
-                opacity: disabled ? 0.7 : 1,
-                transition:"all .15s",
+                borderRadius:8,cursor:"pointer",transition:"all .15s",
               }}>
               <span style={{fontSize:20,flexShrink:0}}>{item.icon}</span>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                  <span style={{fontFamily:F.body,fontSize:12,fontWeight:700,color:T.ink}}>{item.name}</span>
-                  {disabled && (
-                    <span style={{fontFamily:F.body,fontSize:9,fontWeight:700,color:T.clay,background:T.ochreXL,padding:"2px 6px",borderRadius:999}}>Coming soon</span>
-                  )}
-                </div>
+                <span style={{fontFamily:F.body,fontSize:12,fontWeight:700,color:T.ink}}>{item.name}</span>
                 <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"2px 0 0"}}>{item.desc}</p>
               </div>
-              {!disabled && (
-                <span style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600,flexShrink:0}}>
-                  {selected ? "✓ Selected" : "Select →"}
-                </span>
-              )}
+              <span style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:600,flexShrink:0}}>
+                {selected ? "✓ Selected" : "Select →"}
+              </span>
             </div>
           );
         })}
@@ -8771,10 +8757,10 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
         </>
       )}
       <div style={{marginTop:24,paddingTop:20,borderTop:`1px solid ${T.border}`}}>
-        <label style={FL}>Using a different system? Let us know</label>
-        <input value={intgRequest} onChange={e=>setIntgRequest(e.target.value)} placeholder="e.g. Trafft, SimplyBook, custom website…"
+        <label style={FL}>Using a different system? Tell us which one</label>
+        <input value={intgRequest} onChange={e=>setIntgRequest(e.target.value)} placeholder="e.g. Mindbody, Eversports, Glofox, Fresha, Momoyoga, custom…"
           style={{...INP,marginBottom:6}} onFocus={onFi} onBlur={onBl}/>
-        <p style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,margin:0}}>We'll prioritise integrations based on what partners are using.</p>
+        <p style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,margin:0}}>We prioritise integrations by what partners actually use. Add your API key or export details later once we support your system.</p>
       </div>
     </OWrap>
   );
