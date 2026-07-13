@@ -10083,29 +10083,33 @@ function AdminSetupPage() {
       setTransferMsg('That does not look like a valid email address.');
       return;
     }
-    if (nextEmail === currentEmail) {
-      setTransferMsg('That is already the current partner email.');
+    const cleanContact = String(partnerContactName || '').trim();
+    const contactChanged = cleanContact !== String(bizRow.contact_name || '').trim();
+    const emailChanged   = nextEmail !== currentEmail;
+    if (!emailChanged && !contactChanged) {
+      setTransferMsg('Nothing to save — email and contact name are unchanged.');
       return;
     }
 
-    const ok = window.confirm(
-      `Transfer ownership of this listing to ${nextEmail}?\n\n` +
-      `You will lose access to it in the partner portal and the magic link will go to this address.\n\n` +
-      `Current owner: ${currentEmail || '(none)'}\n` +
-      `New owner:     ${nextEmail}`
-    );
-    if (!ok) return;
+    // Only show the ownership-transfer scare dialog when the email is
+    // actually changing. Contact-name-only saves are low-risk and should
+    // land without a confirm-are-you-sure step.
+    if (emailChanged) {
+      const ok = window.confirm(
+        `Transfer ownership of this listing to ${nextEmail}?\n\n` +
+        `You will lose access to it in the partner portal and the magic link will go to this address.\n\n` +
+        `Current owner: ${currentEmail || '(none)'}\n` +
+        `New owner:     ${nextEmail}`
+      );
+      if (!ok) return;
+    }
 
     setTransferSaving(true);
     setTransferMsg('');
-    // Bundle contact_name in the same patch so the wizard's welcome copy
-    // reads correctly on the partner's first visit. adminPatchBusiness
-    // whitelists both columns.
-    const patch = { email: nextEmail };
-    const cleanContact = String(partnerContactName || '').trim();
-    if (cleanContact !== String(bizRow.contact_name || '').trim()) {
-      patch.contact_name = cleanContact || null;
-    }
+    // Bundle whichever fields changed. adminPatchBusiness whitelists both.
+    const patch = {};
+    if (emailChanged)   patch.email = nextEmail;
+    if (contactChanged) patch.contact_name = cleanContact || null;
     const res = await adminPatchBusiness(patch);
     setTransferSaving(false);
 
@@ -10701,7 +10705,8 @@ function AdminSetupPage() {
         // dialog, but the button also needs to be enabled if only the
         // contact_name changed (so admins can add a name without having
         // to first change the email).
-        const isDirty = emailDirty;
+        const contactDirty = String(partnerContactName || '').trim() !== String(bizRow.contact_name || '').trim();
+        const isDirty = emailDirty || contactDirty;
         return (
           <div style={S.card}>
             <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 4px' }}>5. Ownership handoff</h2>
@@ -10750,9 +10755,11 @@ function AdminSetupPage() {
                 disabled={!isDirty || transferSaving}
                 style={{ ...S.btn, opacity: (!isDirty || transferSaving) ? 0.4 : 1, cursor: (!isDirty || transferSaving) ? 'not-allowed' : 'pointer' }}
               >
-                {transferSaving ? 'Transferring...' : 'Transfer ownership'}
+                {transferSaving
+                  ? (emailDirty ? 'Transferring...' : 'Saving...')
+                  : (emailDirty ? 'Transfer ownership' : 'Save contact name')}
               </button>
-              {!isDirty && !transferMsg && <span style={{ fontSize: 12, color: '#888' }}>Enter a different email to enable the transfer.</span>}
+              {!isDirty && !transferMsg && <span style={{ fontSize: 12, color: '#888' }}>Change the email or contact name to enable saving.</span>}
               {transferMsg && (
                 <span style={{ fontSize: 12, color: transferMsg.startsWith('Transfer failed') || transferMsg.startsWith('Partner email') || transferMsg.startsWith('That') ? '#a00' : '#155724' }}>
                   {transferMsg}
