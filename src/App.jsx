@@ -8978,6 +8978,18 @@ function BusinessPortal({ onSetView }) {
   const [loginErr, setLoginErr] = useState("");
   const [loading, setLoading]   = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  // Post-submit password prompt state. Shown once on the "submitted"
+  // screen so a partner who signed in via magic-link only can set a
+  // password without needing to go through Forgot Password later. The
+  // user_metadata.password_set flag is our persistence: once set, the
+  // card stops appearing across sessions.
+  const [pwSetupPw1, setPwSetupPw1] = useState("");
+  const [pwSetupPw2, setPwSetupPw2] = useState("");
+  const [pwSetupSaving, setPwSetupSaving] = useState(false);
+  const [pwSetupErr, setPwSetupErr] = useState("");
+  const [pwSetupDone, setPwSetupDone] = useState(false);
+  const [pwSetupSkipped, setPwSetupSkipped] = useState(false);
+  const [pwSetupAlreadySet, setPwSetupAlreadySet] = useState(false);
   // Multi-venue state: a partner can own more than one businesses row, linked
   // via auth user_id. activeVenueId is which one the dashboard / wizard is
   // currently looking at. bizData below is computed from venues + activeVenueId.
@@ -9002,6 +9014,13 @@ function BusinessPortal({ onSetView }) {
     } catch { /* non-critical: ignore */ }
   }, [activeVenueId]);
   const [authUser, setAuthUser] = useState(null);
+  // Read user_metadata.password_set on the signed-in user so partners who
+  // already set a password on a previous session don't get re-prompted.
+  useEffect(() => {
+    if (!authUser) { setPwSetupAlreadySet(false); return; }
+    const flagged = !!authUser.user_metadata?.password_set;
+    setPwSetupAlreadySet(flagged);
+  }, [authUser]);
   // Guards double-fires on the "+ Add another venue" button so a fast double-
   // click can't insert two rows.
   const [addingVenue, setAddingVenue] = useState(false);
@@ -9377,6 +9396,31 @@ function BusinessPortal({ onSetView }) {
     setScreen("landing"); setVenues([]); setActiveVenueId(null); setAuthUser(null); setEmail(""); setPw("");
   }
 
+  // Set a password on the currently-signed-in partner account. Called from
+  // the submitted-listing screen so partners who signed in via magic-link
+  // only get a persistent credential without needing to go through Forgot
+  // Password later. Persists a user_metadata flag so we don't re-prompt.
+  async function saveInitialPassword() {
+    setPwSetupErr("");
+    const p1 = pwSetupPw1;
+    const p2 = pwSetupPw2;
+    if (p1.length < 8) { setPwSetupErr("Use at least 8 characters."); return; }
+    if (p1 !== p2)      { setPwSetupErr("The two passwords do not match."); return; }
+    setPwSetupSaving(true);
+    const { data, error } = await supabase.auth.updateUser({
+      password: p1,
+      data: { ...(authUser?.user_metadata || {}), password_set: true },
+    });
+    setPwSetupSaving(false);
+    if (error) { setPwSetupErr(error.message || "Could not set password."); return; }
+    if (data?.user) setAuthUser(data.user);
+    setPwSetupDone(true);
+    setPwSetupPw1(""); setPwSetupPw2("");
+  }
+  function dismissPasswordSetup() {
+    setPwSetupSkipped(true);
+  }
+
   async function doPasswordReset() {
     setLoading(true);
     await supabase.auth.resetPasswordForEmail(email, {
@@ -9690,6 +9734,42 @@ function BusinessPortal({ onSetView }) {
           <div style={{width:56,height:56,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px"}}><Check size={26} stroke={T.sage} strokeWidth={2.5}/></div>
           <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 10px"}}>Listing submitted</h1>
           <p style={{fontFamily:F.body,fontSize:13,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 24px"}}>We've received your listing for <strong style={{fontWeight:600,color:T.ink}}>{bizData?.name}</strong>. We'll review it and be in touch within 2 working days.</p>
+
+          {/* ── Set a password ────────────────────────────────────────
+              Shown once, right after the partner submits. Skippable.
+              Persists via user_metadata.password_set so we don't
+              re-prompt on future submissions. If the partner reached
+              here via a magic link, they currently have no password —
+              this step gives them one so future logins don't need
+              another magic link email. */}
+          {!pwSetupAlreadySet && !pwSetupSkipped && !pwSetupDone && (
+            <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:10,padding:"18px 20px",margin:"0 0 20px",textAlign:"left"}}>
+              <p style={{fontFamily:F.body,fontSize:10,fontWeight:700,color:T.sage,letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 6px"}}>One more thing</p>
+              <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,margin:"0 0 6px",letterSpacing:"-0.3px"}}>Set a password</h2>
+              <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,lineHeight:1.6,margin:"0 0 12px"}}>Optional but recommended. Lets you log back in with your email and password so you do not have to request a fresh magic link every time.</p>
+              <input type="password" value={pwSetupPw1} onChange={e=>setPwSetupPw1(e.target.value)} placeholder="New password (min 8 chars)" autoComplete="new-password"
+                style={{width:"100%",padding:"10px 12px",border:`1px solid ${T.border}`,borderRadius:6,fontFamily:F.body,fontSize:13,background:T.bg2,color:T.ink,boxSizing:"border-box",marginBottom:8}}/>
+              <input type="password" value={pwSetupPw2} onChange={e=>setPwSetupPw2(e.target.value)} placeholder="Confirm password" autoComplete="new-password"
+                style={{width:"100%",padding:"10px 12px",border:`1px solid ${T.border}`,borderRadius:6,fontFamily:F.body,fontSize:13,background:T.bg2,color:T.ink,boxSizing:"border-box"}}/>
+              {pwSetupErr && <p style={{fontFamily:F.body,fontSize:12,color:"#8B2F00",margin:"8px 0 0"}}>{pwSetupErr}</p>}
+              <div style={{display:"flex",gap:8,marginTop:12}}>
+                <button onClick={saveInitialPassword} disabled={pwSetupSaving || !pwSetupPw1 || !pwSetupPw2}
+                  style={{flex:1,padding:"10px 16px",background:pwSetupSaving||!pwSetupPw1||!pwSetupPw2?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:pwSetupSaving||!pwSetupPw1||!pwSetupPw2?"not-allowed":"pointer"}}>
+                  {pwSetupSaving ? "Saving..." : "Set password"}
+                </button>
+                <button onClick={dismissPasswordSetup}
+                  style={{padding:"10px 16px",background:"transparent",color:T.stone,border:`1px solid ${T.border}`,borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:400,cursor:"pointer"}}>
+                  Skip for now
+                </button>
+              </div>
+              <p style={{fontFamily:F.body,fontSize:10,color:T.stone2,margin:"10px 0 0",lineHeight:1.55}}>If you skip, you can set one later from the sign-in page using Forgot Password.</p>
+            </div>
+          )}
+          {pwSetupDone && (
+            <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:10,padding:"12px 16px",margin:"0 0 20px",textAlign:"left"}}>
+              <p style={{fontFamily:F.body,fontSize:12,fontWeight:600,color:T.sage,margin:0}}>Password set. You can now sign in with your email and password anytime.</p>
+            </div>
+          )}
           <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
             {approvedVenue && (
               <button onClick={()=>switchVenue(approvedVenue.id)}
