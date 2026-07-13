@@ -76,6 +76,18 @@ serve(async (req) => {
     return json({ error: `auth user create failed: ${createErr.message}` }, 500)
   }
 
+  // Reset onboarding_step to 1 so the partner always lands on the wizard's
+  // welcome step, not wherever the admin's pre-work happened to leave the
+  // row. Invite codes are single-use, so this only fires on the initial
+  // handoff click — not on later magic-link or password logins. Only
+  // touches onboarding_step; status stays as-is so we don't accidentally
+  // deactivate an already-approved venue if we ever re-invite one.
+  const { error: resetErr } = await supabase
+    .from('businesses')
+    .update({ onboarding_step: 1 })
+    .eq('id', invite.business_id)
+  if (resetErr) console.warn('onboarding_step reset failed:', resetErr.message)
+
   const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
     type: 'magiclink',
     email: biz.email,
