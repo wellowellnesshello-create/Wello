@@ -576,7 +576,10 @@ function AuthModal({ initialMode = "signin", onClose, onSuccess, onOpenTerms }) 
       email: email.trim(),
       password,
       options: {
-        data: { full_name: fullName.trim() },
+        // full_name from the signup form + password_set flag so partner
+        // onboarding (which reads user_metadata.password_set) skips the
+        // "set a password" prompt for customers who already have one.
+        data: { full_name: fullName.trim(), password_set: true },
         // Send customers back to the main app with a flag so App.jsx knows
         // this is a customer confirmation, not a partner invite/recovery flow.
         emailRedirectTo: `${window.location.origin}/?confirmed=true`,
@@ -618,7 +621,9 @@ function AuthModal({ initialMode = "signin", onClose, onSuccess, onOpenTerms }) 
   async function doSetPassword() {
     if (password.length < 8) { setErr("Password must be at least 8 characters."); return; }
     setBusy(true); setErr("");
-    const { error } = await supabase.auth.updateUser({ password });
+    // Stamp password_set on user_metadata so downstream flows (partner
+    // onboarding's "set a password" prompt) know this account has one.
+    const { error } = await supabase.auth.updateUser({ password, data: { password_set: true } });
     setBusy(false);
     if (error) { setErr(error.message || "Couldn't set password."); return; }
     setMode("set_password_done");
@@ -9745,8 +9750,8 @@ function BusinessPortal({ onSetView }) {
           {!pwSetupAlreadySet && !pwSetupSkipped && !pwSetupDone && (
             <div style={{background:T.paper,border:`1px solid ${T.border}`,borderRadius:10,padding:"18px 20px",margin:"0 0 20px",textAlign:"left"}}>
               <p style={{fontFamily:F.body,fontSize:10,fontWeight:700,color:T.sage,letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 6px"}}>One more thing</p>
-              <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,margin:"0 0 6px",letterSpacing:"-0.3px"}}>Set a password</h2>
-              <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,lineHeight:1.6,margin:"0 0 12px"}}>Optional but recommended. Lets you log back in with your email and password so you do not have to request a fresh magic link every time.</p>
+              <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:16,fontWeight:700,color:T.ink,margin:"0 0 6px",letterSpacing:"-0.3px"}}>Set or update your password</h2>
+              <p style={{fontFamily:F.body,fontSize:12,color:T.stone,fontWeight:300,lineHeight:1.6,margin:"0 0 12px"}}>If you signed in via a magic link, set one now so you can log back in with your email and password. If you already have a password on Wello, this replaces it.</p>
               <input type="password" value={pwSetupPw1} onChange={e=>setPwSetupPw1(e.target.value)} placeholder="New password (min 8 chars)" autoComplete="new-password"
                 style={{width:"100%",padding:"10px 12px",border:`1px solid ${T.border}`,borderRadius:6,fontFamily:F.body,fontSize:13,background:T.bg2,color:T.ink,boxSizing:"border-box",marginBottom:8}}/>
               <input type="password" value={pwSetupPw2} onChange={e=>setPwSetupPw2(e.target.value)} placeholder="Confirm password" autoComplete="new-password"
@@ -11328,7 +11333,9 @@ export default function App() {
 
   async function doSetNewPassword() {
     if(newPw.length < 8) { setNewPwErr("Password must be at least 8 characters."); return; }
-    const {error} = await supabase.auth.updateUser({password: newPw});
+    // Stamp password_set so partner onboarding's "set a password" prompt
+    // knows this account already has one after a partner-side recovery.
+    const {error} = await supabase.auth.updateUser({password: newPw, data: { password_set: true }});
     if(error) { setNewPwErr("Something went wrong. Please try again."); return; }
     setNewPwDone(true);
     window.location.hash = "";
