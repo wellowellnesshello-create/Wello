@@ -160,10 +160,13 @@ async function findAlternatives(
 }
 
 // Shared decline-effect (applied for token decline, JWT decline, and
-// auto_decline). Returns { ok, error, alreadyHandled }.
+// auto_decline). Flips status to cancelled AND refunds the held credits
+// back to the customer's balance. Credits were debited at request time
+// (see request-treatment-booking), so decline is a real refund now.
 async function applyDecline(
   supabase: ReturnType<typeof createClient>,
-  { bookingId, mode, tokenSig }: { bookingId: number; mode: 'token' | 'auth' | 'auto'; tokenSig?: string },
+  { bookingId, mode, tokenSig, credits, customerId, customerCredits }:
+  { bookingId: number; mode: 'token' | 'auth' | 'auto'; tokenSig?: string; credits: number; customerId: string; customerCredits: number },
 ): Promise<{ ok: true } | { ok: false; alreadyHandled?: boolean; error?: string }> {
   const q = supabase
     .from('bookings')
@@ -178,17 +181,28 @@ async function applyDecline(
   const { data: updated, error: updErr } = await q.select('id').maybeSingle()
   if (updErr) return { ok: false, error: updErr.message }
   if (!updated) return { ok: false, alreadyHandled: true }
+
+  // Refund the held credits. If this fails we log loudly rather than
+  // rolling the cancellation back — a stuck-cancelled booking with a
+  // missing refund is easier to spot and fix in support than a stuck
+  // pending row that no-one owns any more.
+  if (credits > 0 && customerId) {
+    const { error: refErr } = await supabase
+      .from('profiles')
+      .update({ credits: customerCredits + credits })
+      .eq('id', customerId)
+    if (refErr) console.error('applyDecline: refund failed for booking', bookingId, refErr.message)
+  }
   return { ok: true }
 }
 
-// Shared accept-effect (token or JWT). Only handles the DB flip + credit
-// deduction; caller decides the response shape.
+// Shared accept-effect (token or JWT). Credits were already held at
+// request time so accept is a status flip only, no credit movement.
 async function applyAccept(
   supabase: ReturnType<typeof createClient>,
-  { bookingId, tokenSig, credits, customerId, customerCredits }:
-  { bookingId: number; tokenSig?: string; credits: number; customerId: string; customerCredits: number },
-): Promise<{ ok: true } | { ok: false; error: string; alreadyHandled?: boolean; insufficient?: boolean }> {
-  if (customerCredits < credits) return { ok: false, error: 'Member has insufficient credits.', insufficient: true }
+  { bookingId, tokenSig }:
+  { bookingId: number; tokenSig?: string },
+): Promise<{ ok: true } | { ok: false; error: string; alreadyHandled?: boolean }> {
   const q = supabase
     .from('bookings')
     .update({
@@ -202,14 +216,6 @@ async function applyAccept(
   const { data: updated, error: updErr } = await q.select('id').maybeSingle()
   if (updErr) return { ok: false, error: updErr.message }
   if (!updated) return { ok: false, error: 'Concurrent update', alreadyHandled: true }
-  const newBalance = customerCredits - credits
-  const { error: creditErr } = await supabase
-    .from('profiles').update({ credits: newBalance }).eq('id', customerId)
-  if (creditErr) {
-    // Roll booking back so we do not end up confirmed without payment.
-    await supabase.from('bookings').update({ status: 'pending_venue', venue_accept_token: tokenSig ?? null }).eq('id', bookingId)
-    return { ok: false, error: `credit deduction failed: ${creditErr.message}` }
-  }
   return { ok: true }
 }
 
@@ -308,11 +314,8 @@ serve(async (req) => {
 
       // Apply the effect.
       if (action === 'confirm') {
-        const balance = Number((customer as { credits?: number } | null)?.credits) || 0
-        const cost    = Number(booking.credits_used) || 0
-        const custId  = String((customer as { id?: string } | null)?.id || '')
-        const result  = await applyAccept(supabase, { bookingId, credits: cost, customerId: custId, customerCredits: balance })
-        if (!result.ok && result.insufficient) return json({ error: 'Member has insufficient credits' }, 402)
+        const cost = Number(booking.credits_used) || 0
+        const result = await applyAccept(supabase, { bookingId })
         if (!result.ok && result.alreadyHandled) return json({ error: 'Already handled' }, 409)
         if (!result.ok) return json({ error: result.error }, 500)
         if ((customer as { email?: string } | null)?.email) {
@@ -324,7 +327,7 @@ serve(async (req) => {
             `Your ${sessionName} at ${venueName} is confirmed`,
             `<div style="font-family:Manrope,Arial,sans-serif;max-width:520px;padding:24px;background:#FBF9F4;">
               <h2 style="color:#213C18;">You are booked in</h2>
-              <p style="color:#54584F;line-height:1.7;">${venueName} has confirmed your <strong>${sessionName}</strong> on <strong>${dateHuman}</strong>. ${cost} credits have been deducted from your balance.</p>
+              <p style="color:#54584F;line-height:1.7;">${venueName} has confirmed your <strong>${sessionName}</strong> on <strong>${dateHuman}</strong>. The ${cost} credits you held for this booking are now settled with the venue.</p>
               <p style="color:#54584F;line-height:1.7;">If you need to make changes, contact ${venueName} directly or open your <a href="${PUBLIC_ORIGIN}" style="color:#213C18;font-weight:600;">Wello bookings</a>.</p>
               <p style="color:#54584F;line-height:1.7;margin-top:18px;">Wello</p>
             </div>`,
@@ -333,8 +336,11 @@ serve(async (req) => {
         return json({ ok: true, action: 'confirm', booking_id: bookingId })
       }
 
-      // decline OR auto_decline
-      const result = await applyDecline(supabase, { bookingId, mode: 'auth' })
+      // decline OR auto_decline. Refund the held credits.
+      const cost    = Number(booking.credits_used) || 0
+      const custId  = String((customer as { id?: string } | null)?.id || '')
+      const balance = Number((customer as { credits?: number } | null)?.credits) || 0
+      const result = await applyDecline(supabase, { bookingId, mode: 'auth', credits: cost, customerId: custId, customerCredits: balance })
       if (!result.ok && result.alreadyHandled) return json({ error: 'Already handled' }, 409)
       if (!result.ok) return json({ error: result.error || 'decline failed' }, 500)
       await emailCustomerDecline(supabase, { booking, business, customer, autoDecline: action === 'auto_decline' })
@@ -423,28 +429,15 @@ serve(async (req) => {
   if (req.method !== 'POST') return html(page('Method not allowed', `<h1>Method not allowed</h1>`), 405)
 
   // ── POST: apply the action ────────────────────────────────────────────
+  // Credits were HELD at request time (see request-treatment-booking), so:
+  //   accept  = flip status only, credits are already settled
+  //   decline = flip status + refund credits back to profile
+  //
+  // The previous "member no longer has enough credits" race check is gone
+  // because credits were reserved at request. A concurrent spend cannot
+  // undercut the reserve.
   if (action === 'accept') {
     if (!customer) return html(page('Error', `<h1>Error</h1><p class="err">Member profile missing. Contact hello@wello-wellness.com.</p>`), 500)
-    const balance = Number(customer.credits) || 0
-    if (balance < credits) {
-      // The member has spent their credits elsewhere while the request
-      // was pending. Cannot accept; treat as a decline so the record is
-      // consistent, notify the member with alternatives.
-      const { data: updated, error: updErr } = await supabase
-        .from('bookings')
-        .update({
-          status: 'cancelled',
-          venue_accept_token: null,
-          venue_decline_token: null,
-        })
-        .eq('id', booking.id)
-        .eq('status', 'pending_venue')
-        .eq('venue_accept_token', sig)
-        .select('id')
-        .maybeSingle()
-      if (updErr || !updated) return html(page('Race condition', `<h1>Could not accept</h1><p class="err">The member does not have enough credits any more and we could not tidy up the request. Contact hello@wello-wellness.com.</p>`), 500)
-      return html(page('Cannot accept', `<h1>Member is short on credits</h1><p>The member has spent their credits elsewhere since sending this request. We have cancelled it and notified them.</p>`))
-    }
 
     const { data: updated, error: updErr } = await supabase
       .from('bookings')
@@ -461,23 +454,12 @@ serve(async (req) => {
     if (updErr) return html(page('Error', `<h1>Error</h1><p class="err">Could not accept the booking: ${updErr.message}</p>`), 500)
     if (!updated) return html(page('Already handled', `<h1>Already handled</h1><p>This request has already been actioned.</p>`), 409)
 
-    // Deduct credits. If this fails, roll the booking back so we do not
-    // end up with a confirmed booking that was never paid for.
-    const newBalance = balance - credits
-    const { error: creditErr } = await supabase
-      .from('profiles').update({ credits: newBalance }).eq('id', customer.id)
-    if (creditErr) {
-      console.error('venue-booking-response: credit deduction failed, rolling back', creditErr.message)
-      await supabase.from('bookings').update({ status: 'pending_venue', venue_accept_token: sig }).eq('id', booking.id)
-      return html(page('Error', `<h1>Credit deduction failed</h1><p class="err">We could not deduct the member's credits. The booking has been rolled back to pending. Try the link again in a minute.</p>`), 500)
-    }
-
     // Confirmation email — brief, matches the rest of the pattern.
     if (customer.email) {
       await sendEmail(customer.email, `Your ${sessionName} at ${venueName} is confirmed`,
         `<div style="font-family:Manrope,Arial,sans-serif;max-width:520px;padding:24px;background:#FBF9F4;">
           <h2 style="color:#213C18;">You are booked in</h2>
-          <p style="color:#54584F;line-height:1.7;">${venueName} has confirmed your <strong>${sessionName}</strong> on <strong>${dateHuman}</strong>. ${credits} credits have been deducted from your balance.</p>
+          <p style="color:#54584F;line-height:1.7;">${venueName} has confirmed your <strong>${sessionName}</strong> on <strong>${dateHuman}</strong>. The ${credits} credits you held for this booking are now settled with the venue.</p>
           <p style="color:#54584F;line-height:1.7;">If you need to make changes, contact ${venueName} directly or open your <a href="${PUBLIC_ORIGIN}" style="color:#213C18;font-weight:600;">Wello bookings</a>.</p>
           <p style="color:#54584F;line-height:1.7;margin-top:18px;">Wello</p>
         </div>`)
@@ -485,11 +467,11 @@ serve(async (req) => {
 
     return html(page('Booking accepted', `
       <h1>Booking accepted</h1>
-      <p>${memberName} has been notified and their credits deducted. No further action is needed from your side.</p>
+      <p>${memberName} has been notified. No further action is needed from your side.</p>
       <a class="btn" href="${PUBLIC_ORIGIN}">Back to Wello</a>`))
   }
 
-  // action === 'decline'
+  // action === 'decline' — flip status + refund the held credits.
   const { data: updated, error: updErr } = await supabase
     .from('bookings')
     .update({
@@ -505,8 +487,19 @@ serve(async (req) => {
   if (updErr) return html(page('Error', `<h1>Error</h1><p class="err">Could not decline the booking: ${updErr.message}</p>`), 500)
   if (!updated) return html(page('Already handled', `<h1>Already handled</h1><p>This request has already been actioned.</p>`), 409)
 
-  // Decline never deducted credits so no refund. Email the member with
-  // rule-based alternatives, same shape as the safety window flow.
+  // Refund credits held at request time. Best-effort — log if it fails so
+  // we can spot orphaned holds in support, but do not roll the decline
+  // back (a stuck-cancelled row is easier to reconcile than a stuck-
+  // pending row nobody can actioned any more).
+  if (credits > 0 && customer?.id) {
+    const balance = Number(customer.credits) || 0
+    const { error: refErr } = await supabase
+      .from('profiles').update({ credits: balance + credits }).eq('id', customer.id)
+    if (refErr) console.error('venue-booking-response: refund failed for booking', booking.id, refErr.message)
+  }
+
+  // Email the member with rule-based alternatives, same shape as the
+  // safety window flow.
   const targetHour = parseInt(String(booking.start_time || '00').slice(0,2), 10) || 9
   const alts = await findAlternatives(supabase, {
     category: business?.category || null,

@@ -3351,9 +3351,16 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                           {resTab === "upcoming" && bk.dbId && (
                             canCancel ? (
                               <button onClick={async () => {
-                                const promptText = isPendingReq
-                                  ? `Cancel this request? Your credits are returned in full.`
-                                  : `Cancel this booking? Your ${bk.cost} credits will be refunded.`;
+                                // pending_venue holds credits at request time so cancel is a
+                                // real refund. pending_instructor deducts on confirm, so
+                                // cancel of a still-pending instructor request has nothing
+                                // to refund — say so honestly rather than promising credits
+                                // that never left the wallet.
+                                const promptText = bk.status === 'pending_venue'
+                                  ? `Cancel this request? Your ${bk.cost} held credits are returned to your balance.`
+                                  : bk.status === 'pending_instructor'
+                                    ? `Cancel this request? The credits were not held so nothing is refunded.`
+                                    : `Cancel this booking? Your ${bk.cost} credits will be refunded.`;
                                 if (!confirm(promptText)) return;
                                 await onCancelBooking?.(bk.dbId);
                               }}

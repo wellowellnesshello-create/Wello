@@ -63,10 +63,15 @@ serve(async (req) => {
     if (booking.status === 'cancelled') return json({ error: 'This booking is already cancelled.' }, 409)
     if (booking.status === 'declined')  return json({ error: 'This booking was declined.' }, 409)
 
-    // Pending requests (instructor or venue) can be cancelled at any time
-    // for a full credit return. Because pending bookings never deducted
-    // credits, "full credit return" here means nothing to refund and no
-    // slot to release. We short-circuit the window check + refund path.
+    // Pending requests can be cancelled at any time for a full credit
+    // return.
+    //   - pending_venue holds credits at request time (see
+    //     request-treatment-booking) so cancel means an actual refund.
+    //   - pending_instructor currently deducts on confirm, not on
+    //     request, so its refund is a no-op. Handled uniformly below.
+    // The credit column update is conditional on the current balance so
+    // that a concurrent refund cannot double-credit. We compute the new
+    // balance from a fresh read to avoid stale data.
     if (booking.status === 'pending_instructor' || booking.status === 'pending_venue') {
       const { data: pUpdated, error: pUpdErr } = await supabase
         .from('bookings')
@@ -84,8 +89,35 @@ serve(async (req) => {
         return json({ error: 'Could not cancel the request.' }, 500)
       }
       if (!pUpdated) return json({ error: 'Request was already actioned.' }, 409)
-      console.log(`cancel-booking: pending booking ${booking.id} cancelled by customer ${user.id}`)
-      return json({ success: true, credits_refunded: 0, window_hours: null, was_pending: true })
+
+      // Refund the held credits. Only meaningful for pending_venue right
+      // now, but written to work correctly for pending_instructor too if
+      // that flow ever moves to hold-at-request.
+      let creditsRefunded = 0
+      if (booking.status === 'pending_venue') {
+        const cost = Number(booking.credits_used) || 0
+        if (cost > 0) {
+          const { data: prof, error: profErr } = await supabase
+            .from('profiles').select('credits').eq('id', user.id).single()
+          if (profErr || !prof) {
+            console.error('cancel-booking: refund lookup failed', profErr?.message)
+            // Cancellation stands — surface the refund miss instead of
+            // rolling back to keep the row consistent.
+            return json({ success: true, credits_refunded: 0, refund_error: 'Could not read profile', was_pending: true })
+          }
+          const newBalance = (prof.credits || 0) + cost
+          const { error: refErr } = await supabase
+            .from('profiles').update({ credits: newBalance }).eq('id', user.id)
+          if (refErr) {
+            console.error('cancel-booking: refund update failed', refErr.message)
+            return json({ success: true, credits_refunded: 0, refund_error: refErr.message, was_pending: true })
+          }
+          creditsRefunded = cost
+        }
+      }
+
+      console.log(`cancel-booking: pending booking ${booking.id} cancelled by customer ${user.id}, refunded ${creditsRefunded}`)
+      return json({ success: true, credits_refunded: creditsRefunded, window_hours: null, was_pending: true })
     }
 
     // 2. Look up the business to find the category so we can pick the right

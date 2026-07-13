@@ -149,6 +149,31 @@ serve(async (req) => {
     return json({ error: 'insufficient_credits', required: priceEur, balance }, 402)
   }
 
+  // Hold the credits atomically at request time so the customer cannot
+  // spend them elsewhere while the venue is deciding. This is what the
+  // customer-facing copy already promises ("credits are held from your
+  // balance while the request is pending") and it makes decline /
+  // auto-decline / customer-cancel a real refund rather than a no-op.
+  //
+  // Conditional on the current balance to defeat the classic double-spend
+  // race: two simultaneous requests will not both succeed if only one lot
+  // of credits is available.
+  const heldBalance = balance - priceEur
+  const { data: heldRow, error: holdErr } = await supabase
+    .from('profiles')
+    .update({ credits: heldBalance })
+    .eq('id', customerId)
+    .gte('credits', priceEur)
+    .select('id, credits')
+    .maybeSingle()
+  if (holdErr) {
+    console.error('request-treatment-booking hold failed:', holdErr.message)
+    return json({ error: `Could not hold credits: ${holdErr.message}` }, 500)
+  }
+  if (!heldRow) {
+    return json({ error: 'insufficient_credits', required: priceEur, balance }, 402)
+  }
+
   // Anchor start_time so the booking has a sensible sort value even for
   // preference-only requests. The venue will confirm the actual time.
   const anchorTime = timePref === 'specific'
@@ -201,6 +226,12 @@ serve(async (req) => {
     .single()
   if (insErr || !inserted) {
     console.error('request-treatment-booking insert failed:', insErr?.message)
+    // Roll back the credit hold so the customer does not lose credits on
+    // a booking that never landed. Best-effort: log if the refund itself
+    // fails so we can spot orphaned holds in support.
+    const { error: rbErr } = await supabase
+      .from('profiles').update({ credits: balance }).eq('id', customerId)
+    if (rbErr) console.error('request-treatment-booking rollback failed for user', customerId, rbErr.message)
     return json({ error: `Could not create request: ${insErr?.message || 'unknown error'}` }, 500)
   }
   const bookingId = inserted.id
@@ -227,8 +258,12 @@ serve(async (req) => {
     .eq('id', bookingId)
   if (tokErr) {
     console.error('request-treatment-booking token store failed:', tokErr.message)
-    // Best effort roll-back so the booking doesn't sit un-actionable.
+    // Best effort roll-back so the booking doesn't sit un-actionable AND
+    // the credit hold is returned to the customer.
     await supabase.from('bookings').delete().eq('id', bookingId)
+    const { error: rbErr } = await supabase
+      .from('profiles').update({ credits: balance }).eq('id', customerId)
+    if (rbErr) console.error('request-treatment-booking rollback failed for user', customerId, rbErr.message)
     return json({ error: `Could not finalise request: ${tokErr.message}` }, 500)
   }
 
