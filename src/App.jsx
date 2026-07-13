@@ -7702,11 +7702,11 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
   // Prefer the explicit contact_name (populated by the admin tool for
   // studios / spas where bizData.name is a business name). For private
   // instructors, bizData.name IS the person's name so the first word is
-  // fair game. Everyone else falls through to a generic greeting rather
-  // than the old "Welcome to Wello, Yoga" style bug.
-  const firstName = (bizData.contact_name && bizData.contact_name.trim().split(' ')[0])
-    || (isPrivateInstructor && bizData.name ? bizData.name.trim().split(' ')[0] : null)
-    || 'there';
+  // fair game. If neither is set, greetingName stays null and callers
+  // drop the "," Name portion entirely — cleaner than "Welcome to Wello,
+  // there." for anonymous rows.
+  const greetingName = (bizData.contact_name && bizData.contact_name.trim().split(' ')[0])
+    || (isPrivateInstructor && bizData.name ? bizData.name.trim().split(' ')[0] : null);
   // Named step labels surfaced in the new progress timeline.
   const stepLabels = isPrivateInstructor
     ? ["Welcome","Profile","Photos","Availability","Pricing","Payout","Review"]
@@ -7854,7 +7854,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
     <><OnboardingProgressBar step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep}/>
       <div style={{maxWidth:520,margin:"0 auto",padding:"80px 28px",textAlign:"center"}}>
         <div style={{width:64,height:64,background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 24px",fontSize:28}}>👋</div>
-        <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:26,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 12px"}}>Welcome to Wello, {firstName}.</h1>
+        <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:26,fontWeight:700,color:T.ink,letterSpacing:"-0.5px",margin:"0 0 12px"}}>Welcome to Wello{greetingName ? `, ${greetingName}` : ''}.</h1>
         <p style={{fontFamily:F.body,fontSize:14,color:T.stone,fontWeight:300,lineHeight:1.75,margin:"0 0 8px"}}>Let's get <strong style={{color:T.ink,fontWeight:600}}>{bizData.name}</strong> set up.</p>
         <p style={{fontFamily:F.body,fontSize:13,color:T.stone2,fontWeight:300,margin:"0 0 36px",lineHeight:1.6}}>This takes about 5 minutes. We'll save your progress as you go.</p>
         <button onClick={()=>goNext()} style={{padding:"13px 36px",background:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:13,fontWeight:600,cursor:"pointer"}}

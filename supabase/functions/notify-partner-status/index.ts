@@ -29,14 +29,19 @@ serve(async (req) => {
   const { name, email } = record
   // Prefer the explicit contact_name populated by the admin tool for
   // studios / spas. Falls through to splitting the business name (works
-  // for private-instructor rows where name IS the person's name), then to
-  // a generic 'there' so we never render "Hi Yoga," style copy.
+  // for private-instructor rows where name IS the person's name).
+  // If neither is available, greetingName stays empty and the email
+  // copy drops the ", Name" portion — cleaner than "Hi there,".
   const contactName = (typeof record.contact_name === 'string' && record.contact_name.trim()) || ''
   const isPrivateInstructor = record.business_type === 'private_instructor'
     || (!record.business_type && record.category === 'Private Instructor')
-  const firstName = (contactName && contactName.split(' ')[0])
+  const greetingName = (contactName && contactName.split(' ')[0])
     || (isPrivateInstructor && name ? String(name).split(' ')[0] : '')
-    || 'there'
+    || ''
+  // Convenience for embedding: an empty string turns "Hi ${greetingFirst}," into
+  // "Hi," which is still a bit odd — use greetingSuffix instead to strip
+  // the comma cleanly.
+  const greetingSuffix = greetingName ? ` ${greetingName}` : ''
 
   // ── status -> setting_up ──────────────────────────────────────
   if (record.status === 'setting_up' && old_record?.status !== 'setting_up') {
@@ -80,7 +85,7 @@ serve(async (req) => {
     if (linkError) console.error('Magic link generation failed:', linkError.message)
     const magicLink = linkData?.properties?.action_link ?? 'https://www.wello-wellness.com'
 
-    const html = `<div style="font-family:Arial,sans-serif;max-width:480px;padding:32px;background:#FBF9F4;"><h1 style="color:#213C18;">wello</h1><div style="background:#fff;border-radius:12px;padding:28px;border:1px solid #E4E2DD;"><h2 style="color:#213C18;">Time to set up your Wello listing</h2><p style="color:#74796E;line-height:1.7;">Hi ${firstName}, great news - we're ready to get ${name} set up on Wello.</p><p style="color:#74796E;line-height:1.7;">Complete your venue profile, add your sessions and classes, and set your credit price. Once you're happy with how everything looks, we'll review and get you live.</p><div style="text-align:center;margin:28px 0;"><a href="${magicLink}" style="display:inline-block;padding:13px 28px;background:#213C18;color:#fff;text-decoration:none;border-radius:2px;font-family:Arial,sans-serif;font-size:13px;font-weight:600;letter-spacing:0.3px;">Log in to your portal</a></div><p style="color:#A3A89E;font-size:11px;line-height:1.6;">This link logs you in automatically and expires after 24 hours. If it's expired, you can request a new one from the sign-in page.</p><p style="color:#74796E;line-height:1.7;">Any questions, reply here or email me directly.</p><p style="color:#1B1C19;font-weight:600;">James<br><span style="font-weight:400;color:#74796E;">Founder, Wello - <a href="mailto:hello@wello-wellness.com" style="color:#213C18;">hello@wello-wellness.com</a></span></p></div></div>`
+    const html = `<div style="font-family:Arial,sans-serif;max-width:480px;padding:32px;background:#FBF9F4;"><h1 style="color:#213C18;">wello</h1><div style="background:#fff;border-radius:12px;padding:28px;border:1px solid #E4E2DD;"><h2 style="color:#213C18;">Time to set up your Wello listing</h2><p style="color:#74796E;line-height:1.7;">${greetingName ? `Hi ${greetingName}, great news` : 'Great news'} - we're ready to get ${name} set up on Wello.</p><p style="color:#74796E;line-height:1.7;">Complete your venue profile, add your sessions and classes, and set your credit price. Once you're happy with how everything looks, we'll review and get you live.</p><div style="text-align:center;margin:28px 0;"><a href="${magicLink}" style="display:inline-block;padding:13px 28px;background:#213C18;color:#fff;text-decoration:none;border-radius:2px;font-family:Arial,sans-serif;font-size:13px;font-weight:600;letter-spacing:0.3px;">Log in to your portal</a></div><p style="color:#A3A89E;font-size:11px;line-height:1.6;">This link logs you in automatically and expires after 24 hours. If it's expired, you can request a new one from the sign-in page.</p><p style="color:#74796E;line-height:1.7;">Any questions, reply here or email me directly.</p><p style="color:#1B1C19;font-weight:600;">James<br><span style="font-weight:400;color:#74796E;">Founder, Wello - <a href="mailto:hello@wello-wellness.com" style="color:#213C18;">hello@wello-wellness.com</a></span></p></div></div>`
 
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -106,7 +111,7 @@ serve(async (req) => {
       if (deactivateErr) console.error('Failed to deactivate listings:', deactivateErr.message)
     }
 
-    const partnerHtml = `<div style="font-family:Arial,sans-serif;max-width:480px;padding:32px;background:#FBF9F4;"><h1 style="color:#213C18;">wello</h1><div style="background:#fff;border-radius:12px;padding:28px;border:1px solid #E4E2DD;"><h2 style="color:#213C18;">We've got your listing, ${firstName}.</h2><p style="color:#74796E;line-height:1.7;">Thanks for submitting ${name} - we'll review your listing and be in touch within 2 working days.</p><p style="color:#74796E;line-height:1.7;">We'll let you know if we have any questions or tweaks before getting you live on the marketplace.</p><p style="color:#1B1C19;font-weight:600;">James<br><span style="font-weight:400;color:#74796E;">Founder, Wello - <a href="mailto:hello@wello-wellness.com" style="color:#213C18;">hello@wello-wellness.com</a></span></p></div></div>`
+    const partnerHtml = `<div style="font-family:Arial,sans-serif;max-width:480px;padding:32px;background:#FBF9F4;"><h1 style="color:#213C18;">wello</h1><div style="background:#fff;border-radius:12px;padding:28px;border:1px solid #E4E2DD;"><h2 style="color:#213C18;">We've got your listing${greetingSuffix ? `,${greetingSuffix}` : ''}.</h2><p style="color:#74796E;line-height:1.7;">Thanks for submitting ${name} - we'll review your listing and be in touch within 2 working days.</p><p style="color:#74796E;line-height:1.7;">We'll let you know if we have any questions or tweaks before getting you live on the marketplace.</p><p style="color:#1B1C19;font-weight:600;">James<br><span style="font-weight:400;color:#74796E;">Founder, Wello - <a href="mailto:hello@wello-wellness.com" style="color:#213C18;">hello@wello-wellness.com</a></span></p></div></div>`
 
     const adminHtml = `<div style="font-family:Arial,sans-serif;padding:32px;background:#FBF9F4;"><h2 style="color:#213C18;">New listing submitted for review</h2><p><b>Venue:</b> ${name}</p><p><b>Email:</b> ${email}</p><p style="color:#74796E;">Log in to the Supabase dashboard to review and approve this listing.</p></div>`
 
@@ -412,7 +417,7 @@ serve(async (req) => {
     }
 
     // ── Send approval email ───────────────────────────────────
-    const approvedHtml = `<div style="font-family:Arial,sans-serif;max-width:480px;padding:32px;background:#FBF9F4;"><h1 style="color:#213C18;">wello</h1><div style="background:#fff;border-radius:12px;padding:28px;border:1px solid #E4E2DD;"><h2 style="color:#213C18;">You're live on Wello!</h2><p style="color:#74796E;line-height:1.7;">Hi ${firstName}, great news - your listing is now live on Wello.</p><p style="color:#74796E;line-height:1.7;">Members can find and book your venue at <a href="https://wello-wellness.com" style="color:#213C18;font-weight:600;">wello-wellness.com</a>.</p><p style="color:#74796E;line-height:1.7;">If you need to make any changes to your listing, log in to your dashboard at <a href="https://www.wello-wellness.com/?portal=business" style="color:#213C18;font-weight:600;">wello-wellness.com</a> and click Business.</p><p style="color:#74796E;line-height:1.7;">Welcome to Wello.</p><p style="color:#1B1C19;font-weight:600;">James<br><span style="font-weight:400;color:#74796E;">Founder, Wello - <a href="mailto:hello@wello-wellness.com" style="color:#213C18;">hello@wello-wellness.com</a></span></p></div></div>`
+    const approvedHtml = `<div style="font-family:Arial,sans-serif;max-width:480px;padding:32px;background:#FBF9F4;"><h1 style="color:#213C18;">wello</h1><div style="background:#fff;border-radius:12px;padding:28px;border:1px solid #E4E2DD;"><h2 style="color:#213C18;">You're live on Wello!</h2><p style="color:#74796E;line-height:1.7;">${greetingName ? `Hi ${greetingName}, great news` : 'Great news'} - your listing is now live on Wello.</p><p style="color:#74796E;line-height:1.7;">Members can find and book your venue at <a href="https://wello-wellness.com" style="color:#213C18;font-weight:600;">wello-wellness.com</a>.</p><p style="color:#74796E;line-height:1.7;">If you need to make any changes to your listing, log in to your dashboard at <a href="https://www.wello-wellness.com/?portal=business" style="color:#213C18;font-weight:600;">wello-wellness.com</a> and click Business.</p><p style="color:#74796E;line-height:1.7;">Welcome to Wello.</p><p style="color:#1B1C19;font-weight:600;">James<br><span style="font-weight:400;color:#74796E;">Founder, Wello - <a href="mailto:hello@wello-wellness.com" style="color:#213C18;">hello@wello-wellness.com</a></span></p></div></div>`
 
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
