@@ -27,7 +27,16 @@ const CATEGORY_TAGS: Record<string, string[]> = {
 serve(async (req) => {
   const { record, old_record } = await req.json()
   const { name, email } = record
-  const firstName = name.split(' ')[0]
+  // Prefer the explicit contact_name populated by the admin tool for
+  // studios / spas. Falls through to splitting the business name (works
+  // for private-instructor rows where name IS the person's name), then to
+  // a generic 'there' so we never render "Hi Yoga," style copy.
+  const contactName = (typeof record.contact_name === 'string' && record.contact_name.trim()) || ''
+  const isPrivateInstructor = record.business_type === 'private_instructor'
+    || (!record.business_type && record.category === 'Private Instructor')
+  const firstName = (contactName && contactName.split(' ')[0])
+    || (isPrivateInstructor && name ? String(name).split(' ')[0] : '')
+    || 'there'
 
   // ── status -> setting_up ──────────────────────────────────────
   if (record.status === 'setting_up' && old_record?.status !== 'setting_up') {

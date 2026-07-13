@@ -23,3 +23,24 @@ verify_jwt = false
 # every Stripe webhook at 401 before the function ever runs, so Supabase's
 # log viewer shows nothing and credits fail to land after a paid checkout.
 verify_jwt = false
+
+[functions.venue-booking-response]
+# Public HMAC-tokened accept/decline link — the venue clicks it from their
+# email, no Wello session on that device. Auth is handled inside the
+# function by verifying the HMAC signature on the token (same pattern as
+# studio-cancel-booking). The auto_decline server-to-server path is guarded
+# by the fact that only auto-decline-stale-bookings holds the service-role
+# JWT to reach it.
+verify_jwt = false
+
+[functions.redeem-partner-invite]
+# Public. The partner clicks a wello-domain invite URL with no Wello session
+# yet, so we can't require a JWT. Auth is provided by the invite code
+# itself — 144-bit random, single-use, TTL enforced in the function.
+verify_jwt = false
+
+# extract-sessions intentionally has NO override here — it keeps the platform
+# default (verify_jwt = true). The admin timetable-upload tool is gated
+# client-side by VITE_ADMIN_SETUP_ENABLED + a ?admin=setup URL param, and the
+# JWT requirement adds a second layer so nobody can hit the function with an
+# unauthenticated fetch.

@@ -1286,7 +1286,7 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
 }
 
 // ─── Business Panel ───────────────────────────────────────────────────────────
-function BizPanel({ biz, onClose, onBook }) {
+function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, onGotoCredits, onBookingsChanged, showToast }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
 
   // Photo carousel — primary img + gallery, deduped and blank-filtered.
@@ -1342,13 +1342,160 @@ function BizPanel({ biz, onClose, onBook }) {
   // pills, the slot list, and the "next slot" preview at the bottom.
   const bookableSlots = (biz.slots || []).filter(s => !isEffectivelyBlocked(s));
 
-  const dates = [...new Set(bookableSlots.map(s=>s.date))].sort();
-  const [selDate, setSel] = useState(dates[0]||null);
   const sys = SYNC[biz.id];
-  const slotsForDate = bookableSlots.filter(s=>s.date===selDate);
 
-  // Build calendar — show 7 days starting from first slot date
-  const allDates = dates;
+  // ─── Multi-modality routing ─────────────────────────────────────────────
+  // Businesses now come in three shapes:
+  //   - Classes only (traditional studios, gyms, hotels)
+  //   - Private sessions only (private instructors: their session_offerings
+  //     are already expanded into slots so we render as timetable)
+  //   - Both (studio with treatments, e.g. Yoga Del Mar with 11 classes + a
+  //     private session offering) — needs a segment control
+  //
+  // Private-instructor businesses always route into classes-view because
+  // their offerings are surfaced via slots. Only non-private venues with
+  // separate session_offerings entries get the split UI.
+  const rawOfferings = Array.isArray(biz.session_offerings) ? biz.session_offerings : [];
+  const isPrivateInstructor = biz.cat === "Private Instructor";
+  const offerings = isPrivateInstructor ? [] : rawOfferings;
+  const hasClasses = bookableSlots.length > 0;
+  const hasOfferings = offerings.length > 0;
+  const showSegments = hasClasses && hasOfferings;
+  // Treatment / spa detection — if every offering type reads like a treatment,
+  // label the segment "Treatments"; otherwise "Private sessions". Keeps the
+  // language honest for spa-type venues without hard-coding categories.
+  const TREATMENT_RE = /(massage|treatment|therapy|reflexolog|facial|reiki|shiatsu|deep tissue|swedish|thai|hot stone|acupuncture)/i;
+  const allTreatments = offerings.length > 0 && offerings.every(o => TREATMENT_RE.test(String(o.type || "")));
+  const privateSegLabel = allTreatments ? "Treatments" : "Private sessions";
+  const [segment, setSegment] = useState(hasClasses ? "classes" : "private");
+
+  // ─── Classes segment: filter chips + 7-day chips ────────────────────────
+  const distinctSessionNames = Array.from(new Set(bookableSlots.map(s => s.name).filter(Boolean))).sort();
+  const [filterNames, setFilterNames] = useState(() => new Set());
+  function toggleFilter(name) {
+    setFilterNames(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  }
+  // After filters are applied — slots that survive both the availability
+  // check and the session-name filter.
+  const filteredSlots = filterNames.size === 0
+    ? bookableSlots
+    : bookableSlots.filter(s => filterNames.has(s.name));
+
+  // Build the 7-day chip array: Today, Tomorrow, then five more dated chips.
+  // Labels: "Today", "Tomorrow", then dow + day-of-month (e.g. "Thu 16").
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dayChips = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    const iso = d.toISOString().slice(0, 10);
+    let label;
+    if (i === 0) label = "Today";
+    else if (i === 1) label = "Tomorrow";
+    else label = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric" });
+    const count = filteredSlots.filter(s => s.date === iso).length;
+    return { iso, label, count };
+  });
+  // Default the selection to the first day in the chip range with matching
+  // slots. Falls back to today so the user still sees the empty-state copy.
+  const firstDayWithSlots = dayChips.find(c => c.count > 0)?.iso || dayChips[0].iso;
+  const [selDate, setSel] = useState(firstDayWithSlots);
+  // If the filter reshuffles which days have content, snap to the first
+  // still-available day so the user is not stuck on an empty tab.
+  useEffect(() => {
+    const stillHas = dayChips.find(c => c.iso === selDate)?.count > 0;
+    if (!stillHas) {
+      const next = dayChips.find(c => c.count > 0)?.iso;
+      if (next) setSel(next);
+    }
+    // Intentionally not tracking dayChips in deps — it rebuilds every render.
+    // We only care about the filter changing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterNames]);
+  const slotsForDate = filteredSlots
+    .filter(s => s.date === selDate)
+    .slice()
+    .sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")));
+
+  // ─── Offering contact panel state ──────────────────────────────────────
+  // ── Offering request panel state ──────────────────────────────────────
+  // Reveal-per-offering pattern: only one panel open at a time so the
+  // modal stays compact. Each panel wraps a request form that hits the
+  // request-treatment-booking edge function, mirroring the private
+  // instructor pending flow with a 48h window.
+  const [openOfferingIdx, setOpenOfferingIdx] = useState(null);
+  const _todayIso = new Date().toISOString().slice(0, 10);
+  const _tomorrow = new Date(); _tomorrow.setDate(_tomorrow.getDate() + 1);
+  const _plus30   = new Date(); _plus30.setDate(_plus30.getDate() + 30);
+  const _minReqDate = _tomorrow.toISOString().slice(0, 10);
+  const _maxReqDate = _plus30.toISOString().slice(0, 10);
+  const [reqDate, setReqDate]           = useState(_minReqDate);
+  const [reqTimePref, setReqTimePref]   = useState("morning");
+  const [reqSpecificTime, setReqSpecificTime] = useState("18:00");
+  const [reqNote, setReqNote]           = useState("");
+  const [reqSubmitting, setReqSubmitting] = useState(false);
+  const [reqError, setReqError]         = useState("");
+  const [reqSuccessFor, setReqSuccessFor] = useState(null); // offering index of last successful submit
+  function resetRequestForm() {
+    setReqDate(_minReqDate);
+    setReqTimePref("morning");
+    setReqSpecificTime("18:00");
+    setReqNote("");
+    setReqError("");
+    setReqSubmitting(false);
+  }
+  function openOffering(idx) {
+    if (openOfferingIdx === idx) { setOpenOfferingIdx(null); return; }
+    resetRequestForm();
+    setReqSuccessFor(null);
+    setOpenOfferingIdx(idx);
+  }
+  async function submitOfferingRequest(offering) {
+    setReqError("");
+    if (!authSession) { onOpenSignIn?.(); return; }
+    const priceEur = Number.isFinite(Number(offering?.price_eur)) ? Number(offering.price_eur) : 0;
+    if (priceEur <= 0) { setReqError("This offering has no price set. Contact the venue directly."); return; }
+    if (Number(credits) < priceEur) {
+      onGotoCredits?.();
+      return;
+    }
+    setReqSubmitting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('request-treatment-booking', {
+        body: {
+          business_id: biz.id,
+          offering_type: offering?.type || null,
+          preferred_date: reqDate,
+          time_pref: reqTimePref,
+          specific_time: reqTimePref === 'specific' ? reqSpecificTime : undefined,
+          note: reqNote || undefined,
+        },
+      });
+      if (error) { setReqError(error.message || 'Could not send request.'); return; }
+      if (data?.error === 'insufficient_credits') {
+        onGotoCredits?.();
+        return;
+      }
+      if (data?.error) { setReqError(data.error); return; }
+      setReqSuccessFor(openOfferingIdx);
+      onBookingsChanged?.();
+      showToast?.("Request sent. The venue has 48 hours to confirm.", "info", 4200);
+    } catch (e) {
+      setReqError(e?.message || 'Could not send request.');
+    } finally {
+      setReqSubmitting(false);
+    }
+  }
+  function humanDuration(mins) {
+    const n = Number(mins);
+    if (!Number.isFinite(n) || n <= 0) return "";
+    if (n % 60 === 0) return `${n / 60} hour${n === 60 ? "" : "s"}`;
+    return `${n} min`;
+  }
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:1100,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px"}} onClick={onClose}>
@@ -1483,45 +1630,105 @@ function BizPanel({ biz, onClose, onBook }) {
             </p>
           </div>
 
-          {/* Calendar date pills */}
-          <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>Available dates</p>
-          <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4,marginBottom:20,scrollbarWidth:"none"}}>
-            {allDates.map(d=>{
-              const hasSlots = bookableSlots.filter(s=>s.date===d).length>0;
-              const isSelected = selDate===d;
-              return (
-                <button key={d} onClick={()=>setSel(d)}
-                  style={{flexShrink:0,padding:"10px 16px",borderRadius:12,border:"none",cursor:"pointer",textAlign:"center",transition:"all .15s",
-                    background:isSelected?"#213C18":hasSlots?"#F5F3EE":"#F0EDEA",
-                    opacity:hasSlots?1:0.5}}>
-                  <p style={{fontFamily:F2,fontSize:10,fontWeight:600,color:isSelected?"rgba(255,255,255,0.7)":"#54584F",margin:"0 0 2px",letterSpacing:"0.5px",textTransform:"uppercase"}}>
-                    {new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short"})}
-                  </p>
-                  <p style={{fontFamily:F2,fontSize:16,fontWeight:800,color:isSelected?"#fff":"#213C18",margin:"0 0 2px",letterSpacing:"-0.5px"}}>
-                    {new Date(d+"T00:00:00").getDate()}
-                  </p>
-                  <p style={{fontFamily:F2,fontSize:10,color:isSelected?"rgba(255,255,255,0.6)":"#54584F",margin:0}}>
-                    {new Date(d+"T00:00:00").toLocaleDateString("en-GB",{month:"short"})}
-                  </p>
-                  {hasSlots&&!isSelected&&<div style={{width:4,height:4,borderRadius:"50%",background:"#213C18",margin:"4px auto 0"}}/>}
-                </button>
-              );
-            })}
-          </div>
+          {/* ─── Segment control ────────────────────────────────────────────
+              Shown only when the venue has both a class timetable AND
+              appointment-style offerings. Simple venues (private
+              instructors, class-only studios) render their single kind
+              directly to preserve the current experience. */}
+          {showSegments && (
+            <div style={{display:"flex",gap:6,padding:4,background:"#F0EDEA",borderRadius:999,marginBottom:20}}>
+              {[
+                { id: "classes", label: "Classes" },
+                { id: "private", label: privateSegLabel },
+              ].map(seg => {
+                const on = segment === seg.id;
+                return (
+                  <button key={seg.id} onClick={() => setSegment(seg.id)}
+                    style={{
+                      flex:1,padding:"9px 16px",borderRadius:999,border:"none",cursor:"pointer",
+                      background:on ? "#213C18" : "transparent",
+                      color:on ? "#fff" : "#213C18",
+                      fontFamily:F2,fontSize:13,fontWeight:700,letterSpacing:"-0.2px",transition:"all .15s",
+                    }}>
+                    {seg.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
-          {/* Slots for selected date */}
-          {selDate&&(
+          {/* ─── Classes segment ─────────────────────────────────────────── */}
+          {(segment === "classes" || !showSegments) && hasClasses && (
             <>
+              {/* Session-type filter chips. Only surface when there is more
+                  than one distinct class name, otherwise chips add clutter
+                  without helping the user narrow anything down. */}
+              {distinctSessionNames.length > 1 && (
+                <>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>Filter by class</p>
+                  <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:6,marginBottom:16,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
+                    {distinctSessionNames.map(name => {
+                      const on = filterNames.has(name);
+                      return (
+                        <button key={name} onClick={() => toggleFilter(name)}
+                          style={{
+                            flexShrink:0,padding:"7px 14px",borderRadius:999,
+                            background:on ? "#213C18" : "#F5F3EE",
+                            color:on ? "#fff" : "#213C18",
+                            border:"1px solid " + (on ? "#213C18" : "rgba(195,200,188,0.5)"),
+                            fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",transition:"all .15s",
+                          }}>
+                          {name}
+                        </button>
+                      );
+                    })}
+                    {filterNames.size > 0 && (
+                      <button onClick={() => setFilterNames(new Set())}
+                        style={{flexShrink:0,padding:"7px 12px",borderRadius:999,background:"transparent",color:"#54584F",border:"none",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* 7-day chip strip: Today, Tomorrow, then five more dated
+                  chips. Chips with zero matching slots after filters render
+                  disabled but still visible so the strip stays predictable. */}
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>Pick a day</p>
+              <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4,marginBottom:20,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
+                {dayChips.map(c => {
+                  const isSelected = selDate === c.iso;
+                  const enabled = c.count > 0;
+                  return (
+                    <button key={c.iso} onClick={() => enabled && setSel(c.iso)} disabled={!enabled}
+                      style={{
+                        flexShrink:0,padding:"10px 16px",borderRadius:12,border:"none",cursor:enabled?"pointer":"not-allowed",textAlign:"center",transition:"all .15s",minWidth:78,
+                        background:isSelected ? "#213C18" : enabled ? "#F5F3EE" : "#F0EDEA",
+                        opacity:enabled ? 1 : 0.45,
+                      }}>
+                      <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:isSelected?"rgba(255,255,255,0.85)":"#213C18",margin:"0 0 3px",letterSpacing:"0.3px"}}>
+                        {c.label}
+                      </p>
+                      <p style={{fontFamily:F2,fontSize:10,color:isSelected?"rgba(255,255,255,0.6)":"#54584F",margin:0}}>
+                        {enabled ? `${c.count} class${c.count === 1 ? "" : "es"}` : "None"}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Timetable rows for selected day, sorted by start time. */}
               <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>
-                Classes on {fd(selDate)}
+                {slotsForDate.length > 0 ? `${slotsForDate.length} class${slotsForDate.length === 1 ? "" : "es"} on ${fd(selDate)}` : `Nothing on ${fd(selDate)}`}
               </p>
               <div style={{display:"flex",flexDirection:"column",gap:8,paddingBottom:8}}>
-                {slotsForDate.length===0
-                  ? <p style={{fontFamily:F2,fontSize:13,color:"#54584F",padding:"20px 0",textAlign:"center"}}>No classes on this day</p>
-                  : slotsForDate.map(sl=>{
+                {slotsForDate.length === 0
+                  ? <p style={{fontFamily:F2,fontSize:13,color:"#54584F",padding:"20px 0",textAlign:"center"}}>Try a different day or clear filters.</p>
+                  : slotsForDate.map(sl => {
                       const avail = sl.spots - sl.booked;
-                      const full = avail===0;
-                      const pct = (sl.booked/sl.spots)*100;
+                      const full = avail === 0;
+                      const pct = (sl.booked / sl.spots) * 100;
                       return (
                         <div key={sl.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",flexWrap:"wrap",background:full?"#F5F3EE":"#FBF9F4",borderRadius:12,border:`1px solid ${full?"rgba(195,200,188,0.3)":"rgba(195,200,188,0.5)"}`,opacity:full?0.6:1,transition:"all .15s"}}
                           onMouseEnter={e=>{if(!full)e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.06)"}}
@@ -1533,15 +1740,14 @@ function BizPanel({ biz, onClose, onBook }) {
                           </div>
                           <div style={{width:1,height:32,background:"rgba(195,200,188,0.5)",flexShrink:0}}/>
                           {/* Info */}
-                          <div style={{flex:1}}>
+                          <div style={{flex:1,minWidth:120}}>
                             <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#1B1C19",margin:"0 0 4px"}}>{sl.name}</p>
-                            {/* Capacity bar */}
                             <div style={{display:"flex",alignItems:"center",gap:8}}>
                               <div style={{width:80,height:4,background:"#E4E2DD",borderRadius:999}}>
                                 <div style={{width:`${pct}%`,height:"100%",background:pct>80?"#B8925C":"#213C18",borderRadius:999,transition:"width .3s"}}/>
                               </div>
                               <span style={{fontFamily:F2,fontSize:11,color:full?"#e05c5c":pct>80?"#B8925C":"#213C18",fontWeight:600}}>
-                                {full?"Full":`${avail} of ${sl.spots} left`}
+                                {full ? "Full" : `${avail} of ${sl.spots} left`}
                               </span>
                             </div>
                           </div>
@@ -1552,7 +1758,7 @@ function BizPanel({ biz, onClose, onBook }) {
                               style={{padding:"10px 20px",background:full?"#E4E2DD":"#213C18",color:full?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:full?"not-allowed":"pointer",transition:"all .15s",whiteSpace:"nowrap"}}
                               onMouseEnter={e=>{if(!full)e.currentTarget.style.opacity="0.85"}}
                               onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                              {full?"Full":"Book →"}
+                              {full ? "Full" : "Book →"}
                             </button>
                           </div>
                         </div>
@@ -1561,6 +1767,127 @@ function BizPanel({ biz, onClose, onBook }) {
                 }
               </div>
             </>
+          )}
+
+          {/* ─── Private sessions / Treatments segment ─────────────────── */}
+          {(segment === "private" || (!showSegments && hasOfferings)) && hasOfferings && (
+            <>
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>
+                {privateSegLabel}
+              </p>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",lineHeight:1.55,margin:"0 0 16px"}}>
+                Not on the timetable. Pick an offering and request a booking. The venue will confirm within 48 hours.
+              </p>
+              <div style={{display:"flex",flexDirection:"column",gap:10,paddingBottom:8}}>
+                {offerings.map((o, i) => {
+                  const price = Number.isFinite(Number(o?.price_eur)) ? Number(o.price_eur) : biz.cr;
+                  const durLabel = humanDuration(o?.length_min);
+                  const open = openOfferingIdx === i;
+                  return (
+                    <div key={i} style={{padding:"14px 16px",background:"#FBF9F4",borderRadius:12,border:"1px solid rgba(195,200,188,0.5)",transition:"all .15s"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                        <div style={{flex:"1 1 200px",minWidth:0}}>
+                          <p style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#1B1C19",margin:"0 0 4px",letterSpacing:"-0.2px"}}>{o?.type || "Session"}</p>
+                          <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+                            {durLabel && <span style={{fontFamily:F2,fontSize:12,color:"#54584F"}}>{durLabel}</span>}
+                            <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18"}}>◈ {price}</span>
+                          </div>
+                          {o?.description && (
+                            <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"6px 0 0",lineHeight:1.55}}>{o.description}</p>
+                          )}
+                        </div>
+                        <button onClick={() => openOffering(i)}
+                          style={{padding:"10px 18px",background:open ? "#F5F3EE" : "#213C18",color:open ? "#213C18" : "#fff",border:open ? "1px solid rgba(195,200,188,0.5)" : "none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",transition:"all .15s"}}>
+                          {open ? "Close" : "Request booking"}
+                        </button>
+                      </div>
+
+                      {/* Inline request form. Posts to request-treatment-booking,
+                          which mints HMAC accept/decline tokens and emails the
+                          venue. Credits are held (not deducted) until the venue
+                          accepts, mirroring pending_instructor. */}
+                      {open && reqSuccessFor === i && (
+                        <div style={{marginTop:14,padding:"12px 14px",background:"#F5F3EE",border:"1px solid rgba(163,177,138,0.6)",borderRadius:10}}>
+                          <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 6px",letterSpacing:"-0.1px"}}>Request sent</p>
+                          <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.55}}>
+                            The venue will confirm within 48 hours. If they cannot host you, your credits are returned in full. You can cancel the request from your bookings at any time.
+                          </p>
+                        </div>
+                      )}
+                      {open && reqSuccessFor !== i && (
+                        <div style={{marginTop:14,padding:"14px 14px",background:"#fff",border:"1px solid rgba(195,200,188,0.5)",borderRadius:10}}>
+                          <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.2px",textTransform:"uppercase",margin:"0 0 4px"}}>Request booking</p>
+                          <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.55}}>
+                            Pick a date and time preference. The venue has 48 hours to confirm. Your credits are held from your balance while the request is pending and returned in full if the venue cannot host you.
+                          </p>
+
+                          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                            <label style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                              Preferred date
+                              <input type="date" value={reqDate} min={_minReqDate} max={_maxReqDate}
+                                onChange={e => setReqDate(e.target.value)}
+                                style={{display:"block",marginTop:4,padding:"9px 12px",border:"1px solid rgba(195,200,188,0.6)",borderRadius:8,fontFamily:F2,fontSize:13,background:"#fff",color:"#1B1C19",width:"100%",boxSizing:"border-box"}}/>
+                            </label>
+
+                            <div>
+                              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase",margin:"0 0 4px"}}>Time preference</p>
+                              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                                {[
+                                  { id: "morning",   label: "Morning" },
+                                  { id: "afternoon", label: "Afternoon" },
+                                  { id: "evening",   label: "Evening" },
+                                  { id: "specific",  label: "Specific time" },
+                                ].map(p => {
+                                  const on = reqTimePref === p.id;
+                                  return (
+                                    <button key={p.id} type="button" onClick={() => setReqTimePref(p.id)}
+                                      style={{padding:"7px 12px",borderRadius:999,border:"1px solid " + (on ? "#213C18" : "rgba(195,200,188,0.6)"),background:on ? "#213C18" : "#fff",color:on ? "#fff" : "#213C18",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                                      {p.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              {reqTimePref === "specific" && (
+                                <input type="time" value={reqSpecificTime}
+                                  onChange={e => setReqSpecificTime(e.target.value)}
+                                  style={{display:"block",marginTop:8,padding:"9px 12px",border:"1px solid rgba(195,200,188,0.6)",borderRadius:8,fontFamily:F2,fontSize:13,background:"#fff",color:"#1B1C19",width:130}}/>
+                              )}
+                            </div>
+
+                            <label style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                              Note (optional)
+                              <textarea rows={2} value={reqNote} maxLength={500}
+                                onChange={e => setReqNote(e.target.value)}
+                                placeholder="Anything the venue should know, or a range of times that suit you."
+                                style={{display:"block",marginTop:4,padding:"9px 12px",border:"1px solid rgba(195,200,188,0.6)",borderRadius:8,fontFamily:F2,fontSize:13,background:"#fff",color:"#1B1C19",width:"100%",boxSizing:"border-box",resize:"vertical"}}/>
+                            </label>
+
+                            {reqError && (
+                              <div style={{padding:"8px 12px",background:"#F8E4D9",border:"1px solid rgba(139,47,0,0.2)",borderRadius:8,fontFamily:F2,fontSize:12,color:"#8B2F00"}}>{reqError}</div>
+                            )}
+
+                            <div style={{display:"flex",justifyContent:"flex-end"}}>
+                              <button type="button" onClick={() => submitOfferingRequest(o)} disabled={reqSubmitting}
+                                style={{padding:"10px 20px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:reqSubmitting?"not-allowed":"pointer",opacity:reqSubmitting?0.6:1}}>
+                                {reqSubmitting ? "Sending..." : `Send request · ◈ ${price} held`}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Empty state safety net — venue with no slots and no offerings
+              (shouldn't reach the marketplace, but handle gracefully). */}
+          {!hasClasses && !hasOfferings && (
+            <p style={{fontFamily:F2,fontSize:13,color:"#54584F",padding:"20px 0",textAlign:"center"}}>
+              No sessions available yet. Please check back soon.
+            </p>
           )}
         </div>
       </div>
@@ -2812,7 +3139,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
     if (!authSession?.user?.id) { setRemoteBookings(null); return; }
     let cancelled = false;
     supabase.from('bookings')
-      .select('id, business_id, slot_id, booking_date, start_time, duration, credits_used, status, acuity_appointment_id, created_at')
+      .select('id, business_id, slot_id, booking_date, start_time, duration, credits_used, status, offering_type, acuity_appointment_id, created_at')
       .eq('user_id', authSession.user.id)
       .order('booking_date', { ascending: false })
       .then(({ data }) => { if (!cancelled) setRemoteBookings(data || []); });
@@ -2916,7 +3243,11 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
               key: `remote-${bk.id}`,
               dbId: bk.id,
               biz:  l,
-              sessionName: l.name || "Session",
+              // For studio/spa offering requests we surface the offering
+              // name (e.g. "Deep tissue massage") rather than the venue
+              // name so the customer immediately recognises what they
+              // asked for.
+              sessionName: bk.offering_type || l.name || "Session",
               date: bk.booking_date,
               time: bk.start_time,
               cost: bk.credits_used ?? 0,
@@ -2983,13 +3314,23 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 {items.map(bk=>{
                   const cancelState = cancelStatusFor({ booking_date: bk.date, start_time: bk.time }, bk.biz?.cat);
-                  const canCancel = resTab === "upcoming" && bk.dbId && cancelState.canCancel && bk.status !== 'cancelled';
-                  // Status label + colour differs for past bookings.
+                  // Pending requests (instructor or venue) can be cancelled
+                  // by the customer at any time for a full credit return —
+                  // no window enforcement here, credits were never
+                  // deducted so nothing to refund on cancel.
+                  const isPendingReq = bk.status === 'pending_instructor' || bk.status === 'pending_venue';
+                  const canCancel = resTab === "upcoming" && bk.dbId && bk.status !== 'cancelled' && (isPendingReq || cancelState.canCancel);
+                  // Status label + colour differs for past bookings and
+                  // pending requests.
                   const isCancelled = bk.status === 'cancelled' || bk.status === 'declined';
                   const isPastDate  = (sessionDateTime(bk.date, bk.time)?.getTime() || 0) < Date.now();
-                  const statusLabel = isCancelled ? "Cancelled" : (resTab === "past" ? "Completed" : "Confirmed");
-                  const statusBg    = isCancelled ? "#FADEC0" : (resTab === "past" ? "#E4E2DD" : "#CAECBA");
-                  const statusFg    = isCancelled ? "#6F5B44" : "#213C18";
+                  const statusLabel = isCancelled
+                    ? "Cancelled"
+                    : isPendingReq
+                      ? "Awaiting venue confirmation"
+                      : (resTab === "past" ? "Completed" : "Confirmed");
+                  const statusBg    = isCancelled ? "#FADEC0" : isPendingReq ? "#FADEC0" : (resTab === "past" ? "#E4E2DD" : "#CAECBA");
+                  const statusFg    = isCancelled ? "#6F5B44" : isPendingReq ? "#6F5B44" : "#213C18";
                   return (
                     <div key={bk.key} style={{display:"flex",flexWrap:"wrap",background:"#F5F3EE",borderRadius:12,overflow:"hidden",transition:"background .2s",opacity:isPastDate?0.88:1}}>
                       <div style={{width:"clamp(80px,30vw,160px)",minHeight:100,flexShrink:0,overflow:"hidden"}}>
@@ -3010,15 +3351,23 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                           {resTab === "upcoming" && bk.dbId && (
                             canCancel ? (
                               <button onClick={async () => {
-                                if (!confirm(`Cancel this booking? Your ${bk.cost} credits will be refunded.`)) return;
+                                const promptText = isPendingReq
+                                  ? `Cancel this request? Your credits are returned in full.`
+                                  : `Cancel this booking? Your ${bk.cost} credits will be refunded.`;
+                                if (!confirm(promptText)) return;
                                 await onCancelBooking?.(bk.dbId);
                               }}
                                 style={{background:"transparent",border:"1px solid rgba(196,106,77,0.6)",color:"#C46A4D",padding:"6px 14px",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:"0.3px"}}>
-                                Cancel booking
+                                {isPendingReq ? "Cancel request" : "Cancel booking"}
                               </button>
                             ) : (
                               <span style={{fontFamily:F2,fontSize:10,color:"#A3B18A",fontStyle:"italic"}}>Cancellation window closed</span>
                             )
+                          )}
+                          {isPendingReq && (
+                            <span style={{fontFamily:F2,fontSize:10,color:"#54584F",fontStyle:"italic",textAlign:"right",maxWidth:220,lineHeight:1.4}}>
+                              The venue will confirm within 48 hours. If they cannot host you, your credits are returned in full.
+                            </span>
                           )}
                         </div>
                       </div>
@@ -4337,6 +4686,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // has to live above both to avoid TDZ when React runs the lazy initializer.
   const dashIsPrivate = bizData?.business_type === 'private_instructor'
     || (!bizData?.business_type && bizData?.category === 'Private Instructor');
+  // Studios and spas with appointment offerings receive pending_venue
+  // requests via the same request panel. Broaden the request-tab gate so
+  // those venues can accept/decline without needing the private_instructor
+  // classification.
+  const dashHasOfferings = Array.isArray(bizData?.session_offerings) && bizData.session_offerings.length > 0;
+  const dashSupportsRequests = dashIsPrivate || dashHasOfferings;
   // Sub-tab within Manage. Defaults to Requests for private instructors
   // (most actionable), Schedule for everyone else.
   const [manageSubTab, setManageSubTab] = useState(() => {
@@ -4348,7 +4703,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       const legacy = localStorage.getItem("wello_dash_tab");
       if (legacy && allowed.includes(legacy)) return legacy;
     } catch { /* fall through */ }
-    return dashIsPrivate ? "requests" : "schedule";
+    return dashSupportsRequests ? "requests" : "schedule";
   });
   useEffect(() => {
     try { localStorage.setItem("wello_dash_subtab", manageSubTab); } catch { /* non-critical */ }
@@ -4409,8 +4764,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // exists for private instructors, so a non-private venue stuck on Requests
   // would render an empty pane.
   useEffect(() => {
-    if (!dashIsPrivate && manageSubTab === "requests") setManageSubTab("schedule");
-  }, [dashIsPrivate, manageSubTab]);
+    if (!dashSupportsRequests && manageSubTab === "requests") setManageSubTab("schedule");
+  }, [dashSupportsRequests, manageSubTab]);
 
   // Private-instructor specific editable state. We hydrate from bizData on
   // mount and the dashboard's key={activeVenueId} prop ensures these reset
@@ -4591,14 +4946,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // the Requests tab has something to render. Re-runs whenever requestsTick
   // bumps (after a confirm/decline).
   useEffect(() => {
-    if (isPreview || !bizData?.id || !dashIsPrivate) { setPendingRequests([]); return; }
+    if (isPreview || !bizData?.id || !dashSupportsRequests) { setPendingRequests([]); return; }
     let cancelled = false;
     (async () => {
       const { data: rows, error } = await supabase
         .from('bookings')
-        .select('id, user_id, slot_id, booking_date, start_time, duration, credits_used, notes, status, created_at')
+        .select('id, user_id, slot_id, booking_date, start_time, duration, credits_used, notes, status, offering_type, created_at')
         .eq('business_id', bizData.id)
-        .eq('status', 'pending_instructor')
+        .in('status', ['pending_instructor', 'pending_venue'])
         .order('created_at', { ascending: true });
       if (error) {
         console.error('pendingRequests query error:', error.message);
@@ -4617,7 +4972,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       if (!cancelled) setPendingRequests(enriched);
     })();
     return () => { cancelled = true; };
-  }, [isPreview, bizData?.id, dashIsPrivate, requestsTick]);
+  }, [isPreview, bizData?.id, dashSupportsRequests, requestsTick]);
 
   // Confirmed-and-upcoming bookings for this venue. Re-runs on requestsTick
   // bumps so a just-confirmed request flows straight into the Upcoming list.
@@ -4665,20 +5020,25 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     return () => { cancelled = true; };
   }, [isPreview, bizData?.id, requestsTick]);
 
-  async function respondToRequest(bookingId, action) {
+  async function respondToRequest(bookingId, action, status) {
     if (!bookingId || respondingId) return;
     setRespondingId(bookingId);
-    const { data, error } = await supabase.functions.invoke('instructor-booking-response', {
+    // Route to the per-status handler. pending_instructor stays with
+    // instructor-booking-response; pending_venue (studio/spa appointment
+    // requests) go through venue-booking-response, which has the same
+    // {action, booking_id} JSON contract.
+    const fn = status === 'pending_venue' ? 'venue-booking-response' : 'instructor-booking-response';
+    const { data, error } = await supabase.functions.invoke(fn, {
       body: { booking_id: bookingId, action },
     });
     setRespondingId(null);
     if (error) {
-      console.error('instructor-booking-response error:', error.message);
+      console.error(fn + ' error:', error.message);
       flashSaveMsg('err', "Couldn't send your response. " + error.message);
       return;
     }
     if (data?.error) {
-      console.error('instructor-booking-response server error:', data.error);
+      console.error(fn + ' server error:', data.error);
       flashSaveMsg('err', data.error);
       return;
     }
@@ -5215,8 +5575,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // see one place for all day-to-day operations. Confirmed bookings still show
   // inline on Overview in the Live bookings panel.
   const TABS = [["overview","Overview"],["manage","Manage"],["payouts","Payouts"],["settings","Settings"]];
-  // Sub-tabs inside Manage. Private instructors get Requests; everyone has Schedule and Listing.
-  const MANAGE_SUBTABS = dashIsPrivate
+  // Sub-tabs inside Manage. Private instructors + venues with appointment
+  // offerings get the Requests tab (they receive pending_venue requests
+  // through the same panel).
+  const MANAGE_SUBTABS = dashSupportsRequests
     ? [["requests","Requests"],["schedule","Schedule"],["listing","My Listing"]]
     : [["schedule","Schedule"],["listing","My Listing"]];
 
@@ -5386,7 +5748,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             {TABS.map(([k,l])=>{
               // Show a pill badge on Manage with the count of pending booking
               // requests so partners see "you've got work" the moment they sign in.
-              const showBadge = k === "manage" && dashIsPrivate
+              const showBadge = k === "manage" && dashSupportsRequests
                 && Array.isArray(pendingRequests) && pendingRequests.length > 0;
               return (
                 <button key={k} onClick={()=>{ setTab(k); if (k==="manage" && showBadge) setManageSubTab("requests"); }}
@@ -5608,8 +5970,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           </div>
         )}
 
-        {/* ── REQUESTS (private instructors only) ── */}
-        {tab==="manage" && manageSubTab==="requests" && dashIsPrivate && (
+        {/* ── REQUESTS (private instructors + venues with offerings) ── */}
+        {tab==="manage" && manageSubTab==="requests" && dashSupportsRequests && (
           <div>
             <div style={{marginBottom:18}}>
               <h2 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#1B1C19",margin:"0 0 4px"}}>Pending requests</h2>
@@ -5703,11 +6065,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                         )}
                       </div>
                       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                        <button onClick={()=>respondToRequest(req.id,'confirm')} disabled={!!respondingId}
+                        <button onClick={()=>respondToRequest(req.id,'confirm',req.status)} disabled={!!respondingId}
                           style={{flex:"1 1 140px",padding:"10px 14px",background:respondingId===req.id?"#A3A89E":"#213C18",color:"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:12,fontWeight:700,cursor:respondingId?"wait":"pointer"}}>
                           {respondingId===req.id ? 'Sending…' : '✓ Confirm booking'}
                         </button>
-                        <button onClick={()=>respondToRequest(req.id,'decline')} disabled={!!respondingId}
+                        <button onClick={()=>respondToRequest(req.id,'decline',req.status)} disabled={!!respondingId}
                           style={{flex:"1 1 140px",padding:"10px 14px",background:"transparent",color:"#C46A4D",border:"1px solid #C46A4D",borderRadius:6,fontFamily:F2,fontSize:12,fontWeight:600,cursor:respondingId?"wait":"pointer"}}>
                           Decline
                         </button>
@@ -7297,9 +7659,14 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
   const [priceMode, setPriceMode] = useState(bizData.price_mode || "flat");
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  // Safe even when bizData.name is empty (e.g. a venue just created via
-  // "+ Add another venue" before the partner has typed its name yet).
-  const firstName = (bizData.name || 'there').split(' ')[0] || 'there';
+  // Prefer the explicit contact_name (populated by the admin tool for
+  // studios / spas where bizData.name is a business name). For private
+  // instructors, bizData.name IS the person's name so the first word is
+  // fair game. Everyone else falls through to a generic greeting rather
+  // than the old "Welcome to Wello, Yoga" style bug.
+  const firstName = (bizData.contact_name && bizData.contact_name.trim().split(' ')[0])
+    || (isPrivateInstructor && bizData.name ? bizData.name.trim().split(' ')[0] : null)
+    || 'there';
   // Named step labels surfaced in the new progress timeline.
   const stepLabels = isPrivateInstructor
     ? ["Welcome","Profile","Photos","Availability","Pricing","Payout","Review"]
@@ -9383,6 +9750,1128 @@ function BusinessPortal({ onSetView }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ADMIN SETUP — internal AI-assisted partner setup tool
+// ═══════════════════════════════════════════════════════════════
+//
+// Not linked anywhere in the public UI. Reached via ?admin=setup and
+// gated by VITE_ADMIN_SETUP_ENABLED. Uploads (image/PDF/text) go to the
+// extract-sessions edge function, which returns structured session JSON
+// for review and optional bulk creation into businesses.slots +
+// businesses.session_offerings (and 4 weeks of slot rows if a listing
+// is already active).
+
+const DAY_CODE_TO_SHORT = { mon:'Mon', tue:'Tue', wed:'Wed', thu:'Thu', fri:'Fri', sat:'Sat', sun:'Sun' };
+const DAY_SHORT_TO_CODE = { Mon:'mon', Tue:'tue', Wed:'wed', Thu:'thu', Fri:'fri', Sat:'sat', Sun:'sun' };
+const DAY_IDX_ADMIN = { Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6, Sun:0 };
+
+// Parse "60 min", "90 min", "2 hours", "Open" into a duration in minutes or
+// null if we can't interpret it (e.g. "Open" for gym passes).
+function parseDurationString(dur) {
+  if (dur == null) return null;
+  const s = String(dur).trim();
+  const min = s.match(/^(\d+)\s*min/i);
+  if (min) return parseInt(min[1], 10);
+  const hr = s.match(/^(\d+)\s*hour/i);
+  if (hr) return parseInt(hr[1], 10) * 60;
+  return null;
+}
+
+// Convert one businesses.slots entry (which may cover multiple days at one
+// time) into a class-kind review row.
+function slotEntryToRow(sl, idx) {
+  const days = Array.isArray(sl?.days) ? sl.days : [];
+  const time = String(sl?.time || '09:00');
+  return {
+    _rid: `existing_slot_${idx}_${Date.now()}`,
+    _origin: 'existing',
+    name: String(sl?.name || ''),
+    kind: 'class',
+    duration_minutes: parseDurationString(sl?.dur) ?? 60,
+    price_eur: Number.isFinite(Number(sl?.cr)) ? Number(sl.cr) : null,
+    capacity: Number.isFinite(Number(sl?.spots)) ? Number(sl.spots) : null,
+    description: null,
+    schedule: days.map(d => ({ day: DAY_SHORT_TO_CODE[d] || 'mon', time })),
+    confidence_flags: [],
+  };
+}
+
+// Convert one businesses.session_offerings entry into an appointment-kind row.
+function offeringToRow(o, idx) {
+  return {
+    _rid: `existing_offering_${idx}_${Date.now()}`,
+    _origin: 'existing',
+    name: String(o?.type || ''),
+    kind: 'appointment',
+    duration_minutes: Number.isFinite(Number(o?.length_min)) ? Number(o.length_min) : 60,
+    price_eur: Number.isFinite(Number(o?.price_eur)) ? Number(o.price_eur) : null,
+    capacity: 1,
+    description: null,
+    schedule: null,
+    confidence_flags: [],
+  };
+}
+
+// Mirrors AMENITY_GROUPS inside the partner wizard (PartnerOnboarding). Kept
+// duplicated on purpose: the admin tool is internal and shouldn't share
+// scope with a wizard-local constant. If the wizard's list changes, update
+// this one too so the tags admin picks stay meaningful in the partner UI.
+const ADMIN_AMENITY_GROUPS = [
+  { name: "Facilities",         items: ["Showers","Changing rooms","Lockers","Cafe","Wifi","Parking","Air conditioning","Wheelchair access"] },
+  { name: "Equipment provided", items: ["Towels provided","Mats provided","Equipment provided"] },
+  { name: "Pools & wellness",   items: ["Outdoor pool","Indoor pool","Sauna","Steam room","Hot tub","Jacuzzi"] },
+  { name: "Setting",            items: ["Sea views","Mountain views","Beachfront","Rooftop","Olive groves","Garden"] },
+  { name: "Suitable for",       items: ["Kids welcome","Beginner friendly","All levels","Advanced","Small groups","Private sessions"] },
+  { name: "Languages",          items: ["Multilingual instructors","English spoken","Spanish spoken","German spoken"] },
+];
+const ADMIN_AMENITY_OPTIONS = ADMIN_AMENITY_GROUPS.flatMap(g => g.items);
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      // Strip the "data:mime;base64," prefix so the edge function receives raw base64.
+      const comma = result.indexOf(',');
+      resolve(comma >= 0 ? result.slice(comma + 1) : result);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+// Aggregates identical (day, HH:MM) rows into { day, time } list matching the
+// businesses.slots schema. Also collapses days that share the same time so the
+// slot rows look sensible on the review table.
+function normaliseSchedule(schedule) {
+  if (!Array.isArray(schedule)) return [];
+  const out = [];
+  for (const s of schedule) {
+    const day = DAY_CODE_TO_SHORT[String(s?.day || '').toLowerCase()];
+    const time = String(s?.time || '').trim();
+    if (!day || !/^\d{2}:\d{2}$/.test(time)) continue;
+    if (!out.some(o => o.day === day && o.time === time)) out.push({ day, time });
+  }
+  return out;
+}
+
+function scheduleSummary(schedule) {
+  const norm = normaliseSchedule(schedule);
+  if (norm.length === 0) return '—';
+  // Group by time so "Mon,Wed,Fri @ 07:00" reads clearly.
+  const byTime = {};
+  for (const { day, time } of norm) {
+    if (!byTime[time]) byTime[time] = [];
+    if (!byTime[time].includes(day)) byTime[time].push(day);
+  }
+  const order = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  return Object.entries(byTime)
+    .sort(([a],[b]) => a.localeCompare(b))
+    .map(([time, days]) => `${days.sort((a,b)=>order.indexOf(a)-order.indexOf(b)).join(', ')} @ ${time}`)
+    .join(' · ');
+}
+
+function AdminSetupPage() {
+  // Server-side edge functions enforce the ADMIN_USER_IDS allowlist. Client
+  // side only checks "is there any auth session" so we can show a helpful
+  // sign-in prompt instead of letting extract-sessions and generate-magic-link
+  // 403 without context.
+  const [authReady, setAuthReady] = useState(false);
+  const [authUserId, setAuthUserId] = useState(null);
+  const [authEmail, setAuthEmail] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled) return;
+      setAuthUserId(session?.user?.id || null);
+      setAuthEmail(session?.user?.email || null);
+      setAuthReady(true);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const [businesses, setBusinesses] = useState([]);
+  const [businessId, setBusinessId] = useState('');
+  const [bizRow, setBizRow] = useState(null);
+  const [inputMode, setInputMode] = useState('file'); // 'file' | 'text'
+  const [file, setFile] = useState(null);
+  const [text, setText] = useState('');
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState('');
+  const [rows, setRows] = useState([]); // editable sessions
+  const [creating, setCreating] = useState(false);
+  const [createResult, setCreateResult] = useState(null);
+
+  // ── Enrichment state (description, address, tags, photos) ──
+  const [description, setDescription] = useState('');
+  const [address, setAddress] = useState('');
+  const [tags, setTags] = useState([]);
+  const [customTag, setCustomTag] = useState('');
+  const [primaryImg, setPrimaryImg] = useState(null);
+  const [gallery, setGallery] = useState([]);
+  const [enrichmentSaving, setEnrichmentSaving] = useState(false);
+  const [enrichmentMsg, setEnrichmentMsg] = useState('');
+  const [uploadingPrimary, setUploadingPrimary] = useState(false);
+  const [uploadingGallery, setUploadingGallery] = useState(false);
+  const [photoErr, setPhotoErr] = useState('');
+
+  // ── Ownership handoff state ──
+  const [partnerEmail, setPartnerEmail] = useState('');
+  // Contact person's first name (or full name — we use split on space when
+  // greeting). Populated by the admin so the wizard's "Welcome to Wello,
+  // Maria" copy is a real person rather than the business name.
+  const [partnerContactName, setPartnerContactName] = useState('');
+  const [transferSaving, setTransferSaving] = useState(false);
+  const [transferMsg, setTransferMsg] = useState('');
+
+  // ── Magic link state ──
+  const [linkGenerating, setLinkGenerating] = useState(false);
+  const [linkResult, setLinkResult] = useState(null); // { magic_link, email, business_name }
+  const [linkError, setLinkError] = useState('');
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  useEffect(() => {
+    // Wait until the auth check has finished so we don't fire this with
+    // no session (would 403 at the edge). Refetch whenever the signed-in
+    // user changes so switching accounts refreshes the dropdown without
+    // needing a page reload.
+    if (!authReady || !authUserId) return;
+    (async () => {
+      const { data, error } = await supabase.functions.invoke('admin-businesses', {
+        body: { op: 'list' },
+      });
+      if (error) { console.error('admin-businesses list invoke failed:', error.message); return; }
+      if (data?.error) { console.error('admin-businesses list returned error:', data.error); return; }
+      setBusinesses(Array.isArray(data?.businesses) ? data.businesses : []);
+    })();
+  }, [authReady, authUserId]);
+
+  useEffect(() => {
+    const row = businesses.find(b => String(b.id) === String(businessId)) || null;
+    setBizRow(row);
+    // Populate enrichment fields AND session review rows from the row so the
+    // admin sees the current state of the business immediately. Rows loaded
+    // this way carry _origin='existing' so the save path knows not to
+    // slot-expand them a second time.
+    if (row) {
+      setDescription(row.description || '');
+      setAddress(row.address || '');
+      setTags(Array.isArray(row.tags) ? row.tags : []);
+      setPrimaryImg(row.img || null);
+      setGallery(Array.isArray(row.gallery) ? row.gallery.filter(u => typeof u === 'string' && !u.startsWith('blob:')) : []);
+      setPartnerEmail(row.email || '');
+      setPartnerContactName(row.contact_name || '');
+      const existingSlots = Array.isArray(row.slots) ? row.slots : [];
+      const existingOfferings = Array.isArray(row.session_offerings) ? row.session_offerings : [];
+      const rowsFromDb = [
+        ...existingSlots.map((sl, i) => slotEntryToRow(sl, i)),
+        ...existingOfferings.map((o, i) => offeringToRow(o, i)),
+      ];
+      setRows(rowsFromDb);
+    } else {
+      setDescription(''); setAddress(''); setTags([]); setPrimaryImg(null); setGallery([]);
+      setPartnerEmail('');
+      setPartnerContactName('');
+      setRows([]);
+    }
+    setEnrichmentMsg('');
+    setTransferMsg('');
+    setPhotoErr('');
+    setCreateResult(null);
+    setLinkResult(null); setLinkError(''); setLinkCopied(false);
+  }, [businessId, businesses]);
+
+  // ── Photo upload (matches wizard: bucket=venue-photos, path={uid}/{bizId}-...) ──
+  async function uploadPhotoFile(fileObj, slot) {
+    if (!bizRow?.id) return { url: null, error: 'Pick a business first.' };
+    if (!/^image\//.test(fileObj.type)) return { url: null, error: 'That is not an image file.' };
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+    if (!uid) return { url: null, error: 'You need to be signed in to upload photos.' };
+    const path = `${uid}/${bizRow.id}-admin-${slot}-${Date.now()}.jpg`;
+    const { error } = await supabase.storage.from('venue-photos').upload(path, fileObj, { contentType: fileObj.type, upsert: true });
+    if (error) return { url: null, error: error.message };
+    const url = supabase.storage.from('venue-photos').getPublicUrl(path).data.publicUrl;
+    return { url, error: null };
+  }
+  // All businesses writes go through the admin-businesses edge function so
+  // we bypass the businesses-table RLS that restricts authenticated users
+  // to their own row. Server-side requireAdmin + column whitelist.
+  async function adminPatchBusiness(patch, opts = {}) {
+    const { data, error } = await supabase.functions.invoke('admin-businesses', {
+      body: {
+        op: 'update',
+        business_id: bizRow.id,
+        patch,
+        mirror_img_to_listing: !!opts.mirror_img_to_listing,
+      },
+    });
+    if (error) return { error: error.message };
+    if (data?.error) return { error: data.error };
+    return { ok: true };
+  }
+
+  async function handlePrimaryPhotoChange(e) {
+    const f = e.target.files?.[0];
+    if (!f || !bizRow?.id) return;
+    setPhotoErr(''); setUploadingPrimary(true);
+    const { url, error } = await uploadPhotoFile(f, 'primary');
+    setUploadingPrimary(false);
+    if (error) { setPhotoErr('Primary photo upload failed. ' + error); return; }
+    setPrimaryImg(url);
+    const res = await adminPatchBusiness({ img: url }, { mirror_img_to_listing: true });
+    if (res.error) setPhotoErr('Saved to storage but businesses update failed: ' + res.error);
+  }
+  async function handleAddGalleryPhoto(e) {
+    const f = e.target.files?.[0];
+    if (!f || !bizRow?.id) return;
+    if (gallery.length >= 4) { setPhotoErr('Up to 4 gallery photos.'); return; }
+    setPhotoErr(''); setUploadingGallery(true);
+    const { url, error } = await uploadPhotoFile(f, `gallery-${gallery.length}`);
+    setUploadingGallery(false);
+    if (error) { setPhotoErr('Gallery photo upload failed. ' + error); return; }
+    const next = [...gallery, url];
+    setGallery(next);
+    const res = await adminPatchBusiness({ gallery: next });
+    if (res.error) setPhotoErr('Uploaded but businesses gallery update failed: ' + res.error);
+  }
+  async function removeGalleryPhoto(idx) {
+    if (!bizRow?.id) return;
+    const next = gallery.filter((_, i) => i !== idx);
+    setGallery(next);
+    const res = await adminPatchBusiness({ gallery: next });
+    if (res.error) setPhotoErr('Gallery update failed: ' + res.error);
+  }
+
+  function toggleTag(t) {
+    setTags(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]);
+  }
+  function addCustomTag() {
+    const t = customTag.trim();
+    if (!t) return;
+    if (!tags.includes(t)) setTags(prev => [...prev, t]);
+    setCustomTag('');
+  }
+
+  async function saveEnrichment() {
+    if (!bizRow?.id) return;
+    setEnrichmentSaving(true);
+    setEnrichmentMsg('');
+    const res = await adminPatchBusiness({
+      description: description || null,
+      address: address || null,
+      tags: Array.isArray(tags) ? tags : [],
+    });
+    setEnrichmentSaving(false);
+    setEnrichmentMsg(res.error ? `Save failed: ${res.error}` : 'Saved.');
+  }
+
+  async function saveOwnershipTransfer() {
+    if (!bizRow?.id) return;
+    const nextEmail = String(partnerEmail || '').trim().toLowerCase();
+    const currentEmail = String(bizRow.email || '').trim().toLowerCase();
+
+    if (!nextEmail) {
+      setTransferMsg('Partner email cannot be blank.');
+      return;
+    }
+    // Trivial email shape check — anything reaching the auth layer will get
+    // Supabase's validation on top. Just catch obvious typos here.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail)) {
+      setTransferMsg('That does not look like a valid email address.');
+      return;
+    }
+    if (nextEmail === currentEmail) {
+      setTransferMsg('That is already the current partner email.');
+      return;
+    }
+
+    const ok = window.confirm(
+      `Transfer ownership of this listing to ${nextEmail}?\n\n` +
+      `You will lose access to it in the partner portal and the magic link will go to this address.\n\n` +
+      `Current owner: ${currentEmail || '(none)'}\n` +
+      `New owner:     ${nextEmail}`
+    );
+    if (!ok) return;
+
+    setTransferSaving(true);
+    setTransferMsg('');
+    // Bundle contact_name in the same patch so the wizard's welcome copy
+    // reads correctly on the partner's first visit. adminPatchBusiness
+    // whitelists both columns.
+    const patch = { email: nextEmail };
+    const cleanContact = String(partnerContactName || '').trim();
+    if (cleanContact !== String(bizRow.contact_name || '').trim()) {
+      patch.contact_name = cleanContact || null;
+    }
+    const res = await adminPatchBusiness(patch);
+    setTransferSaving(false);
+
+    if (res.error) { setTransferMsg(`Transfer failed: ${res.error}`); return; }
+
+    // Reflect the new email locally so the magic link section immediately
+    // uses it, and refetch the businesses list so the dropdown label + a
+    // future reload stay in sync.
+    setBizRow(prev => prev ? { ...prev, email: nextEmail, user_id: null, contact_name: cleanContact || null } : prev);
+    setBusinesses(prev => prev.map(b => b.id === bizRow.id ? { ...b, email: nextEmail, user_id: null, contact_name: cleanContact || null } : b));
+    // Wipe any previously-generated link since it was for the old email.
+    setLinkResult(null); setLinkError(''); setLinkCopied(false);
+    setTransferMsg(`Ownership transferred to ${nextEmail}. Generate a magic link below to hand off.`);
+  }
+
+  async function generateMagicLink() {
+    if (!bizRow?.id) return;
+    setLinkGenerating(true);
+    setLinkError('');
+    setLinkResult(null);
+    setLinkCopied(false);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-magic-link', {
+        body: { business_id: bizRow.id },
+      });
+      if (error) { setLinkError(error.message || 'Function invoke failed.'); return; }
+      if (data?.error) { setLinkError(data.error); return; }
+      if (!data?.magic_link) { setLinkError('No link returned.'); return; }
+      setLinkResult(data);
+    } catch (e) {
+      setLinkError(e?.message || 'Failed to generate link.');
+    } finally {
+      setLinkGenerating(false);
+    }
+  }
+
+  async function copyLink() {
+    if (!linkResult?.magic_link) return;
+    try { await navigator.clipboard.writeText(linkResult.magic_link); setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); }
+    catch { /* clipboard blocked — user can copy manually */ }
+  }
+
+  async function runExtraction() {
+    setExtractError('');
+    setCreateResult(null);
+    if (!businessId) { setExtractError('Pick a business first.'); return; }
+    if (inputMode === 'text' && !text.trim()) { setExtractError('Paste some text.'); return; }
+    if (inputMode === 'file' && !file) { setExtractError('Choose a file.'); return; }
+
+    setExtracting(true);
+    try {
+      let payload = { business_id: businessId, business_type: bizRow?.business_type || bizRow?.category || null };
+      if (inputMode === 'text') {
+        payload = { ...payload, input_kind: 'text', text };
+      } else {
+        const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+        const b64 = await fileToBase64(file);
+        payload = {
+          ...payload,
+          input_kind: isPdf ? 'pdf' : 'image',
+          file_media_type: file.type || (isPdf ? 'application/pdf' : 'image/jpeg'),
+          file_base64: b64,
+        };
+      }
+      const { data, error } = await supabase.functions.invoke('extract-sessions', { body: payload });
+      if (error) { setExtractError(error.message || 'Extraction failed.'); return; }
+      if (data?.error) { setExtractError(data.error); return; }
+      const sessions = Array.isArray(data?.result?.sessions) ? data.result.sessions : [];
+      // Append to whatever is already in the review table so existing
+      // sessions loaded from the DB stay visible. Extracted rows are tagged
+      // _origin='extracted' so the save path knows they are new and need
+      // to be slot-expanded on a listing that is already active.
+      const newRows = sessions.map((s, i) => ({
+        ...s,
+        _rid: `extracted_${Date.now()}_${i}`,
+        _origin: 'extracted',
+      }));
+      setRows(prev => [...prev, ...newRows]);
+    } catch (e) {
+      setExtractError(e?.message || 'Extraction failed.');
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  function updateRow(rid, patch) {
+    setRows(prev => prev.map(r => r._rid === rid ? { ...r, ...patch } : r));
+  }
+  function updateRowSchedule(rid, idx, patch) {
+    setRows(prev => prev.map(r => {
+      if (r._rid !== rid) return r;
+      const sched = Array.isArray(r.schedule) ? r.schedule.slice() : [];
+      sched[idx] = { ...sched[idx], ...patch };
+      return { ...r, schedule: sched };
+    }));
+  }
+  function addScheduleEntry(rid) {
+    setRows(prev => prev.map(r => {
+      if (r._rid !== rid) return r;
+      const sched = Array.isArray(r.schedule) ? r.schedule.slice() : [];
+      sched.push({ day: 'mon', time: '09:00' });
+      return { ...r, schedule: sched };
+    }));
+  }
+  function removeScheduleEntry(rid, idx) {
+    setRows(prev => prev.map(r => {
+      if (r._rid !== rid) return r;
+      const sched = Array.isArray(r.schedule) ? r.schedule.slice() : [];
+      sched.splice(idx, 1);
+      return { ...r, schedule: sched };
+    }));
+  }
+  function deleteRow(rid) { setRows(prev => prev.filter(r => r._rid !== rid)); }
+  function addBlankRow(kind) {
+    setRows(prev => [...prev, {
+      _rid: `manual_${Date.now()}_${prev.length}`,
+      _origin: 'new',
+      name: '',
+      kind,
+      duration_minutes: 60,
+      price_eur: null,
+      capacity: kind === 'class' ? 10 : 1,
+      description: null,
+      schedule: kind === 'class' ? [{ day:'mon', time:'09:00' }] : null,
+      confidence_flags: [],
+    }]);
+  }
+
+  // A row blocks submission if it has no name, no price, or (for class kind)
+  // no capacity / no valid schedule entry.
+  function blockingIssues(r) {
+    const issues = [];
+    if (!String(r.name || '').trim()) issues.push('name');
+    if (r.price_eur == null || Number(r.price_eur) <= 0) issues.push('price');
+    if (r.kind === 'class') {
+      if (r.capacity == null || Number(r.capacity) < 1) issues.push('capacity');
+      const sched = normaliseSchedule(r.schedule);
+      if (sched.length === 0) issues.push('schedule');
+    }
+    return issues;
+  }
+
+  const canSubmit = rows.length > 0 && rows.every(r => blockingIssues(r).length === 0);
+
+  async function runCreation() {
+    if (!canSubmit || !bizRow) return;
+    setCreating(true);
+    setCreateResult(null);
+    const errors = [];
+    let classSessionsTotal = 0;
+    let appointmentOfferingsTotal = 0;
+    let slotRowsInserted = 0;
+
+    try {
+      // The review table is the source of truth. On save we REPLACE
+      // businesses.slots and session_offerings with what the admin sees,
+      // then slot-expand only rows tagged _origin !== 'existing'
+      // (extracted or manually added) so the admin can't accidentally
+      // double-book weeks of slot rows when editing.
+      const { data: getData, error: getErr } = await supabase.functions.invoke('admin-businesses', {
+        body: { op: 'get', business_id: bizRow.id },
+      });
+      if (getErr) throw new Error(`admin-businesses get invoke failed: ${getErr.message}`);
+      if (getData?.error) throw new Error(getData.error);
+      const activeListingId = getData?.listing_id ?? null;
+
+      const nextSlots = [];
+      const nextOfferings = [];
+      const newSlotEntriesForExpansion = [];
+
+      for (const r of rows) {
+        try {
+          const price = Math.max(1, Math.round(Number(r.price_eur)));
+          const dur = Number.isFinite(Number(r.duration_minutes)) && Number(r.duration_minutes) > 0
+            ? Math.round(Number(r.duration_minutes)) : null;
+          const name = String(r.name).trim();
+          const isNew = r._origin !== 'existing';
+
+          if (r.kind === 'class') {
+            const sched = normaliseSchedule(r.schedule);
+            // Group by time so one slot entry covers all days sharing that
+            // time, matching how the wizard writes rows and how
+            // notify-partner-status expects to read them.
+            const byTime = {};
+            for (const { day, time } of sched) {
+              if (!byTime[time]) byTime[time] = [];
+              if (!byTime[time].includes(day)) byTime[time].push(day);
+            }
+            for (const [time, days] of Object.entries(byTime)) {
+              const entry = {
+                id: `admsl${Date.now()}_${nextSlots.length}`,
+                name,
+                days,
+                time,
+                dur: dur ? `${dur} min` : '60 min',
+                spots: Math.max(1, Math.round(Number(r.capacity) || 1)),
+                cr: price,
+              };
+              nextSlots.push(entry);
+              if (isNew) newSlotEntriesForExpansion.push(entry);
+            }
+            classSessionsTotal += 1;
+          } else {
+            nextOfferings.push({
+              type: name,
+              length_min: dur || 60,
+              price_eur: price,
+            });
+            appointmentOfferingsTotal += 1;
+          }
+        } catch (e) {
+          errors.push({ name: r.name, error: e?.message || 'Row failed.' });
+        }
+      }
+
+      const upd = await adminPatchBusiness({
+        slots: nextSlots,
+        session_offerings: nextOfferings,
+      });
+      if (upd.error) throw new Error(`businesses update failed: ${upd.error}`);
+
+      // Only expand NEW class rows into concrete slots-table rows for the
+      // next 4 weeks. Existing rows already have slot-table rows from a
+      // prior save or from notify-partner-status.
+      if (newSlotEntriesForExpansion.length > 0 && activeListingId) {
+        const today = new Date();
+        const slotRows = [];
+        for (const sl of newSlotEntriesForExpansion) {
+          for (const day of sl.days) {
+            const target = DAY_IDX_ADMIN[day];
+            const curr = today.getDay();
+            const daysAhead = (target - curr + 7) % 7 || 7;
+            for (let week = 0; week < 4; week++) {
+              const d = new Date(today);
+              d.setDate(today.getDate() + daysAhead + week * 7);
+              slotRows.push({
+                name: sl.name,
+                date: d.toISOString().slice(0, 10),
+                time: sl.time,
+                dur: sl.dur,
+                spots: sl.spots,
+                credits: sl.cr,
+                acuity_type_id: null,
+              });
+            }
+          }
+        }
+        if (slotRows.length > 0) {
+          const { data: insData, error: insErr } = await supabase.functions.invoke('admin-businesses', {
+            body: { op: 'insert_slots', listing_id: activeListingId, slot_rows: slotRows },
+          });
+          if (insErr) errors.push({ name: '(slots insert)', error: insErr.message });
+          else if (insData?.error) errors.push({ name: '(slots insert)', error: insData.error });
+          else slotRowsInserted = insData?.inserted || slotRows.length;
+        }
+      }
+
+      // Re-tag every row as _origin='existing' now that it has been saved,
+      // so a subsequent Save doesn't slot-expand it again. Also rebuild
+      // stable _rid values so the review table stays in sync.
+      setRows(prev => prev.map((r, i) => ({
+        ...r,
+        _origin: 'existing',
+        _rid: r._rid?.startsWith('existing_') ? r._rid : `existing_saved_${Date.now()}_${i}`,
+      })));
+
+      setCreateResult({
+        classSessionsAdded: classSessionsTotal,
+        appointmentOfferingsAdded: appointmentOfferingsTotal,
+        slotRowsInserted,
+        listingActive: !!activeListingId,
+        errors,
+      });
+    } catch (e) {
+      setCreateResult({ classSessionsAdded: classSessionsTotal, appointmentOfferingsAdded: appointmentOfferingsTotal, slotRowsInserted, errors: [...errors, { name: '(fatal)', error: e?.message || String(e) }] });
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  // ── Styles: plain, functional, no brand ──
+  const S = {
+    page: { maxWidth: 1100, margin: '32px auto', padding: '0 20px', fontFamily: 'system-ui, sans-serif', color: '#111' },
+    h1: { fontSize: 22, fontWeight: 700, margin: '0 0 4px' },
+    sub: { fontSize: 13, color: '#555', margin: '0 0 20px' },
+    card: { border: '1px solid #ddd', borderRadius: 6, padding: 16, marginBottom: 20, background: '#fff' },
+    label: { display: 'block', fontSize: 12, fontWeight: 600, color: '#333', margin: '0 0 6px' },
+    input: { width: '100%', padding: '8px 10px', border: '1px solid #ccc', borderRadius: 4, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' },
+    btn: { padding: '8px 16px', background: '#111', color: '#fff', border: 'none', borderRadius: 4, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' },
+    btnGhost: { padding: '8px 16px', background: '#fff', color: '#111', border: '1px solid #ccc', borderRadius: 4, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' },
+    btnDanger: { padding: '4px 8px', background: '#fff', color: '#a00', border: '1px solid #a00', borderRadius: 4, fontSize: 11, cursor: 'pointer' },
+    flag: { display: 'inline-block', padding: '2px 6px', background: '#fff3cd', color: '#856404', border: '1px solid #ffeaa7', borderRadius: 3, fontSize: 11, marginRight: 4, marginBottom: 2 },
+    blockingChip: { display: 'inline-block', padding: '2px 6px', background: '#f8d7da', color: '#721c24', border: '1px solid #f5c6cb', borderRadius: 3, fontSize: 11, marginRight: 4 },
+    err: { padding: 10, background: '#fee', border: '1px solid #fbb', borderRadius: 4, fontSize: 13, color: '#a00', margin: '10px 0' },
+    ok: { padding: 10, background: '#e7f5e7', border: '1px solid #a3d3a3', borderRadius: 4, fontSize: 13, color: '#155724', margin: '10px 0' },
+    tbl: { width: '100%', borderCollapse: 'collapse', fontSize: 12 },
+    th: { textAlign: 'left', padding: 6, borderBottom: '2px solid #333', fontSize: 11, fontWeight: 700, background: '#f5f5f5' },
+    td: { padding: 6, borderBottom: '1px solid #eee', verticalAlign: 'top' },
+  };
+
+  // ── Sign-in gate ──
+  // The tool is unusable without a signed-in session because the edge
+  // functions reject calls from anon-key JWTs. Show a clear prompt here so
+  // the user doesn't get generic 403s in DevTools.
+  if (!authReady) {
+    return (
+      <div style={{ maxWidth: 500, margin: '80px auto', padding: '0 20px', fontFamily: 'system-ui, sans-serif', color: '#555', fontSize: 13 }}>Loading...</div>
+    );
+  }
+  if (!authUserId) {
+    return (
+      <div style={{ maxWidth: 600, margin: '80px auto', padding: '32px', fontFamily: 'system-ui, sans-serif', color: '#111', border: '1px solid #ddd', borderRadius: 6, background: '#fff' }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 12px' }}>Admin: sign in required</h1>
+        <p style={{ fontSize: 13, color: '#555', margin: '0 0 12px', lineHeight: 1.5 }}>The admin tool needs an authenticated session. The edge functions match your auth uid against an allowlist server-side and reject anon-key JWTs.</p>
+        <p style={{ fontSize: 13, color: '#555', margin: '0 0 12px', lineHeight: 1.5 }}>Sign in via your usual customer or partner flow (open <code>/</code> or <code>/?portal=business</code> in another tab), then return here.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={S.page}>
+      <h1 style={S.h1}>Admin: AI-assisted partner setup</h1>
+      <p style={S.sub}>Signed in as <strong>{authEmail || authUserId}</strong>. Upload a studio timetable or price list. Extract sessions with Claude. Review, edit, and write into the selected business.</p>
+
+      {/* ── Step 1: Input ── */}
+      <div style={S.card}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>1. Input</h2>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={S.label}>Target business</label>
+          <select value={businessId} onChange={e => setBusinessId(e.target.value)} style={S.input}>
+            <option value="">— pick a business —</option>
+            {businesses.map(b => (
+              <option key={b.id} value={b.id}>
+                {b.name} (id {b.id}, {b.business_type || b.category || 'unknown type'}, {b.status})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={S.label}>Input mode</label>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <label style={{ fontSize: 13 }}>
+              <input type="radio" name="inputMode" checked={inputMode === 'file'} onChange={() => setInputMode('file')} /> File (image or PDF)
+            </label>
+            <label style={{ fontSize: 13 }}>
+              <input type="radio" name="inputMode" checked={inputMode === 'text'} onChange={() => setInputMode('text')} /> Pasted text
+            </label>
+          </div>
+        </div>
+
+        {inputMode === 'file' ? (
+          <div style={{ marginBottom: 12 }}>
+            <label style={S.label}>File</label>
+            <input type="file" accept="image/jpeg,image/png,application/pdf" onChange={e => setFile(e.target.files?.[0] || null)} />
+            {file && <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>{file.name} ({Math.round(file.size / 1024)} KB)</div>}
+          </div>
+        ) : (
+          <div style={{ marginBottom: 12 }}>
+            <label style={S.label}>Timetable text</label>
+            <textarea rows={8} value={text} onChange={e => setText(e.target.value)} style={{ ...S.input, fontFamily: 'ui-monospace, monospace', resize: 'vertical' }} placeholder="Paste the studio's timetable or price list here."/>
+          </div>
+        )}
+
+        <button onClick={runExtraction} disabled={extracting} style={{ ...S.btn, opacity: extracting ? 0.6 : 1 }}>
+          {extracting ? 'Extracting...' : 'Extract sessions'}
+        </button>
+
+        {extractError && <div style={S.err}>{extractError}</div>}
+      </div>
+
+      {/* ── Step 2: Review ── */}
+      {rows.length > 0 && (
+        <div style={S.card}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>2. Review and edit</h2>
+          {(() => {
+            const existingCount = rows.filter(r => r._origin === 'existing').length;
+            const newCount = rows.length - existingCount;
+            return (
+              <p style={{ fontSize: 12, color: '#555', margin: '0 0 12px' }}>
+                {existingCount} already saved on this business{newCount > 0 ? `, ${newCount} new to save` : ''}. Amber flags are model uncertainty. Red chips block save until filled. Save REPLACES the business slots and offerings with what is shown here.
+              </p>
+            );
+          })()}
+
+          <table style={S.tbl}>
+            <thead>
+              <tr>
+                <th style={S.th}>Name</th>
+                <th style={S.th}>Kind</th>
+                <th style={S.th}>Duration (min)</th>
+                <th style={S.th}>Credits (EUR)</th>
+                <th style={S.th}>Capacity</th>
+                <th style={S.th}>Schedule</th>
+                <th style={S.th}>Flags</th>
+                <th style={S.th}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => {
+                const issues = blockingIssues(r);
+                return (
+                  <tr key={r._rid} style={{ background: issues.length > 0 ? '#fdf4f4' : (r._origin === 'existing' ? '#f7f9f7' : '#fff') }}>
+                    <td style={S.td}>
+                      <input value={r.name || ''} onChange={e => updateRow(r._rid, { name: e.target.value })} style={S.input}/>
+                      <div style={{ fontSize: 10, color: r._origin === 'existing' ? '#155724' : '#856404', marginTop: 4, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        {r._origin === 'existing' ? 'saved' : r._origin === 'extracted' ? 'extracted' : 'new'}
+                      </div>
+                      {r.description && <div style={{ fontSize: 11, color: '#666', marginTop: 4 }}>{r.description}</div>}
+                    </td>
+                    <td style={S.td}>
+                      <select value={r.kind} onChange={e => updateRow(r._rid, { kind: e.target.value, schedule: e.target.value === 'appointment' ? null : (r.schedule || [{ day:'mon', time:'09:00' }]) })} style={S.input}>
+                        <option value="class">class</option>
+                        <option value="appointment">appointment</option>
+                      </select>
+                    </td>
+                    <td style={S.td}>
+                      <input type="number" min="1" value={r.duration_minutes ?? ''} onChange={e => updateRow(r._rid, { duration_minutes: e.target.value === '' ? null : Number(e.target.value) })} style={{ ...S.input, width: 70 }}/>
+                    </td>
+                    <td style={S.td}>
+                      <input type="number" min="1" value={r.price_eur ?? ''} onChange={e => updateRow(r._rid, { price_eur: e.target.value === '' ? null : Number(e.target.value) })} style={{ ...S.input, width: 70 }}/>
+                    </td>
+                    <td style={S.td}>
+                      {r.kind === 'class' ? (
+                        <input type="number" min="1" value={r.capacity ?? ''} onChange={e => updateRow(r._rid, { capacity: e.target.value === '' ? null : Number(e.target.value) })} style={{ ...S.input, width: 60 }}/>
+                      ) : (
+                        <span style={{ fontSize: 11, color: '#666' }}>n/a (1-to-1)</span>
+                      )}
+                    </td>
+                    <td style={S.td}>
+                      {r.kind === 'class' ? (
+                        <div>
+                          {(Array.isArray(r.schedule) ? r.schedule : []).map((s, i) => (
+                            <div key={i} style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                              <select value={s?.day || 'mon'} onChange={e => updateRowSchedule(r._rid, i, { day: e.target.value })} style={{ ...S.input, width: 60 }}>
+                                {['mon','tue','wed','thu','fri','sat','sun'].map(d => <option key={d} value={d}>{d}</option>)}
+                              </select>
+                              <input type="time" value={s?.time || '09:00'} onChange={e => updateRowSchedule(r._rid, i, { time: e.target.value })} style={{ ...S.input, width: 90 }}/>
+                              <button onClick={() => removeScheduleEntry(r._rid, i)} style={{ ...S.btnDanger, padding: '2px 6px' }}>x</button>
+                            </div>
+                          ))}
+                          <button onClick={() => addScheduleEntry(r._rid)} style={{ ...S.btnGhost, padding: '3px 8px', fontSize: 11 }}>+ time</button>
+                          <div style={{ fontSize: 11, color: '#555', marginTop: 4 }}>{scheduleSummary(r.schedule)}</div>
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: 11, color: '#666' }}>on request</span>
+                      )}
+                    </td>
+                    <td style={S.td}>
+                      {(r.confidence_flags || []).map((f, i) => <span key={i} style={S.flag}>{f}</span>)}
+                      {issues.length > 0 && <div style={{ marginTop: 4 }}>{issues.map(x => <span key={x} style={S.blockingChip}>missing {x}</span>)}</div>}
+                    </td>
+                    <td style={S.td}>
+                      <button onClick={() => deleteRow(r._rid)} style={S.btnDanger}>delete</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+            <button onClick={() => addBlankRow('class')} style={S.btnGhost}>+ Add class row</button>
+            <button onClick={() => addBlankRow('appointment')} style={S.btnGhost}>+ Add appointment row</button>
+          </div>
+
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid #eee', display: 'flex', gap: 12, alignItems: 'center' }}>
+            <button onClick={runCreation} disabled={!canSubmit || creating} style={{ ...S.btn, opacity: (!canSubmit || creating) ? 0.4 : 1, cursor: (!canSubmit || creating) ? 'not-allowed' : 'pointer' }}>
+              {creating ? 'Saving...' : 'Save sessions'}
+            </button>
+            {!canSubmit && <span style={{ fontSize: 12, color: '#a00' }}>Resolve every red chip before saving.</span>}
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 3: Result ── */}
+      {createResult && (
+        <div style={S.card}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 12px' }}>3. Sessions result</h2>
+          <div style={S.ok}>
+            Business now has {createResult.classSessionsAdded} class session type(s) and {createResult.appointmentOfferingsAdded} appointment offering(s).{' '}
+            {createResult.listingActive
+              ? (createResult.slotRowsInserted > 0
+                  ? `Inserted ${createResult.slotRowsInserted} new slot rows for the next 4 weeks. Edits to already-saved rows do not touch the slots table until the next approval cycle.`
+                  : 'No new rows to slot-expand; existing bookable slots left untouched.')
+              : 'Listing not active yet, so no slot rows were inserted. Slot expansion will run on first approval.'}
+          </div>
+          {createResult.errors.length > 0 && (
+            <div style={S.err}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Errors:</div>
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                {createResult.errors.map((e, i) => <li key={i}>{e.name}: {e.error}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Step 4: Enrich business ── */}
+      {bizRow && (
+        <div style={S.card}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 4px' }}>4. Enrich business</h2>
+          <p style={{ fontSize: 12, color: '#555', margin: '0 0 12px' }}>Description, address, tags, and photos. Terms acceptance and payout details are deliberately excluded and remain the partner's job in the wizard.</p>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={S.label}>Description</label>
+            <textarea rows={5} value={description} onChange={e => setDescription(e.target.value)} style={{ ...S.input, resize: 'vertical' }} placeholder="What the studio offers, atmosphere, unique selling points."/>
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={S.label}>Address</label>
+            <input value={address} onChange={e => setAddress(e.target.value)} style={S.input} placeholder="Street, town, postcode."/>
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={S.label}>Tags (amenities and offerings)</label>
+            {ADMIN_AMENITY_GROUPS.map(g => (
+              <div key={g.name} style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#666', margin: '0 0 4px' }}>{g.name}</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {g.items.map(item => {
+                    const on = tags.includes(item);
+                    return (
+                      <button key={item} onClick={() => toggleTag(item)} style={{ padding: '3px 8px', fontSize: 11, border: '1px solid ' + (on ? '#111' : '#ccc'), background: on ? '#111' : '#fff', color: on ? '#fff' : '#111', borderRadius: 3, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        {item}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <input value={customTag} onChange={e => setCustomTag(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomTag(); } }} placeholder="Custom tag" style={{ ...S.input, width: 200 }}/>
+              <button onClick={addCustomTag} style={S.btnGhost}>Add</button>
+            </div>
+            {tags.some(t => !ADMIN_AMENITY_OPTIONS.includes(t)) && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#666', margin: '0 0 4px' }}>Custom tags on this row</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                  {tags.filter(t => !ADMIN_AMENITY_OPTIONS.includes(t)).map(t => (
+                    <span key={t} style={{ padding: '3px 8px', fontSize: 11, background: '#f5f5f5', border: '1px solid #ccc', borderRadius: 3 }}>
+                      {t} <button onClick={() => toggleTag(t)} style={{ background: 'none', border: 'none', color: '#a00', cursor: 'pointer', padding: 0, marginLeft: 4 }}>x</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={S.label}>Primary photo</label>
+            {primaryImg && <div style={{ marginBottom: 6 }}><img src={primaryImg} alt="Primary" style={{ maxWidth: 220, maxHeight: 160, border: '1px solid #ddd', borderRadius: 4 }}/></div>}
+            <input type="file" accept="image/jpeg,image/png" onChange={handlePrimaryPhotoChange} disabled={uploadingPrimary}/>
+            {uploadingPrimary && <span style={{ marginLeft: 8, fontSize: 12, color: '#555' }}>uploading...</span>}
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={S.label}>Gallery ({gallery.length}/4)</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+              {gallery.map((url, i) => (
+                <div key={i} style={{ position: 'relative' }}>
+                  <img src={url} alt={`Gallery ${i+1}`} style={{ width: 120, height: 90, objectFit: 'cover', border: '1px solid #ddd', borderRadius: 4 }}/>
+                  <button onClick={() => removeGalleryPhoto(i)} style={{ position: 'absolute', top: 2, right: 2, background: '#fff', color: '#a00', border: '1px solid #a00', borderRadius: 3, fontSize: 10, padding: '1px 4px', cursor: 'pointer' }}>x</button>
+                </div>
+              ))}
+            </div>
+            {gallery.length < 4 && (
+              <input type="file" accept="image/jpeg,image/png" onChange={handleAddGalleryPhoto} disabled={uploadingGallery}/>
+            )}
+            {uploadingGallery && <span style={{ marginLeft: 8, fontSize: 12, color: '#555' }}>uploading...</span>}
+          </div>
+
+          {photoErr && <div style={S.err}>{photoErr}</div>}
+
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 12 }}>
+            <button onClick={saveEnrichment} disabled={enrichmentSaving} style={{ ...S.btn, opacity: enrichmentSaving ? 0.6 : 1 }}>
+              {enrichmentSaving ? 'Saving...' : 'Save description, address, tags'}
+            </button>
+            {enrichmentMsg && <span style={{ fontSize: 12, color: enrichmentMsg.startsWith('Save failed') ? '#a00' : '#155724' }}>{enrichmentMsg}</span>}
+          </div>
+          <p style={{ fontSize: 11, color: '#888', margin: '8px 0 0' }}>Photos save immediately on upload/remove. The button above persists description, address and tags in one shot.</p>
+        </div>
+      )}
+
+      {/* ── Step 5: Ownership handoff ── */}
+      {bizRow && (() => {
+        const currentEmail = String(bizRow.email || '').trim().toLowerCase();
+        const isYours = !!authEmail && currentEmail === String(authEmail).toLowerCase();
+        const nextEmail = String(partnerEmail || '').trim().toLowerCase();
+        const emailDirty = !!nextEmail && nextEmail !== currentEmail;
+        // Email change is what triggers the ownership transfer confirm
+        // dialog, but the button also needs to be enabled if only the
+        // contact_name changed (so admins can add a name without having
+        // to first change the email).
+        const isDirty = emailDirty;
+        return (
+          <div style={S.card}>
+            <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 4px' }}>5. Ownership handoff</h2>
+            <p style={{ fontSize: 12, color: '#555', margin: '0 0 12px' }}>Change the partner email BEFORE generating the magic link. Rows created via this tool default to the admin email, so without a handoff the magic link would sign you into your own portfolio instead of the partner.</p>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={S.label}>Current owner on file</label>
+              <div style={{ padding: '8px 10px', border: '1px solid #ddd', borderRadius: 4, background: '#f5f5f5', fontSize: 13, fontFamily: 'ui-monospace, monospace' }}>
+                {bizRow.email || '(none set)'}
+                {isYours && (
+                  <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#856404', letterSpacing: 0.5, textTransform: 'uppercase' }}>this is your email</span>
+                )}
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={S.label}>Partner contact name</label>
+              <input
+                type="text"
+                value={partnerContactName}
+                onChange={e => setPartnerContactName(e.target.value)}
+                placeholder="Maria (used in Welcome to Wello, Maria)"
+                style={S.input}
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0' }}>First name is fine. Falls into every "hello X" copy the partner sees.</p>
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label style={S.label}>Partner email</label>
+              <input
+                type="email"
+                value={partnerEmail}
+                onChange={e => setPartnerEmail(e.target.value)}
+                placeholder="owner@studioname.com"
+                style={S.input}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <button
+                onClick={saveOwnershipTransfer}
+                disabled={!isDirty || transferSaving}
+                style={{ ...S.btn, opacity: (!isDirty || transferSaving) ? 0.4 : 1, cursor: (!isDirty || transferSaving) ? 'not-allowed' : 'pointer' }}
+              >
+                {transferSaving ? 'Transferring...' : 'Transfer ownership'}
+              </button>
+              {!isDirty && !transferMsg && <span style={{ fontSize: 12, color: '#888' }}>Enter a different email to enable the transfer.</span>}
+              {transferMsg && (
+                <span style={{ fontSize: 12, color: transferMsg.startsWith('Transfer failed') || transferMsg.startsWith('Partner email') || transferMsg.startsWith('That') ? '#a00' : '#155724' }}>
+                  {transferMsg}
+                </span>
+              )}
+            </div>
+            <p style={{ fontSize: 11, color: '#888', margin: '8px 0 0' }}>Confirmation dialog runs before the write lands. On success the current owner loses SELECT/UPDATE access (RLS matches on email) and the previously-linked user_id is cleared so the outgoing owner cannot delete the row either.</p>
+          </div>
+        );
+      })()}
+
+      {/* ── Step 6: Handoff link ── */}
+      {bizRow && (() => {
+        const destinationEmail = String(bizRow.email || '').trim().toLowerCase();
+        const authEmailLc = String(authEmail || '').toLowerCase();
+        const linkStillGoesToYou = !!destinationEmail && destinationEmail === authEmailLc;
+        return (
+          <div style={S.card}>
+            <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 4px' }}>6. Handoff link</h2>
+            <p style={{ fontSize: 12, color: '#555', margin: '0 0 12px' }}>Generates a Supabase magic link that redirects to /?portal=business. Valid for 24 hours per Supabase defaults.</p>
+
+            <div style={{ marginBottom: 12, padding: 10, background: linkStillGoesToYou ? '#fff3cd' : '#f5f5f5', border: '1px solid ' + (linkStillGoesToYou ? '#ffeaa7' : '#ddd'), borderRadius: 4, fontSize: 13 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#333', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Link will be for</div>
+              <div style={{ fontFamily: 'ui-monospace, monospace' }}>{destinationEmail || '(no email on file)'}</div>
+              {linkStillGoesToYou && (
+                <div style={{ marginTop: 6, fontSize: 12, color: '#856404' }}>Warning: this is your own email. The link will sign you into your portfolio, not hand off to a partner. Transfer ownership in step 5 first.</div>
+              )}
+            </div>
+
+            <button
+              onClick={generateMagicLink}
+              disabled={linkGenerating || !destinationEmail}
+              style={{ ...S.btn, opacity: (linkGenerating || !destinationEmail) ? 0.4 : 1, cursor: (linkGenerating || !destinationEmail) ? 'not-allowed' : 'pointer' }}
+            >
+              {linkGenerating ? 'Generating...' : 'Generate magic link'}
+            </button>
+
+            {linkError && <div style={S.err}>{linkError}</div>}
+
+            {linkResult && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 12, color: '#555', marginBottom: 6 }}>
+                  For <strong>{linkResult.business_name}</strong> at <strong>{linkResult.email}</strong>
+                </div>
+                <textarea readOnly value={linkResult.magic_link} rows={3} style={{ ...S.input, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}/>
+                <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button onClick={copyLink} style={S.btnGhost}>Copy link</button>
+                  {linkCopied && <span style={{ fontSize: 12, color: '#155724' }}>Copied.</span>}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Partner-invite redirect. Called when a partner clicks the wello-domain
+// invite URL. Exchanges the ?invite=CODE for a fresh Supabase magic link,
+// then redirects the browser to it. Shows a brief branded loading state so
+// the partner does not see a blank page mid-redirect.
+// ═══════════════════════════════════════════════════════════════
+function PartnerInviteRedirect() {
+  const [status, setStatus] = useState("redirecting"); // redirecting | error
+  const [errorMsg, setErrorMsg] = useState("");
+  const [businessName, setBusinessName] = useState("");
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("invite") || "";
+    if (!code) { setStatus("error"); setErrorMsg("This invite link is missing its code."); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('redeem-partner-invite', {
+          body: { code },
+        });
+        if (cancelled) return;
+        if (error) { setStatus("error"); setErrorMsg(error.message || "We couldn't verify this invite. Ask your Wello contact for a fresh link."); return; }
+        if (data?.error) { setStatus("error"); setErrorMsg(data.error); return; }
+        const magicLink = data?.magic_link;
+        if (!magicLink) { setStatus("error"); setErrorMsg("We couldn't finish signing you in. Ask your Wello contact for a fresh link."); return; }
+        if (data?.business_name) setBusinessName(data.business_name);
+        // Small delay so the loading UI is visible for at least a beat —
+        // otherwise a fast redirect looks like a page flash.
+        setTimeout(() => { window.location.href = magicLink; }, 250);
+      } catch (e) {
+        if (cancelled) return;
+        setStatus("error");
+        setErrorMsg((e && e.message) || "We couldn't verify this invite.");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <div style={{minHeight:"100vh",background:"#FBF9F4",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 20px"}}>
+      <div style={{maxWidth:480,width:"100%",background:"#fff",border:"1px solid rgba(195,200,188,0.5)",borderRadius:14,padding:"36px 28px",boxShadow:"0 6px 24px rgba(33,60,24,0.08)",textAlign:"center"}}>
+        <div style={{width:56,height:56,borderRadius:"50%",background:"#CAECBA",display:"inline-flex",alignItems:"center",justifyContent:"center",margin:"0 auto 18px",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:22,fontWeight:800,color:"#213C18"}}>◈</div>
+        {status === "redirecting" ? (
+          <>
+            <h1 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:20,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.4px"}}>
+              {businessName ? `Signing you in as ${businessName}` : "Signing you in"}
+            </h1>
+            <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#54584F",lineHeight:1.6,margin:"0 0 8px"}}>Just a moment while we verify your invite.</p>
+            <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"#A3B18A",margin:0}}>You will land on your Wello partner dashboard.</p>
+          </>
+        ) : (
+          <>
+            <h1 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:20,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.4px"}}>Invite link problem</h1>
+            <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#54584F",lineHeight:1.6,margin:"0 0 14px"}}>{errorMsg}</p>
+            <a href="https://www.wello-wellness.com" style={{display:"inline-block",padding:"11px 22px",background:"#213C18",color:"#fff",textDecoration:"none",borderRadius:999,fontFamily:"'Manrope',system-ui,sans-serif",fontSize:12,fontWeight:700}}>Back to Wello</a>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════
 export default function App() {
@@ -9396,6 +10885,15 @@ export default function App() {
     // a successful gift checkout. Open the gift page which will render the
     // success state from URL params + sessionStorage.
     if(params.get("gift")) return "gift";
+    // ?admin=setup opens the internal AI-assisted partner setup tool. Gated
+    // by VITE_ADMIN_SETUP_ENABLED so it can't render in prod builds where
+    // the flag is off. Not linked anywhere in the public UI.
+    if(params.get("admin")==="setup" && import.meta.env.VITE_ADMIN_SETUP_ENABLED === "true") return "adminSetup";
+    // ?invite=<code> — partner-onboarding invite link generated by the
+    // admin tool. The code is exchanged for a fresh Supabase magic link
+    // via redeem-partner-invite, then the browser is redirected. Loading
+    // UI lives in PartnerInviteRedirect.
+    if(params.get("invite")) return "partnerInvite";
     return "home";
   });
   // ?claim=WELLO-XXXX-XXXX from the recipient email — read once so RedeemPage
@@ -10246,6 +11744,8 @@ export default function App() {
             : <GiftPage authSession={authSession} profile={profile} onSetView={setView} onGiftCreated={(g)=>setLastGift(g)}/>
           )}
           {view==="redeem"     &&<RedeemPage authSession={authSession} prefilledCode={prefilledClaimCode} onSetView={setView} onOpenSignIn={()=>setAuthModal({mode:"signin"})} onCreditsAdded={(newBal)=>{ setCredits(newBal); try { const url = new URL(window.location.href); url.searchParams.delete("claim"); window.history.replaceState({}, "", url.toString()); } catch { /* noop */ } setPrefilledClaimCode(""); }}/>}
+          {view==="adminSetup" &&<AdminSetupPage/>}
+          {view==="partnerInvite" &&<PartnerInviteRedirect/>}
         </div>
 
         {/* FOOTER — Stitch linen style */}
@@ -10347,7 +11847,12 @@ export default function App() {
         </div>
       )}
 
-      {selBiz   &&<BizPanel biz={selBiz}        onClose={()=>setSelBiz(null)}  onBook={onBook}/>}
+      {selBiz   &&<BizPanel biz={selBiz}        onClose={()=>setSelBiz(null)}  onBook={onBook}
+                     authSession={authSession} credits={credits}
+                     onOpenSignIn={()=>{setSelBiz(null);setAuthModal({mode:"signin"});}}
+                     onGotoCredits={()=>{setSelBiz(null);setView("credits");}}
+                     onBookingsChanged={()=>setBookingsVersion(v=>v+1)}
+                     showToast={showToast}/>}
       {bkData   &&<BookingModal biz={bkData.biz} slot={bkData.slot} onClose={()=>setBkData(null)} onConfirm={onConfirm} credits={credits} onBuyCredits={()=>{setBkData(null);setView("credits");}} profile={profile} authSession={authSession} onOpenSignIn={()=>{setBkData(null);setAuthModal({mode:"signin"});}}/>}
       {authModal&&<AuthModal initialMode={authModal.mode} onClose={()=>setAuthModal(null)} onSuccess={()=>setAuthModal(null)} onOpenTerms={()=>{setAuthModal(null);setView("terms");}}/>}
       <SyncEngine listings={listings} onUpdate={onSyncUpdate}/>

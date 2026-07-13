@@ -63,6 +63,31 @@ serve(async (req) => {
     if (booking.status === 'cancelled') return json({ error: 'This booking is already cancelled.' }, 409)
     if (booking.status === 'declined')  return json({ error: 'This booking was declined.' }, 409)
 
+    // Pending requests (instructor or venue) can be cancelled at any time
+    // for a full credit return. Because pending bookings never deducted
+    // credits, "full credit return" here means nothing to refund and no
+    // slot to release. We short-circuit the window check + refund path.
+    if (booking.status === 'pending_instructor' || booking.status === 'pending_venue') {
+      const { data: pUpdated, error: pUpdErr } = await supabase
+        .from('bookings')
+        .update({
+          status: 'cancelled',
+          venue_accept_token: null,
+          venue_decline_token: null,
+        })
+        .eq('id', booking.id)
+        .eq('status', booking.status)
+        .select('id')
+        .maybeSingle()
+      if (pUpdErr) {
+        console.error('cancel-booking: pending update failed', pUpdErr.message)
+        return json({ error: 'Could not cancel the request.' }, 500)
+      }
+      if (!pUpdated) return json({ error: 'Request was already actioned.' }, 409)
+      console.log(`cancel-booking: pending booking ${booking.id} cancelled by customer ${user.id}`)
+      return json({ success: true, credits_refunded: 0, window_hours: null, was_pending: true })
+    }
+
     // 2. Look up the business to find the category so we can pick the right
     // window (24h standard vs 48h private instructor).
     const { data: business, error: bizErr } = await supabase
