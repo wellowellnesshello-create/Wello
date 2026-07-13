@@ -5627,19 +5627,43 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     const dow = new Date(d + "T00:00:00").getDay(); // Sun=0..Sat=6
     return dow === 0 ? 6 : dow - 1; // Mon=0..Sun=6
   }
+  // Group recurring classes so the Schedule tab shows one card per
+  // (day, time, name) instead of 52 copies (once per calendar week of the
+  // 52-week expansion horizon). The card carries the NEXT upcoming
+  // instance's spots/booked so the partner sees how full their next
+  // class is, not a stale row from months ago.
   const CLS = isPreview
     ? previewCLS
-    : (dbSlots || []).map(s => ({
-        id:      s.id,
-        day:     weekdayIdxFromDate(s.date),
-        time:    s.time,
-        name:    s.name,
-        spots:   s.spots,
-        booked:  s.booked,
-        credits: s.credits,
-        dur:     s.dur,
-        live:    !s.paused,
-      }));
+    : (() => {
+        const rows = dbSlots || [];
+        const todayIso = new Date().toISOString().slice(0, 10);
+        // Only consider today-or-later instances so a partner mid-week
+        // does not see a "Mon" card showing last Monday's booked count.
+        // Sort ascending so the first-seen row per key is the earliest.
+        const upcoming = rows
+          .filter(s => (s.date || '') >= todayIso)
+          .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+        const seen = new Set();
+        const grouped = [];
+        for (const s of upcoming) {
+          const day = weekdayIdxFromDate(s.date);
+          const key = `${day}_${s.time}_${s.name}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          grouped.push({
+            id:      s.id,
+            day,
+            time:    s.time,
+            name:    s.name,
+            spots:   s.spots,
+            booked:  s.booked,
+            credits: s.credits,
+            dur:     s.dur,
+            live:    !s.paused,
+          });
+        }
+        return grouped;
+      })();
   // Preview-mode local mutation helpers (no DB writes; demo only).
   function setCLS(updater) {
     if (!isPreview) return; // real-partner CRUD goes through DB helpers
