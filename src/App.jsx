@@ -2651,7 +2651,15 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
   // areas. Lower-cased once per listing for efficiency.
   const q = search.trim().toLowerCase();
   const filtered = listings.filter(b => {
-    const mC = activeCat === "All" || b.cat === activeCat;
+    // Category filter: match the venue's primary category OR any of its
+    // per-session categories (populated on approval by notify-partner-
+    // status). This lets a multi-modality studio like Yoga Del Mar show
+    // up on both the Yoga filter (primary) and the Sound Bath filter
+    // (per-session override) without changing the marketplace card's
+    // theme.
+    const mC = activeCat === "All"
+      || b.cat === activeCat
+      || (Array.isArray(b.session_categories) && b.session_categories.includes(activeCat));
     const isPrivate = b.cat === "Private Instructor";
     const mL = activeLoc === "All Mallorca"
       || (isPrivate && Array.isArray(b.coverage_areas) && b.coverage_areas.includes(activeLoc))
@@ -7608,7 +7616,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
 
   const [slots, setSlots] = useState(bizData.slots || []);
   const [cr, setCr] = useState(bizData.cr ? String(bizData.cr) : "");
-  const [newSlot, setNewSlot] = useState({ name:"", days:[], time:"09:00", dur:"60 min", spots:10, cr:"" });
+  const [newSlot, setNewSlot] = useState({ name:"", days:[], time:"09:00", dur:"60 min", spots:10, cr:"", category:"" });
 
   // Private-instructor availability — kept separate from `slots` so the two
   // models don't tangle. Shape: [{ day: 'Mon', start: '09:00', end: '12:00' }, …]
@@ -7631,6 +7639,9 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
           type: o?.type || (bizData.category || ""),
           length_min: Number.isFinite(o?.length_min) && o.length_min > 0 ? o.length_min : 60,
           price_eur:  Number.isFinite(o?.price_eur)  && o.price_eur  > 0 ? o.price_eur  : (bizData.cr || 50),
+          // Optional per-offering category. Null / empty means inherit the
+          // venue's primary category (bizData.category).
+          category:   o?.category || '',
         }))
       : []
   );
@@ -7640,6 +7651,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
       type: bizData.category || "Yoga",
       length_min: 60,
       price_eur: bizData.cr || 50,
+      category: '',
     }]);
   }
   function updateOffering(idx, patch) {
@@ -7803,8 +7815,13 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
     // Private instructors are always 1-to-1 — force spots to 1 regardless of
     // whatever was in the (disabled) input.
     const spots = isPrivateInstructor ? 1 : newSlot.spots;
-    setSlots(s => [...s, { id:`sl${Date.now()}`, ...newSlot, spots, cr }]);
-    setNewSlot({ name:"", days:[], time:"09:00", dur:"60 min", spots: isPrivateInstructor ? 1 : 10, cr:"" });
+    // Category defaults to venue category — only persisted when the partner
+    // explicitly overrides so we can distinguish "no override" from "same
+    // as venue" and the marketplace filter picks up multi-cat studios.
+    const cleanCat = String(newSlot.category || '').trim();
+    const category = cleanCat && cleanCat !== bizData.category ? cleanCat : null;
+    setSlots(s => [...s, { id:`sl${Date.now()}`, ...newSlot, spots, cr, category }]);
+    setNewSlot({ name:"", days:[], time:"09:00", dur:"60 min", spots: isPrivateInstructor ? 1 : 10, cr:"", category:"" });
   }
 
   if (step===1) return (
@@ -8419,15 +8436,29 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
                    // notify-partner-status iterates over windows × offerings to
                    // build the bookable slot rows on approval. session_duration_min
                    // and cr still saved as fallbacks for any legacy paths.
+                   // Empty category strings map to null so "inherit venue"
+                   // is stored as absence rather than an empty override.
+                   const offeringsClean = sessionOfferings.map(o => ({
+                     type: o.type,
+                     length_min: o.length_min,
+                     price_eur: o.price_eur,
+                     category: (o.category && String(o.category).trim()) || null,
+                   }));
                    goNext({
                      availability_windows: availabilityWindows,
-                     session_offerings: sessionOfferings,
+                     session_offerings: offeringsClean,
                      session_duration_min: sessionDurationMin,
                      cr: parseInt(cr) || (sessionOfferings[0]?.price_eur ?? catAvg),
                      integration_request: intgRequest,
                    });
                  } else {
-                   goNext({ slots, integration_request: intgRequest });
+                   // Same normalisation for the studio slot path — strip
+                   // empty category strings to null.
+                   const slotsClean = slots.map(sl => ({
+                     ...sl,
+                     category: (sl.category && String(sl.category).trim()) || null,
+                   }));
+                   goNext({ slots: slotsClean, integration_request: intgRequest });
                  }
                }} label="Save & continue →"/>]}>
       {isPrivateInstructor && (
@@ -8578,7 +8609,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
               <p style={{fontFamily:F.body,fontSize:11,color:T.stone2,fontWeight:300,fontStyle:"italic",margin:"0 0 10px"}}>No offerings yet. Add at least one below.</p>
             )}
             {sessionOfferings.map((off, idx) => (
-              <div key={idx} style={{display:"grid",gridTemplateColumns:"1fr 110px 110px 32px",gap:8,alignItems:"center",marginBottom:8}}>
+              <div key={idx} style={{display:"grid",gridTemplateColumns:"1fr 110px 110px 130px 32px",gap:8,alignItems:"center",marginBottom:8}}>
                 <input value={off.type} onChange={e=>updateOffering(idx,{type:e.target.value})}
                   placeholder="e.g. Yoga"
                   style={{...INP,marginBottom:0}} onFocus={onFi} onBlur={onBl}/>
@@ -8592,6 +8623,16 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
                     onChange={e=>updateOffering(idx,{price_eur:parseInt(e.target.value,10)||0})}
                     style={{...INP,paddingLeft:22,marginBottom:0}} onFocus={onFi} onBlur={onBl}/>
                 </div>
+                {/* Per-offering category. Empty = inherit venue category
+                    (bizData.category). Used to surface a "Massage" offering
+                    on a Yoga studio in the Massage filter. */}
+                <select value={off.category || ''} onChange={e=>updateOffering(idx,{category:e.target.value})}
+                  style={{...INP,marginBottom:0}} onFocus={onFi} onBlur={onBl}>
+                  <option value="">Venue category</option>
+                  {CATS.filter(c => c !== 'All' && c !== bizData.category).map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
                 <button type="button" onClick={()=>removeOffering(idx)} aria-label="Remove offering"
                   style={{background:"transparent",border:"none",color:T.stone,fontSize:18,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>
               </div>
@@ -8652,6 +8693,21 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
             <label style={FL}>Name</label>
             <input value={newSlot.name} onChange={e=>setNewSlot(p=>({...p,name:e.target.value}))} placeholder="e.g. Morning class, Court hire, Open swim…"
               style={{...INP,marginBottom:12}} onFocus={onFi} onBlur={onBl}/>
+            {/* Per-session category. Studios that run multiple modalities
+                (yoga + sound healing + breathwork) use this so each
+                session surfaces in the correct marketplace filter without
+                changing the venue's primary theme. Empty = inherit venue
+                category. */}
+            <label style={FL}>Category</label>
+            <select value={newSlot.category || ''} onChange={e=>setNewSlot(p=>({...p,category:e.target.value}))} style={{...INP,marginBottom:4}} onFocus={onFi} onBlur={onBl}>
+              <option value="">Same as venue ({bizData.category || 'unset'})</option>
+              {CATS.filter(c => c !== 'All' && c !== bizData.category).map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            <p style={{fontFamily:F.body,fontSize:10,color:T.stone2,margin:'0 0 12px',lineHeight:1.4}}>
+              Pick a different category if this session is not the same as your venue's primary theme. Members filtering by this category will see this session.
+            </p>
             <label style={FL}>Days</label>
             <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:12}}>
               {DAYS.map(d=>(
@@ -8699,9 +8755,12 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
           {slots.length>0&&(
             <div style={{display:"flex",flexDirection:"column",gap:6}}>
               {slots.map(sl=>(
-                <div key={sl.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:T.paper,border:`1px solid ${T.border}`,borderRadius:6}}>
-                  <div>
+                <div key={sl.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:T.paper,border:`1px solid ${T.border}`,borderRadius:6,gap:8,flexWrap:"wrap"}}>
+                  <div style={{minWidth:0,flex:"1 1 200px"}}>
                     <span style={{fontFamily:F.body,fontSize:12,fontWeight:600,color:T.ink}}>{sl.name}</span>
+                    {sl.category && sl.category !== bizData.category && (
+                      <span style={{marginLeft:8,padding:"1px 7px",background:T.sageXL,color:T.sage,borderRadius:999,fontFamily:F.body,fontSize:9,fontWeight:700,letterSpacing:0.4,textTransform:"uppercase"}}>{sl.category}</span>
+                    )}
                     <span style={{fontFamily:F.body,fontSize:10,color:T.stone,marginLeft:8,fontWeight:300}}>{sl.days.join(", ")} · {sl.time} · {sl.dur} · {sl.spots} spots{sl.cr ? ` · ◈ ${sl.cr}` : ""}</span>
                   </div>
                   <button onClick={()=>setSlots(s=>s.filter(x=>x.id!==sl.id))} style={{background:"none",border:"none",color:T.stone2,cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>×</button>
@@ -9791,6 +9850,9 @@ function slotEntryToRow(sl, idx) {
     duration_minutes: parseDurationString(sl?.dur) ?? 60,
     price_eur: Number.isFinite(Number(sl?.cr)) ? Number(sl.cr) : null,
     capacity: Number.isFinite(Number(sl?.spots)) ? Number(sl.spots) : null,
+    // Empty string on the row so the select's "inherit venue" option shows
+    // as selected by default; on save we map empty back to null.
+    category: sl?.category || '',
     description: null,
     schedule: days.map(d => ({ day: DAY_SHORT_TO_CODE[d] || 'mon', time })),
     confidence_flags: [],
@@ -9807,6 +9869,7 @@ function offeringToRow(o, idx) {
     duration_minutes: Number.isFinite(Number(o?.length_min)) ? Number(o.length_min) : 60,
     price_eur: Number.isFinite(Number(o?.price_eur)) ? Number(o.price_eur) : null,
     capacity: 1,
+    category: o?.category || '',
     description: null,
     schedule: null,
     confidence_flags: [],
@@ -10232,6 +10295,7 @@ function AdminSetupPage() {
       duration_minutes: 60,
       price_eur: null,
       capacity: kind === 'class' ? 10 : 1,
+      category: '',
       description: null,
       schedule: kind === 'class' ? [{ day:'mon', time:'09:00' }] : null,
       confidence_flags: [],
@@ -10298,6 +10362,11 @@ function AdminSetupPage() {
               if (!byTime[time]) byTime[time] = [];
               if (!byTime[time].includes(day)) byTime[time].push(day);
             }
+            // Per-slot category. Empty string on the row means "inherit
+            // venue category" so we persist null. A non-empty override is
+            // what feeds notify-partner-status's session_categories union
+            // + the mirrored slots.category column on expansion.
+            const catOverride = (r.category && String(r.category).trim()) || null;
             for (const [time, days] of Object.entries(byTime)) {
               const entry = {
                 id: `admsl${Date.now()}_${nextSlots.length}`,
@@ -10307,16 +10376,19 @@ function AdminSetupPage() {
                 dur: dur ? `${dur} min` : '60 min',
                 spots: Math.max(1, Math.round(Number(r.capacity) || 1)),
                 cr: price,
+                category: catOverride,
               };
               nextSlots.push(entry);
               if (isNew) newSlotEntriesForExpansion.push(entry);
             }
             classSessionsTotal += 1;
           } else {
+            const catOverride = (r.category && String(r.category).trim()) || null;
             nextOfferings.push({
               type: name,
               length_min: dur || 60,
               price_eur: price,
+              category: catOverride,
             });
             appointmentOfferingsTotal += 1;
           }
@@ -10353,6 +10425,12 @@ function AdminSetupPage() {
                 spots: sl.spots,
                 credits: sl.cr,
                 acuity_type_id: null,
+                // Mirror the per-slot category down to slots.category so
+                // the marketplace explore filter + Explore Schedule view
+                // can hit an index instead of scanning JSONB. Null falls
+                // back to the venue's primary category via the filter
+                // predicate.
+                category: sl.category || null,
               });
             }
           }
@@ -10501,6 +10579,7 @@ function AdminSetupPage() {
               <tr>
                 <th style={S.th}>Name</th>
                 <th style={S.th}>Kind</th>
+                <th style={S.th}>Category</th>
                 <th style={S.th}>Duration (min)</th>
                 <th style={S.th}>Credits (EUR)</th>
                 <th style={S.th}>Capacity</th>
@@ -10525,6 +10604,14 @@ function AdminSetupPage() {
                       <select value={r.kind} onChange={e => updateRow(r._rid, { kind: e.target.value, schedule: e.target.value === 'appointment' ? null : (r.schedule || [{ day:'mon', time:'09:00' }]) })} style={S.input}>
                         <option value="class">class</option>
                         <option value="appointment">appointment</option>
+                      </select>
+                    </td>
+                    <td style={S.td}>
+                      <select value={r.category || ''} onChange={e => updateRow(r._rid, { category: e.target.value })} style={{ ...S.input, minWidth: 130 }}>
+                        <option value="">Venue default</option>
+                        {['Yoga','Pilates','Meditation','Sound Bath','Massage','Spa','Fitness Class','Hotel Gym','Pool Access','Surfing','Paddle Boarding','Kayaking','Cycling','Running','Hiking','Padel','Tennis','Pickleball','Private Instructor'].map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
                       </select>
                     </td>
                     <td style={S.td}>
@@ -11240,6 +11327,10 @@ export default function App() {
         cr: row.cr || row.credits_per_session || 3,
         tags: row.tags || [],
         coverage_areas: Array.isArray(row.coverage_areas) ? row.coverage_areas : [],
+        // Denormalised category union (venue category + per-session
+        // overrides). Powers the Explore category filter so a multi-
+        // modality studio surfaces on every category it actually runs.
+        session_categories: Array.isArray(row.session_categories) ? row.session_categories : [],
         // Studio-side safety window: when true, we hide slots starting less
         // than 2 hours from now so the studio always has time to review a
         // new booking before it starts. The Postgres BEFORE INSERT trigger

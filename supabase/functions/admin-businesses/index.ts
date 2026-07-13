@@ -208,7 +208,7 @@ serve(async (req) => {
     // Whitelist the columns the client can send per row. Everything else
     // is stripped so the caller can't insert e.g. a booking count or
     // spoofed listing_id.
-    const SLOT_COLS = new Set(['name', 'date', 'time', 'dur', 'spots', 'credits', 'acuity_type_id'])
+    const SLOT_COLS = new Set(['name', 'date', 'time', 'dur', 'spots', 'credits', 'acuity_type_id', 'category'])
     const rows = body.slot_rows.map(r => {
       const clean: Record<string, unknown> = { listing_id: listingId, booked: 0 }
       for (const [k, v] of Object.entries(r)) if (SLOT_COLS.has(k)) clean[k] = v

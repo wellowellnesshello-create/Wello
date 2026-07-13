@@ -35,6 +35,7 @@ Return ONLY valid JSON matching this schema:
     {
       "name": string,
       "kind": "class" | "appointment",
+      "category": "Yoga" | "Pilates" | "Meditation" | "Sound Bath" | "Massage" | "Spa" | "Fitness Class" | "Hotel Gym" | "Pool Access" | "Surfing" | "Paddle Boarding" | "Kayaking" | "Cycling" | "Running" | "Hiking" | "Padel" | "Tennis" | "Pickleball" | "Private Instructor" | null,
       "duration_minutes": number | null,
       "price_eur": number | null,
       "capacity": number | null,
@@ -49,10 +50,11 @@ Rules you MUST follow:
 - Prices: use drop-in / single-session rates only. Ignore memberships, class packs, monthly passes, or multi-session bundles. If two drop-in prices exist for the same session (e.g. member vs non-member), pick the standard non-member drop-in and add a confidence flag naming the alternative.
 - Currency: credits equal euros one for one. Assume prices are in EUR unless the source is explicit about another currency. If another currency is stated, convert nothing and add a confidence flag.
 - Kind: a "class" is a scheduled group session (yoga, pilates, breathwork, sound healing, fitness classes, meditation groups). An "appointment" is a bookable treatment or 1-to-1 slot (any massage, private session, therapy, consultation). Treatments always have kind "appointment" and schedule: null even if the studio lists them under fixed times.
+- Category: pick the single closest match from the enum. "Sound Bath" covers sound healing / gong bath. "Meditation" covers breathwork and mindfulness. "Massage" covers any treatment involving hands-on bodywork. Yoga variants (Yin, Hatha, Vinyasa, Kundalini, Ashtanga) all map to "Yoga". Pilates variants (reformer, mat) map to "Pilates". If nothing fits, leave category null.
 - Schedule: only for kind "class". Use 24-hour "HH:MM". Day codes are the three-letter lowercase forms above. If a class runs multiple days at the same time, include one entry per day. If a class has no visible time, set schedule to null and add a confidence flag.
 - Capacity: only set if explicitly stated. Never invent a number. Leave null and add a "capacity not stated" flag if missing.
 - Duration: parse from the source. If a treatment lists multiple lengths (e.g. 30/60/90 min massage), create one session row per length, naming each clearly (e.g. "Deep Tissue Massage 60 min"). If no duration is given, set null and add a flag.
-- Confidence flags: short human-readable strings, one per uncertainty. Examples: "capacity not stated", "price ambiguous between drop-in and member rate", "no time visible on source", "duration missing", "currency unclear".
+- Confidence flags: short human-readable strings, one per uncertainty. Examples: "capacity not stated", "price ambiguous between drop-in and member rate", "no time visible on source", "duration missing", "currency unclear", "category uncertain".
 - Never invent sessions the source does not name. Never merge two distinct offerings into one row.
 - Output MUST be valid JSON. No prose, no markdown, no code fences.`
 

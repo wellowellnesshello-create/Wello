@@ -193,6 +193,24 @@ serve(async (req) => {
     const currentCommission  = record.commission_rate == null ? null : Number(record.commission_rate)
     const agreementValid = !!record.terms_accepted_at
       && (acceptedCommission == null || currentCommission == null || acceptedCommission === currentCommission)
+    // Denormalised session categories for marketplace filters. Union of
+    // the primary venue category and any per-slot / per-offering overrides
+    // so a customer searching "Sound Bath" hits Yoga Del Mar even though
+    // its primary category is "Yoga".
+    const rawSlotsForCats     = Array.isArray(record.slots) ? record.slots : []
+    const rawOfferingsForCats = Array.isArray(record.session_offerings) ? record.session_offerings : []
+    const sessionCategoriesSet = new Set<string>()
+    if (record.category) sessionCategoriesSet.add(String(record.category))
+    for (const s of rawSlotsForCats) {
+      const c = s?.category ? String(s.category).trim() : ''
+      if (c) sessionCategoriesSet.add(c)
+    }
+    for (const o of rawOfferingsForCats) {
+      const c = o?.category ? String(o.category).trim() : ''
+      if (c) sessionCategoriesSet.add(c)
+    }
+    const sessionCategories = Array.from(sessionCategoriesSet).filter(Boolean)
+
     const baseFields = {
       name: record.name,
       cat: record.category ?? null,
@@ -202,6 +220,7 @@ serve(async (req) => {
       cr: record.cr ?? 3,
       tags,
       coverage_areas: isPrivate ? coverageAreas : [],
+      session_categories: sessionCategories,
       status: agreementValid ? 'active' : 'inactive',
     }
 
@@ -231,8 +250,9 @@ serve(async (req) => {
                 type:      String(o?.type || '').trim() || record.category || 'Private session',
                 length_min: Number.isFinite(o?.length_min) && o.length_min > 0 ? o.length_min : 60,
                 price_eur:  Number.isFinite(o?.price_eur)  && o.price_eur  > 0 ? o.price_eur  : (record.cr ?? 3),
+                category:  (o?.category && String(o.category).trim()) || record.category || null,
               }))
-          : fallback
+          : fallback.map((o: any) => ({ ...o, category: record.category || null }))
 
         const LEAD_MS = 4 * 24 * 60 * 60 * 1000
         const minBookable = new Date(Date.now() + LEAD_MS)
@@ -281,6 +301,7 @@ serve(async (req) => {
                   booked: 0,
                   credits: off.price_eur,
                   acuity_type_id: null,
+                  category: off.category || record.category || null,
                 })
               }
             }
@@ -313,12 +334,29 @@ serve(async (req) => {
                 booked: 0,
                 credits: sl.cr ?? record.cr ?? 3,
                 acuity_type_id: sl.acuity_type_id ?? null,
+                // Per-slot category override, falling back to the venue's
+                // primary category. Powers marketplace filtering across
+                // multi-modality studios (Yoga Del Mar shows on Sound
+                // Bath filter because its sound-healing slot is tagged).
+                category: (sl.category && String(sl.category).trim()) || record.category || null,
               })
             }
           }
         }
       }
       return rows
+    }
+
+    // Mirror the denormalised category union back onto businesses so the
+    // admin tool and any direct DB queries can filter without having to
+    // recompute from JSONB. Fire-and-forget: failures here shouldn't block
+    // the listing update itself.
+    if (sessionCategories.length > 0) {
+      const { error: catErr } = await supabase
+        .from('businesses')
+        .update({ session_categories: sessionCategories })
+        .eq('id', record.id)
+      if (catErr) console.warn('Failed to mirror session_categories to businesses:', catErr.message)
     }
 
     if (listingId) {
