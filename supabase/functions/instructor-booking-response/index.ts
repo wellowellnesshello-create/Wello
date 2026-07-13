@@ -3,10 +3,12 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // Handles the instructor's confirm/decline action on a pending_instructor
 // booking. Auth-gated to the booking's instructor (we verify the JWT's user
-// matches businesses.user_id). On confirm: status -> confirmed, credits
-// deducted from the customer, emails sent. On decline: status -> cancelled,
-// credits stay on the customer's profile, customer gets an email with
-// alternative instructor suggestions where available.
+// matches businesses.user_id).
+//
+// Credits are HELD at request time (see onConfirm in App.jsx), so:
+//   - confirm       : status -> confirmed, no credit movement (already held)
+//   - decline       : status -> cancelled, refund held credits to customer
+//   - auto_decline  : status -> cancelled, refund held credits to customer
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -94,23 +96,19 @@ serve(async (req) => {
     const sessionName = slot?.name || 'your session'
 
     if (action === 'confirm') {
-      // Mark confirmed AND deduct credits in two updates. We don't have a
-      // single-statement transaction across two tables here, so deduct first
-      // (the conservative side from the customer's POV); if it fails we leave
-      // the booking pending so the instructor can retry.
-      if (customer && (booking.credits_used ?? 0) > 0) {
-        const newBalance = Math.max(0, (customer.credits ?? 0) - (booking.credits_used ?? 0))
-        const { error: credErr } = await supabase
-          .from('profiles').update({ credits: newBalance }).eq('id', customer.id)
-        if (credErr) {
-          console.error('Confirm: failed to deduct credits:', credErr.message)
-          return json({ error: 'Could not deduct customer credits. ' + credErr.message }, 500)
-        }
-      }
-
-      const { error: updErr } = await supabase
-        .from('bookings').update({ status: 'confirmed' }).eq('id', booking.id)
+      // Credits were already held at request time so accept is a status
+      // flip only, no credit movement. Conditional on the current status
+      // so a race with a concurrent decline / auto_decline cannot leave
+      // the row in a broken state.
+      const { data: updated, error: updErr } = await supabase
+        .from('bookings')
+        .update({ status: 'confirmed' })
+        .eq('id', booking.id)
+        .eq('status', 'pending_instructor')
+        .select('id')
+        .maybeSingle()
       if (updErr) return json({ error: 'Could not update booking status. ' + updErr.message }, 500)
+      if (!updated)  return json({ error: 'Booking was already actioned in another tab.' }, 409)
 
       // Confirmation emails — instructor + customer.
       const dateStr = fmtDate(booking.booking_date)
@@ -136,7 +134,7 @@ serve(async (req) => {
               <p style="color:#54584F;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 4px;">Session address</p>
               <p style="color:#213C18;font-weight:600;margin:0;line-height:1.5;">${customerLoc}</p>
             </div>
-            <p style="color:#54584F;line-height:1.7;">${booking.credits_used} credits have been deducted from your balance.</p>
+            <p style="color:#54584F;line-height:1.7;">The ${booking.credits_used} credits you held for this booking are now settled with the instructor.</p>
             <p style="color:#54584F;line-height:1.7;">Have a great session,<br>Wello</p>
           </div>`)
       }
@@ -193,9 +191,15 @@ serve(async (req) => {
     }
     alternatives = alternatives.slice(0, 3)
 
-    const { error: updErr } = await supabase
-      .from('bookings').update({ status: 'cancelled' }).eq('id', booking.id)
+    const { data: declineUpdated, error: updErr } = await supabase
+      .from('bookings')
+      .update({ status: 'cancelled' })
+      .eq('id', booking.id)
+      .eq('status', 'pending_instructor')
+      .select('id')
+      .maybeSingle()
     if (updErr) return json({ error: 'Could not update booking status. ' + updErr.message }, 500)
+    if (!declineUpdated) return json({ error: 'Booking was already actioned in another tab.' }, 409)
 
     // Free the slot back up so other customers can request the same time.
     // The booking row carries slot_id as a string; cast for the integer pk.
@@ -214,9 +218,18 @@ serve(async (req) => {
       }
     }
 
-    // Credits were never deducted for pending_instructor, so nothing to refund
-    // — but log a note in case future flows change that.
-    console.log('Declined booking', booking.id, 'credits_used=', booking.credits_used, '(no refund needed — credits were only held)')
+    // Refund the held credits. Best-effort: log loudly if refund fails so
+    // support can spot orphaned holds, but do NOT roll the cancellation
+    // back — a stuck-cancelled booking with a missing refund is easier to
+    // reconcile than a stuck-pending row nobody can action.
+    if (customer && (booking.credits_used ?? 0) > 0) {
+      const cost = Number(booking.credits_used) || 0
+      const newBalance = (customer.credits ?? 0) + cost
+      const { error: refErr } = await supabase
+        .from('profiles').update({ credits: newBalance }).eq('id', customer.id)
+      if (refErr) console.error('Decline: refund failed for booking', booking.id, refErr.message)
+      else console.log('Refunded', cost, 'credits to', customer.id, 'for declined booking', booking.id)
+    }
 
     const customerEmail = customer?.email
     if (customerEmail) {
@@ -226,8 +239,8 @@ serve(async (req) => {
         ? `Your ${business.name} booking didn't go through`
         : `${business.name} couldn't take your booking`
       const opening = action === 'auto_decline'
-        ? `Unfortunately ${business.name} didn't respond to your booking request for <strong>${sessionName}</strong> on <strong>${dateStr}</strong> at <strong>${timeStr}</strong>, so we've released it. Your credits are still on your account.`
-        : `Unfortunately ${business.name} can't take your booking for <strong>${sessionName}</strong> on <strong>${dateStr}</strong> at <strong>${timeStr}</strong>. Your credits are still on your account.`
+        ? `Unfortunately ${business.name} didn't respond to your booking request for <strong>${sessionName}</strong> on <strong>${dateStr}</strong> at <strong>${timeStr}</strong>, so we've released it. Your ${booking.credits_used} credits have been returned to your account in full.`
+        : `Unfortunately ${business.name} can't take your booking for <strong>${sessionName}</strong> on <strong>${dateStr}</strong> at <strong>${timeStr}</strong>. Your ${booking.credits_used} credits have been returned to your account in full.`
       const altsHtml = alternatives.length > 0
         ? `<p style="color:#54584F;line-height:1.7;margin:18px 0 8px;">Here are some other instructors who might be available:</p>` +
           alternatives.map(a =>

@@ -90,30 +90,28 @@ serve(async (req) => {
       }
       if (!pUpdated) return json({ error: 'Request was already actioned.' }, 409)
 
-      // Refund the held credits. Only meaningful for pending_venue right
-      // now, but written to work correctly for pending_instructor too if
-      // that flow ever moves to hold-at-request.
+      // Both pending flavours now hold credits at request time, so a
+      // customer cancel is a genuine refund. Read a fresh profile to
+      // avoid stale balances if two tabs race a cancel.
       let creditsRefunded = 0
-      if (booking.status === 'pending_venue') {
-        const cost = Number(booking.credits_used) || 0
-        if (cost > 0) {
-          const { data: prof, error: profErr } = await supabase
-            .from('profiles').select('credits').eq('id', user.id).single()
-          if (profErr || !prof) {
-            console.error('cancel-booking: refund lookup failed', profErr?.message)
-            // Cancellation stands — surface the refund miss instead of
-            // rolling back to keep the row consistent.
-            return json({ success: true, credits_refunded: 0, refund_error: 'Could not read profile', was_pending: true })
-          }
-          const newBalance = (prof.credits || 0) + cost
-          const { error: refErr } = await supabase
-            .from('profiles').update({ credits: newBalance }).eq('id', user.id)
-          if (refErr) {
-            console.error('cancel-booking: refund update failed', refErr.message)
-            return json({ success: true, credits_refunded: 0, refund_error: refErr.message, was_pending: true })
-          }
-          creditsRefunded = cost
+      const cost = Number(booking.credits_used) || 0
+      if (cost > 0) {
+        const { data: prof, error: profErr } = await supabase
+          .from('profiles').select('credits').eq('id', user.id).single()
+        if (profErr || !prof) {
+          console.error('cancel-booking: refund lookup failed', profErr?.message)
+          // Cancellation stands — surface the refund miss instead of
+          // rolling back to keep the row consistent.
+          return json({ success: true, credits_refunded: 0, refund_error: 'Could not read profile', was_pending: true })
         }
+        const newBalance = (prof.credits || 0) + cost
+        const { error: refErr } = await supabase
+          .from('profiles').update({ credits: newBalance }).eq('id', user.id)
+        if (refErr) {
+          console.error('cancel-booking: refund update failed', refErr.message)
+          return json({ success: true, credits_refunded: 0, refund_error: refErr.message, was_pending: true })
+        }
+        creditsRefunded = cost
       }
 
       console.log(`cancel-booking: pending booking ${booking.id} cancelled by customer ${user.id}, refunded ${creditsRefunded}`)

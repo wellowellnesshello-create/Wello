@@ -3351,16 +3351,11 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
                           {resTab === "upcoming" && bk.dbId && (
                             canCancel ? (
                               <button onClick={async () => {
-                                // pending_venue holds credits at request time so cancel is a
-                                // real refund. pending_instructor deducts on confirm, so
-                                // cancel of a still-pending instructor request has nothing
-                                // to refund — say so honestly rather than promising credits
-                                // that never left the wallet.
-                                const promptText = bk.status === 'pending_venue'
+                                // Both pending flavours hold credits at request time now,
+                                // so cancel is always a real refund.
+                                const promptText = isPendingReq
                                   ? `Cancel this request? Your ${bk.cost} held credits are returned to your balance.`
-                                  : bk.status === 'pending_instructor'
-                                    ? `Cancel this request? The credits were not held so nothing is refunded.`
-                                    : `Cancel this booking? Your ${bk.cost} credits will be refunded.`;
+                                  : `Cancel this booking? Your ${bk.cost} credits will be refunded.`;
                                 if (!confirm(promptText)) return;
                                 await onCancelBooking?.(bk.dbId);
                               }}
@@ -11444,11 +11439,16 @@ export default function App() {
 
     // 1. Instant UI:
     // - regular bookings: deduct credits immediately, mark slot booked
-    // - private requests: leave credits alone, leave slot capacity alone (the
-    //   slot row will be confirmed/declined later)
+    // - private requests: HOLD credits (deduct now, refund on decline).
+    //   Matches the pending_venue flow so a customer cannot double-spend
+    //   credits during the 48h instructor confirmation window. Slot
+    //   capacity is not incremented yet — the request has not yet been
+    //   accepted.
     if (!isPrivateBooking) {
       setCredits(c=>c-cost);
       setListings(p=>p.map(b=>b.id!==biz.id?b:{...b,slots:b.slots.map(s=>s.id!==slot.id?s:{...s,booked:s.booked+form.guests})}));
+    } else {
+      setCredits(c=>c-cost);
     }
     setBookings(p=>[{id:Date.now(),biz,slot,form,cost,status:isPrivateBooking?'pending_instructor':'confirmed'},...p]);
     showToast(
