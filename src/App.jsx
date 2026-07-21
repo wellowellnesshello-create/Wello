@@ -10225,6 +10225,32 @@ function AdminSetupPage() {
     }
   }
 
+  // ── Payout test seeder state ──
+  // Seeds one backdated confirmed booking + ensures commission fields are
+  // populated on the selected business. Test-only; the booking is tagged in
+  // its notes column so it's easy to spot / clean up later.
+  const [seedLoading, setSeedLoading] = useState(false);
+  const [seedResult,  setSeedResult]  = useState(null);
+  const [seedError,   setSeedError]   = useState('');
+  const [seedCredits, setSeedCredits] = useState(25);
+  const [seedDaysAgo, setSeedDaysAgo] = useState(4);
+  async function invokeSeed() {
+    if (!bizRow?.id) { setSeedError('Select a business in step 1 first.'); return; }
+    setSeedLoading(true); setSeedError(''); setSeedResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('seed-payout-test-booking', {
+        body: { business_id: bizRow.id, credits: Number(seedCredits), days_ago: Number(seedDaysAgo) },
+      });
+      if (error) throw new Error(error.message || 'invoke failed');
+      if (data?.error) throw new Error(data.error);
+      setSeedResult(data);
+    } catch (e) {
+      setSeedError(e?.message || 'Unexpected error');
+    } finally {
+      setSeedLoading(false);
+    }
+  }
+
   useEffect(() => {
     // Wait until the auth check has finished so we don't fire this with
     // no session (would 403 at the edge). Refetch whenever the signed-in
@@ -11229,6 +11255,48 @@ function AdminSetupPage() {
               </div>
             );
           })()}
+        </div>
+      )}
+
+      {/* ── Step 9: Seed a payout-test booking ──
+          Test-data helper for the run-weekly-payouts flow. Ensures the
+          selected business has commission_rate + terms_accepted_commission
+          + founding_incentive_bookings set (defaults 15% + 15% + 20),
+          then inserts one backdated confirmed booking with the admin as
+          the "member". Returns the expected shape of the next dry-run's
+          entry for this business. Only use on throwaway rows. */}
+      {bizRow && (
+        <div style={S.card}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 4px' }}>9. Seed payout-test booking</h2>
+          <p style={{ fontSize: 12, color: '#555', margin: '0 0 12px' }}>Only for throwaway test rows. Inserts one confirmed booking backdated by N days at 18:00 for 60 minutes, sets missing commission fields (15% / 20 incentive), and reports what the next payout dry-run should say for this business.</p>
+          <div style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <div>
+              <label style={{ ...S.label, fontSize: 11 }}>Credits</label>
+              <input type="number" min="1" value={seedCredits}
+                onChange={e => setSeedCredits(e.target.value)}
+                style={{ ...S.input, width: 90 }}/>
+            </div>
+            <div>
+              <label style={{ ...S.label, fontSize: 11 }}>Days ago</label>
+              <input type="number" min="1" value={seedDaysAgo}
+                onChange={e => setSeedDaysAgo(e.target.value)}
+                style={{ ...S.input, width: 90 }}/>
+            </div>
+            <button onClick={invokeSeed} disabled={seedLoading}
+              style={{ ...S.btn, opacity: seedLoading ? 0.4 : 1, cursor: seedLoading ? 'not-allowed' : 'pointer' }}>
+              {seedLoading ? 'Seeding…' : 'Seed test booking'}
+            </button>
+          </div>
+          {seedError && <div style={S.err}>{seedError}</div>}
+          {seedResult && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 12, color: '#155724', marginBottom: 6, padding: 8, background: '#e7f5e7', border: '1px solid #a3d3a3', borderRadius: 4 }}>
+                Inserted booking #{seedResult.booking?.id} · {seedResult.booking?.booking_date} {seedResult.booking?.start_time} · {seedResult.booking?.credits_used} credits · status <strong>{seedResult.booking?.status}</strong>
+              </div>
+              <textarea readOnly value={JSON.stringify(seedResult, null, 2)} rows={16}
+                style={{ ...S.input, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}/>
+            </div>
+          )}
         </div>
       )}
     </div>
