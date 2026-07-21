@@ -51,6 +51,17 @@ const CORS = {
 const json = (b: unknown, s = 200) =>
   new Response(JSON.stringify(b, null, 2), { status: s, headers: { ...CORS, 'Content-Type': 'application/json' } })
 
+// supabase-js's functions.invoke swallows the response body on any non-2xx
+// status ("Edge Function returned a non-2xx status code" is all the caller
+// sees). For admin-facing diagnostic returns we'd rather the caller see
+// the actual reason, so use ok200 for expected error paths — the wire
+// status is 200 but the body carries { error, http_code } so the frontend's
+// existing data.error check surfaces the reason. Real auth / method
+// rejections still use the correct status code because they precede any
+// business logic.
+const ok200 = (error: string, http_code: number, extra: Record<string, unknown> = {}) =>
+  json({ ok: false, error, http_code, ...extra }, 200)
+
 async function authorise(req: Request): Promise<{ ok: true; userId: string } | { ok: false; response: Response }> {
   const authHeader = req.headers.get('Authorization') || req.headers.get('authorization') || ''
   const token = authHeader.replace(/^Bearer\s+/i, '').trim()
@@ -86,7 +97,7 @@ serve(async (req) => {
   try { body = await req.json() } catch { /* empty body is fine */ }
 
   const business_id = Number(body.business_id)
-  if (!Number.isFinite(business_id)) return json({ error: 'business_id required (number)' }, 400)
+  if (!Number.isFinite(business_id)) return ok200('business_id required (number)', 400)
   const credits     = Math.max(1, Math.floor(Number(body.credits    ?? 25)))
   const daysAgo     = Math.max(1, Math.floor(Number(body.days_ago   ?? 4))) // last Friday when run on a Tue
   const startTime   = String(body.start_time ?? '18:00').slice(0, 5)
@@ -98,15 +109,12 @@ serve(async (req) => {
     .select('id, name, email, user_id, commission_rate, terms_accepted_commission, founding_incentive_bookings, terms_accepted_at, cancellation_safety_window, stripe_account_status')
     .eq('id', business_id)
     .maybeSingle()
-  if (bizErr || !biz) return json({ error: `business ${business_id} not found: ${bizErr?.message ?? ''}` }, 404)
+  if (bizErr || !biz) return ok200(`business ${business_id} not found: ${bizErr?.message ?? ''}`, 404)
 
   // Guard: safety window blocks backdated confirmed inserts. Rather than
   // toggle it silently, refuse and tell the caller.
   if (biz.cancellation_safety_window === true) {
-    return json({
-      error: 'businesses.cancellation_safety_window is TRUE on this row. The DB trigger will reject a backdated confirmed insert. Set it to false, re-invoke, then flip back if you need to.',
-      business: biz,
-    }, 409)
+    return ok200('businesses.cancellation_safety_window is TRUE on this row. The DB trigger will reject a backdated confirmed insert. Set it to false, re-invoke, then flip back if you need to.', 409, { business: biz })
   }
 
   // Fill in commission fields if null. Test defaults per the payout job's
@@ -118,7 +126,7 @@ serve(async (req) => {
   if (biz.terms_accepted_at             == null) updates.terms_accepted_at             = new Date().toISOString()
   if (Object.keys(updates).length > 0) {
     const { error: updErr } = await db.from('businesses').update(updates).eq('id', business_id)
-    if (updErr) return json({ error: `business commission update failed: ${updErr.message}`, updates }, 500)
+    if (updErr) return ok200(`business commission update failed: ${updErr.message}`, 500, { updates })
   }
 
   // Backdated booking date: today (Madrid) minus days_ago. Uses the same
@@ -154,7 +162,7 @@ serve(async (req) => {
     .insert(insertPayload)
     .select('id, business_id, user_id, booking_date, start_time, duration, credits_used, status, notes, payout_at, payout_transfer_id, created_at')
     .single()
-  if (insErr || !booking) return json({ error: `booking insert failed: ${insErr?.message ?? 'unknown'}`, insertPayload }, 500)
+  if (insErr || !booking) return ok200(`booking insert failed: ${insErr?.message ?? 'unknown'}`, 500, { insertPayload })
 
   // Return everything the caller needs to eyeball, plus a preview of what
   // the payout dry-run should say for this business.
