@@ -21,6 +21,14 @@ const STRIPE_SECRET_KEY         = Deno.env.get('STRIPE_SECRET_KEY')!
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const APP_ORIGIN                = Deno.env.get('APP_ORIGIN') || 'https://wello-wellness.com'
+// Admins can re-issue onboarding links on behalf of any partner (support
+// use case: partner lost their link, needs a fresh one). Same allowlist as
+// extract-sessions, generate-magic-link, and run-weekly-payouts.
+const ADMIN_USER_IDS = (Deno.env.get('ADMIN_USER_IDS') || '')
+  .split(',').map(s => s.trim()).filter(Boolean)
+// Test-mode detection is a straight prefix check on the secret. Stripe
+// keys are opaque otherwise but the prefix is stable API.
+const LIVEMODE = STRIPE_SECRET_KEY.startsWith('sk_live_')
 
 const stripe = new Stripe(STRIPE_SECRET_KEY, {
   apiVersion: '2024-09-30.acacia',
@@ -60,7 +68,11 @@ serve(async (req) => {
       .eq('id', business_id)
       .maybeSingle()
     if (bizErr || !business) return json({ error: 'Business not found' }, 404)
-    if (business.user_id && business.user_id !== user.id) {
+    // Ownership check with an admin bypass — a partner can only hit their
+    // own venue, but an admin (see ADMIN_USER_IDS) can hit any venue to
+    // re-issue an onboarding link on their behalf.
+    const isAdmin = ADMIN_USER_IDS.includes(user.id)
+    if (!isAdmin && business.user_id && business.user_id !== user.id) {
       return json({ error: 'This is not your venue.' }, 403)
     }
 
@@ -109,7 +121,11 @@ serve(async (req) => {
       type:         'account_onboarding',
     })
 
-    return json({ url: link.url, account_id: accountId })
+    // livemode surfaces whether the deployed function is running against a
+    // Stripe test key or a live key — cheap sanity check for the caller, and
+    // essential when re-issuing onboarding links (an admin doesn't want to
+    // hand a live-mode link to a test partner or vice versa).
+    return json({ url: link.url, account_id: accountId, livemode: LIVEMODE })
   } catch (e) {
     console.error('create-connect-onboarding exception:', e)
     return json({ error: (e as Error).message || 'Unexpected error' }, 500)

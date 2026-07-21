@@ -10200,6 +10200,31 @@ function AdminSetupPage() {
     }
   }
 
+  // ── Connect onboarding link state ──
+  // Admins can re-issue a Stripe Connect onboarding link for any selected
+  // business (support: partner lost their link / needs a fresh one). Uses
+  // the admin bypass in create-connect-onboarding — a partner calling their
+  // own function still passes; an admin calling on behalf now also passes.
+  const [onboardLoading, setOnboardLoading] = useState(false);
+  const [onboardResult,  setOnboardResult]  = useState(null);
+  const [onboardError,   setOnboardError]   = useState('');
+  async function invokeOnboarding() {
+    if (!bizRow?.id) { setOnboardError('Select a business in step 1 first.'); return; }
+    setOnboardLoading(true); setOnboardError(''); setOnboardResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('create-connect-onboarding', {
+        body: { business_id: bizRow.id },
+      });
+      if (error) throw new Error(error.message || 'invoke failed');
+      if (data?.error) throw new Error(data.error);
+      setOnboardResult(data);
+    } catch (e) {
+      setOnboardError(e?.message || 'Unexpected error');
+    } finally {
+      setOnboardLoading(false);
+    }
+  }
+
   useEffect(() => {
     // Wait until the auth check has finished so we don't fire this with
     // no session (would 403 at the edge). Refetch whenever the signed-in
@@ -11143,6 +11168,32 @@ function AdminSetupPage() {
           </div>
         )}
       </div>
+
+      {/* ── Step 8: Stripe Connect onboarding link ──
+          Admin re-issue of a partner's onboarding link. Uses the ADMIN_USER_IDS
+          bypass added to create-connect-onboarding — a partner's own JWT still
+          works for their own venue; an admin JWT works for any venue. Also
+          confirms the deployed Stripe secret's mode (livemode true/false). */}
+      {bizRow && (
+        <div style={S.card}>
+          <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 4px' }}>8. Stripe Connect onboarding link</h2>
+          <p style={{ fontSize: 12, color: '#555', margin: '0 0 12px' }}>Creates or reuses a connected Express account for <strong>{bizRow.name}</strong> and returns a fresh hosted onboarding URL. Link is single-use and short-lived — send it directly to the partner, don't cache. Response also reports livemode so you can eyeball whether the function is on sandbox or live keys.</p>
+          <button onClick={invokeOnboarding} disabled={onboardLoading}
+            style={{ ...S.btn, opacity: onboardLoading ? 0.4 : 1, cursor: onboardLoading ? 'not-allowed' : 'pointer' }}>
+            {onboardLoading ? 'Generating…' : 'Generate onboarding link'}
+          </button>
+          {onboardError && <div style={S.err}>{onboardError}</div>}
+          {onboardResult && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 12, color: '#555', marginBottom: 6 }}>
+                Stripe mode: <strong style={{ color: onboardResult.livemode ? '#a00' : '#155724' }}>{onboardResult.livemode ? 'LIVE ⚠︎' : 'TEST (sandbox)'}</strong> · account: <code>{onboardResult.account_id}</code>
+              </div>
+              <textarea readOnly value={onboardResult.url} rows={3}
+                style={{ ...S.input, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}/>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
