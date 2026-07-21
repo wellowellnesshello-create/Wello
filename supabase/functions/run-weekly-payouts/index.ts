@@ -190,6 +190,26 @@ function madridLocalMs(date: string, time: string | null, addMinutes = 0): numbe
   return new Date(`${date}T${t}:00Z`).getTime() + addMinutes * 60_000
 }
 
+// bookings.duration is stored as free text ("60 min" / "90 min" / "Open" /
+// "Full Day" / "Half Day"), NOT an integer. Naive Number() gives NaN for
+// most of these, so we mirror App.jsx's parseDurationString: "60 min" ->
+// 60, "2 hour" -> 120. Unparseable (e.g. "Open" for gym passes) returns
+// 0, which for the cutoff check means "session ends at start time" — a
+// safe underestimate for day-pass style bookings. The one edge case this
+// matters for is a late-Sunday session whose duration is a specific
+// number: those we DO want parsed so we can exclude it from the Monday
+// payout if it actually ends after midnight.
+function parseDurationMinutes(dur: string | number | null): number {
+  if (dur == null) return 0
+  if (typeof dur === 'number') return Number.isFinite(dur) ? dur : 0
+  const s = String(dur).trim()
+  const m = s.match(/^(\d+)\s*min/i)
+  if (m) return parseInt(m[1], 10)
+  const h = s.match(/^(\d+)\s*hour/i)
+  if (h) return parseInt(h[1], 10) * 60
+  return 0
+}
+
 // ─── Types ────────────────────────────────────────────────────────
 type BusinessRow = {
   id: number
@@ -205,7 +225,7 @@ type BookingRow = {
   id: number
   booking_date: string
   start_time: string | null
-  duration: number | null
+  duration: string | number | null
   credits_used: number | null
   payout_at: string | null
   user_id: string | null
@@ -269,7 +289,7 @@ async function planForBusiness(business: BusinessRow, cutoffMs: number): Promise
 
   // Filter to delivered — session end <= cutoff.
   const delivered = bookings.filter(b => {
-    const endMs = madridLocalMs(b.booking_date, b.start_time, Number(b.duration) || 0)
+    const endMs = madridLocalMs(b.booking_date, b.start_time, parseDurationMinutes(b.duration))
     return endMs <= cutoffMs
   })
 

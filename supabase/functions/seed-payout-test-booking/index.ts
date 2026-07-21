@@ -132,13 +132,19 @@ serve(async (req) => {
   const d  = Number(parts.find(p => p.type === 'day')!.value)
   const bookingDate = new Date(Date.UTC(y, mo - 1, d - daysAgo)).toISOString().slice(0, 10)
 
+  // bookings has TWO FKs to businesses (business_id + venue_id — historical
+  // shape, "placeholder until a venues table exists"). Every real insert in
+  // the codebase populates both with the same id; venue_id is not-null in
+  // practice. Duration is stored as free text ("60 min" / "Full Day" /
+  // "Open") not an integer, so we format to match.
   const insertPayload = {
     user_id:      gate.userId, // admin acts as the "member" for the test
     business_id,
+    venue_id:     business_id,
     slot_id:      null,
     booking_date: bookingDate,
     start_time:   startTime,
-    duration,
+    duration:     `${duration} min`,
     credits_used: credits,
     notes:        `test booking for payout dry-run — seeded ${now.toISOString()}`,
     status:       'confirmed',
