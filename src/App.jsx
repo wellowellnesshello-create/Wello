@@ -163,14 +163,6 @@ const PAY = [
   { id:"google", label:"Google Pay",          sub:"Google Account" },
   { id:"paypal", label:"PayPal",              sub:"Balance or linked card" },
 ];
-const INTEGRATIONS = [
-  { id:"mindbody",   name:"Mindbody",    desc:"Most yoga & fitness studios",  auth:"OAuth 2.0",   col:"#4f46e5" },
-  { id:"acuity",     name:"Acuity",      desc:"Independent studios",          auth:"API Key",     col:"#0ea5e9" },
-  { id:"fareharbor", name:"FareHarbor",  desc:"Activity operators",           auth:"API Key",     col:"#16a34a" },
-  { id:"gympass",    name:"Gympass",     desc:"Hotel & corporate gyms",       auth:"Partner API", col:"#e11d48" },
-  { id:"ical",       name:"iCal Feed",   desc:"Any calendar, 15-min sync",    auth:"Feed URL",    col:T.ochre },
-  { id:"custom",     name:"Custom API",  desc:"Your own booking system",      auth:"Bearer Token",col:T.stone },
-];
 const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","Meditation","Spa","Massage","Sound Bath","Padel","Tennis","Pickleball","Private Instructor"];
 
 // Business-type decision drives the onboarding flow flavor. Stored in
@@ -411,7 +403,6 @@ const THEMES = [
   { name: "Outdoor",        cats: ["Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking"], blurb: "Sea and mountains"     },
   { name: "Meditation",     cats: ["Meditation"],                                                      blurb: "Stillness and breath"    },
 ];
-const SYNC = {1:"Mindbody",2:"Acuity",3:"Acuity",4:"FareHarbor",5:"Custom API",6:"Mindbody",7:"Gympass",8:"iCal",9:"Custom API"};
 
 const LISTINGS = [
   { id:1, name:"Sol Yoga", cat:"Yoga", loc:"Sóller", rating:4.9, reviews:127, cr:20,
@@ -1357,8 +1348,6 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   // pills, the slot list, and the "next slot" preview at the bottom.
   const bookableSlots = (biz.slots || []).filter(s => !isEffectivelyBlocked(s));
 
-  const sys = SYNC[biz.id];
-
   // ─── Multi-modality routing ─────────────────────────────────────────────
   // Businesses now come in three shapes:
   //   - Classes only (traditional studios, gyms, hotels)
@@ -1572,10 +1561,6 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
             </>
           )}
           <button onClick={onClose} aria-label="Close" style={{position:"absolute",top:12,right:12,zIndex:10,background:"rgba(255,255,255,0.95)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",border:"1px solid rgba(195,200,188,0.4)",color:"#1B1C19",width:40,height:40,borderRadius:"50%",cursor:"pointer",fontSize:20,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,boxShadow:"0 4px 12px rgba(0,0,0,0.18)"}}>×</button>
-          {sys&&<div style={{position:"absolute",top:14,left:14,background:"rgba(27,28,25,0.6)",backdropFilter:"blur(8px)",borderRadius:999,padding:"4px 10px",display:"flex",alignItems:"center",gap:5}}>
-            <span style={{width:6,height:6,borderRadius:"50%",background:"#A3B18A",display:"inline-block"}}/>
-            <span style={{fontFamily:F2,fontSize:10,color:"#fff",fontWeight:500}}>Live · {sys}</span>
-          </div>}
           <div style={{position:"absolute",bottom:16,left:20,right:20}}>
             {/* Category pills */}
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
@@ -3753,7 +3738,7 @@ function PartnersPage({ onSetView }) {
     },
     {
       q: "What booking systems do you integrate with?",
-      a: "Today we integrate directly with Acuity Scheduling and any calendar that exports an iCal feed, which includes Google Calendar, Apple Calendar and Outlook. Mindbody, Glofox, Eversports, Fresha and Momoyoga are next on the roadmap. If you're on something else, you can list manually and we'll prioritise integrations based on what partners are using.",
+      a: "Today we support Acuity Scheduling and any calendar that exports an iCal feed (Google Calendar, Apple Calendar, Outlook). If you're not on either, you can add and edit your slots manually in the partner portal, or paste a WhatsApp number and we'll notify you on WhatsApp when a booking comes in — most partners launching with us are using WhatsApp.",
     },
     {
       q: "When do I get paid?",
@@ -4771,13 +4756,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const [photoErr,          setPhotoErr]          = useState("");
   // Settings edit form: profile / contact fields.
   const [settingsForm, setSettingsForm] = useState({
-    name:        bizData.name || "",
-    description: bizData.description || "",
-    address:     bizData.address || "",
-    website:     bizData.website || "",
-    instagram:   bizData.instagram || "",
-    phone:       bizData.phone || "",
-    email:       bizData.email || "",
+    name:              bizData.name || "",
+    description:       bizData.description || "",
+    address:           bizData.address || "",
+    website:           bizData.website || "",
+    instagram:         bizData.instagram || "",
+    phone:             bizData.phone || "",
+    email:             bizData.email || "",
+    bookings_whatsapp: bizData.bookings_whatsapp || "",
   });
   const [saving, setSaving]       = useState(false);
   const [saveMsg, setSaveMsg]     = useState({ kind:"", text:"" }); // { kind:"settings"|"listing"|"golive"|"err", text }
@@ -5075,13 +5061,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     if (isPreview || !bizData?.id) return;
     setSaving(true);
     const payload = {
-      name:        settingsForm.name.trim() || null,
-      description: settingsForm.description || null,
-      address:     settingsForm.address || null,
-      website:     settingsForm.website || null,
-      instagram:   settingsForm.instagram || null,
-      phone:       settingsForm.phone || null,
-      email:       settingsForm.email.trim() || bizData.email, // keep email if cleared
+      name:              settingsForm.name.trim() || null,
+      description:       settingsForm.description || null,
+      address:           settingsForm.address || null,
+      website:           settingsForm.website || null,
+      instagram:         settingsForm.instagram || null,
+      phone:             settingsForm.phone || null,
+      email:             settingsForm.email.trim() || bizData.email, // keep email if cleared
+      bookings_whatsapp: settingsForm.bookings_whatsapp.trim() || null,
     };
     const { error } = await supabase.from('businesses').update(payload).eq('id', bizData.id);
     if (!error) {
@@ -7190,9 +7177,6 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   </div>
                 ))}
               </div>
-              <p style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:300,margin:"12px 0 0",lineHeight:1.55}}>
-                On Mindbody, Eversports, Glofox, Fresha, Momoyoga, or something else? Tell us in the onboarding wizard's "Different system?" field. We prioritise integrations by what partners are actually using.
-              </p>
               {integration==="acuity"&&(
                 <div style={{marginTop:14,padding:"14px 16px",background:"#F5F3EE",borderRadius:10}}>
                   <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Acuity Scheduling</p>
@@ -7205,6 +7189,25 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.6}}>Add & edit slots directly in the Schedule tab.</p>
                 </div>
               )}
+            </div>
+
+            {/* WhatsApp bookings — pragmatic alternative for partners who
+                don't run Acuity. New bookings ping this number and the
+                partner can confirm or reschedule right from WhatsApp. */}
+            <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
+              <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Receive & manage bookings on WhatsApp</h3>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 14px",lineHeight:1.6}}>Insert your number below and we'll message you on WhatsApp whenever a new booking comes in. You can confirm, reschedule or cancel straight from the chat.</p>
+              <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>WhatsApp number</label>
+              <input value={isPreview ? "+34 971 234 567" : (settingsForm.bookings_whatsapp || "")}
+                onChange={e=>!isPreview && setSettingsForm(p=>({...p,bookings_whatsapp:e.target.value}))}
+                placeholder="+34 6…"
+                style={{...INP}}
+                onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+              <p style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:300,margin:"6px 0 12px",lineHeight:1.5}}>Include the country code. This stays private and is only used for booking alerts, never shown on your public listing.</p>
+              <button onClick={saveSettings} disabled={saving||isPreview}
+                style={{padding:"10px 20px",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer"}}>
+                {saving ? "Saving" : "Save WhatsApp number"}
+              </button>
             </div>
 
             {/* Change listing type — surfaces the same picker the partner
@@ -7710,7 +7713,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
   function removeWindow(idx) {
     setAvailabilityWindows(prev => prev.filter((_, i) => i !== idx));
   }
-  const [intgRequest, setIntgRequest] = useState(bizData.integration_request || "");
+  const [bookingsWa, setBookingsWa] = useState(bizData.bookings_whatsapp || "");
   const [priceMode, setPriceMode] = useState(bizData.price_mode || "flat");
   const [previewOpen, setPreviewOpen] = useState(false);
 
@@ -8468,10 +8471,10 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
                      acuity_user_id: acuityUserId.trim(),
                      acuity_appointment_types: selected,
                      slots: slotsFromAcuity,
-                     integration_request: intgRequest,
+                     bookings_whatsapp: bookingsWa.trim() || null,
                    });
                  } else if (availType === "ical") {
-                   goNext({ ical_url: icalUrl.trim(), integration_request: intgRequest });
+                   goNext({ ical_url: icalUrl.trim(), bookings_whatsapp: bookingsWa.trim() || null });
                  } else if (isPrivateInstructor) {
                    // Private instructor: save weekly windows + session offerings.
                    // notify-partner-status iterates over windows × offerings to
@@ -8490,7 +8493,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
                      session_offerings: offeringsClean,
                      session_duration_min: sessionDurationMin,
                      cr: parseInt(cr) || (sessionOfferings[0]?.price_eur ?? catAvg),
-                     integration_request: intgRequest,
+                     bookings_whatsapp: bookingsWa.trim() || null,
                    });
                  } else {
                    // Same normalisation for the studio slot path — strip
@@ -8499,7 +8502,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
                      ...sl,
                      category: (sl.category && String(sl.category).trim()) || null,
                    }));
-                   goNext({ slots: slotsClean, integration_request: intgRequest });
+                   goNext({ slots: slotsClean, bookings_whatsapp: bookingsWa.trim() || null });
                  }
                }} label="Save & continue →"/>]}>
       {isPrivateInstructor && (
@@ -8796,10 +8799,10 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
         </>
       )}
       <div style={{marginTop:24,paddingTop:20,borderTop:`1px solid ${T.border}`}}>
-        <label style={FL}>Using a different system? Tell us which one</label>
-        <input value={intgRequest} onChange={e=>setIntgRequest(e.target.value)} placeholder="e.g. Mindbody, Eversports, Glofox, Fresha, Momoyoga, custom…"
+        <label style={FL}>Receive & manage bookings on WhatsApp</label>
+        <input value={bookingsWa} onChange={e=>setBookingsWa(e.target.value)} placeholder="+34 6…"
           style={{...INP,marginBottom:6}} onFocus={onFi} onBlur={onBl}/>
-        <p style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,margin:0}}>We prioritise integrations by what partners actually use. Add your API key or export details later once we support your system.</p>
+        <p style={{fontFamily:F.body,fontSize:10,color:T.stone2,fontWeight:300,margin:0,lineHeight:1.5}}>Insert a WhatsApp number and we'll message you the moment a new booking comes in. You can confirm, reschedule or cancel straight from the chat. Include the country code — this stays private and never appears on your listing.</p>
       </div>
     </OWrap>
   );
