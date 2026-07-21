@@ -11183,15 +11183,52 @@ function AdminSetupPage() {
             {onboardLoading ? 'Generating…' : 'Generate onboarding link'}
           </button>
           {onboardError && <div style={S.err}>{onboardError}</div>}
-          {onboardResult && (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: 12, color: '#555', marginBottom: 6 }}>
-                Stripe mode: <strong style={{ color: onboardResult.livemode ? '#a00' : '#155724' }}>{onboardResult.livemode ? 'LIVE ⚠︎' : 'TEST (sandbox)'}</strong> · account: <code>{onboardResult.account_id}</code>
+          {onboardResult && (() => {
+            const acct = onboardResult.account || {};
+            const req  = acct.requirements || {};
+            const stripeStatus =
+              acct.charges_enabled && acct.payouts_enabled ? 'active'
+              : req.disabled_reason ? 'restricted'
+              : 'pending';
+            const dbStatus = onboardResult.db_status || '(null)';
+            const drift = stripeStatus !== (onboardResult.db_status || null) && !(stripeStatus === 'pending' && !onboardResult.db_status);
+            return (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 12, color: '#555', marginBottom: 6 }}>
+                  Stripe mode: <strong style={{ color: onboardResult.livemode ? '#a00' : '#155724' }}>{onboardResult.livemode ? 'LIVE ⚠︎' : 'TEST (sandbox)'}</strong> · account: <code>{onboardResult.account_id}</code>
+                </div>
+                <div style={{ fontSize: 12, color: '#333', marginBottom: 6, padding: 8, background: '#f8f9fa', border: '1px solid #e5e7eb', borderRadius: 4 }}>
+                  Stripe says: <strong>{stripeStatus}</strong> (charges_enabled: {String(!!acct.charges_enabled)}, payouts_enabled: {String(!!acct.payouts_enabled)})
+                  {' · '}
+                  DB mirror: <strong>{dbStatus}</strong>
+                  {drift && <span style={{ marginLeft: 8, color: '#856404' }}>⚠ mirror is drifting — check that account.updated is on the webhook endpoint</span>}
+                </div>
+                {req.disabled_reason && (
+                  <div style={{ fontSize: 12, color: '#721c24', marginBottom: 6, padding: 8, background: '#f8d7da', border: '1px solid #f5c6cb', borderRadius: 4 }}>
+                    disabled_reason: <code>{req.disabled_reason}</code>
+                  </div>
+                )}
+                {(req.currently_due?.length > 0 || req.past_due?.length > 0) && (
+                  <div style={{ fontSize: 12, color: '#333', marginBottom: 6 }}>
+                    {req.past_due?.length > 0 && (
+                      <div style={{ marginBottom: 4 }}>past_due: <code>{req.past_due.join(', ')}</code></div>
+                    )}
+                    {req.currently_due?.length > 0 && (
+                      <div>currently_due: <code>{req.currently_due.join(', ')}</code></div>
+                    )}
+                  </div>
+                )}
+                <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginTop: 8, marginBottom: 4 }}>Fresh onboarding URL (send to partner)</label>
+                <textarea readOnly value={onboardResult.url} rows={3}
+                  style={{ ...S.input, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}/>
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ fontSize: 11, color: '#555', cursor: 'pointer' }}>Full response</summary>
+                  <textarea readOnly value={JSON.stringify(onboardResult, null, 2)} rows={14}
+                    style={{ ...S.input, fontFamily: 'ui-monospace, monospace', fontSize: 11, marginTop: 6 }}/>
+                </details>
               </div>
-              <textarea readOnly value={onboardResult.url} rows={3}
-                style={{ ...S.input, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}/>
-            </div>
-          )}
+            );
+          })()}
         </div>
       )}
     </div>

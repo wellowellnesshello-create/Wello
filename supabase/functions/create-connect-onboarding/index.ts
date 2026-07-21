@@ -121,11 +121,42 @@ serve(async (req) => {
       type:         'account_onboarding',
     })
 
+    // Ground-truth account state. Used by the admin panel to render what
+    // Stripe still needs from the partner (requirements.currently_due) and
+    // whether charges/payouts are already live. Also lets the admin
+    // compare Stripe's view against businesses.stripe_account_status,
+    // which is a coarse-grained mirror maintained by the account.updated
+    // webhook. If the mirror looks stale (e.g. Stripe says active but our
+    // DB still says pending), the webhook probably didn't fire or wasn't
+    // subscribed to the account.updated event.
+    const acct = await stripe.accounts.retrieve(accountId)
+
     // livemode surfaces whether the deployed function is running against a
     // Stripe test key or a live key — cheap sanity check for the caller, and
     // essential when re-issuing onboarding links (an admin doesn't want to
     // hand a live-mode link to a test partner or vice versa).
-    return json({ url: link.url, account_id: accountId, livemode: LIVEMODE })
+    return json({
+      url:        link.url,
+      account_id: accountId,
+      livemode:   LIVEMODE,
+      // Snapshot our DB mirror so the admin can see drift at a glance.
+      db_status: business.stripe_account_status,
+      // Live account state from Stripe — the source of truth.
+      account: {
+        charges_enabled: acct.charges_enabled,
+        payouts_enabled: acct.payouts_enabled,
+        details_submitted: acct.details_submitted,
+        requirements: {
+          disabled_reason:      acct.requirements?.disabled_reason ?? null,
+          currently_due:        acct.requirements?.currently_due ?? [],
+          past_due:             acct.requirements?.past_due ?? [],
+          eventually_due:       acct.requirements?.eventually_due ?? [],
+          pending_verification: acct.requirements?.pending_verification ?? [],
+          current_deadline:     acct.requirements?.current_deadline ?? null,
+        },
+        capabilities: acct.capabilities ?? {},
+      },
+    })
   } catch (e) {
     console.error('create-connect-onboarding exception:', e)
     return json({ error: (e as Error).message || 'Unexpected error' }, 500)
