@@ -10178,6 +10178,28 @@ function AdminSetupPage() {
   const [linkError, setLinkError] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
 
+  // ── Weekly payouts state ──
+  // Response from the run-weekly-payouts function (dry-run or real). Rendered
+  // as JSON so the admin can eyeball the per-business plan / outcome.
+  const [payoutRunning, setPayoutRunning] = useState(false);
+  const [payoutResult,  setPayoutResult]  = useState(null);
+  const [payoutError,   setPayoutError]   = useState('');
+  async function invokePayouts(dryRun) {
+    setPayoutRunning(true); setPayoutError(''); setPayoutResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('run-weekly-payouts', {
+        body: { dry_run: !!dryRun },
+      });
+      if (error) throw new Error(error.message || 'invoke failed');
+      if (data?.error) throw new Error(data.error);
+      setPayoutResult(data);
+    } catch (e) {
+      setPayoutError(e?.message || 'Unexpected error');
+    } finally {
+      setPayoutRunning(false);
+    }
+  }
+
   useEffect(() => {
     // Wait until the auth check has finished so we don't fire this with
     // no session (would 403 at the edge). Refetch whenever the signed-in
@@ -11084,6 +11106,43 @@ function AdminSetupPage() {
           </div>
         );
       })()}
+
+      {/* ── Step 7: Weekly payouts ──
+          Batch operation over all active connected accounts, not scoped to
+          the selected business. Dry run returns the plan (per-business
+          gross/commission/net + reason for skips) without touching Stripe.
+          Real run creates Transfers, stamps bookings, generates statements,
+          emails partners. Same function; pg_cron will call it weekly once
+          the first admin-triggered runs pass. */}
+      <div style={S.card}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 4px' }}>7. Weekly payouts</h2>
+        <p style={{ fontSize: 12, color: '#555', margin: '0 0 12px' }}>Dry run first to see the planned batch (gross / commission / net per partner, skip reasons for anyone who won't be paid this week). Real run creates Stripe Transfers and emails statements — irreversible from this UI.</p>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <button onClick={() => invokePayouts(true)} disabled={payoutRunning}
+            style={{ ...S.btnGhost, opacity: payoutRunning ? 0.4 : 1, cursor: payoutRunning ? 'not-allowed' : 'pointer' }}>
+            {payoutRunning ? 'Running…' : 'Dry run (plan only)'}
+          </button>
+          <button
+            onClick={() => {
+              if (!confirm('Create Stripe Transfers for every active partner with delivered bookings? This will move real money.')) return;
+              invokePayouts(false);
+            }}
+            disabled={payoutRunning}
+            style={{ ...S.btn, opacity: payoutRunning ? 0.4 : 1, cursor: payoutRunning ? 'not-allowed' : 'pointer' }}>
+            {payoutRunning ? 'Running…' : 'Run payouts for real'}
+          </button>
+        </div>
+        {payoutError && <div style={S.err}>{payoutError}</div>}
+        {payoutResult && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 12, color: '#555', marginBottom: 6 }}>
+              run_id: <code>{payoutResult.run_id}</code> · cutoff: <strong>{payoutResult.cutoff_date}</strong> · {payoutResult.dry_run ? 'DRY RUN' : `paid €${(payoutResult.total_paid_cents / 100).toFixed(2)} to ${payoutResult.results?.filter(r => r.status === 'paid').length || 0} partner(s)`}
+            </div>
+            <textarea readOnly value={JSON.stringify(payoutResult, null, 2)} rows={16}
+              style={{ ...S.input, fontFamily: 'ui-monospace, monospace', fontSize: 11 }}/>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
