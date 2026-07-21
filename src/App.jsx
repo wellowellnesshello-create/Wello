@@ -10234,12 +10234,18 @@ function AdminSetupPage() {
   const [seedError,   setSeedError]   = useState('');
   const [seedCredits, setSeedCredits] = useState(25);
   const [seedDaysAgo, setSeedDaysAgo] = useState(4);
+  const [seedForceBypass, setSeedForceBypass] = useState(false);
   async function invokeSeed() {
     if (!bizRow?.id) { setSeedError('Select a business in step 1 first.'); return; }
     setSeedLoading(true); setSeedError(''); setSeedResult(null);
     try {
       const { data, error } = await supabase.functions.invoke('seed-payout-test-booking', {
-        body: { business_id: bizRow.id, credits: Number(seedCredits), days_ago: Number(seedDaysAgo) },
+        body: {
+          business_id: bizRow.id,
+          credits: Number(seedCredits),
+          days_ago: Number(seedDaysAgo),
+          force_bypass_safety_window: seedForceBypass,
+        },
       });
       if (error) throw new Error(error.message || 'invoke failed');
       if (data?.error) throw new Error(data.error);
@@ -11287,6 +11293,11 @@ function AdminSetupPage() {
               {seedLoading ? 'Seeding…' : 'Seed test booking'}
             </button>
           </div>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 11, color: '#555', marginBottom: 12, cursor: 'pointer' }}>
+            <input type="checkbox" checked={seedForceBypass}
+              onChange={e => setSeedForceBypass(e.target.checked)}/>
+            Force through safety window — temporarily flip cancellation_safety_window off around the insert, then restore. Use only on throwaway test rows.
+          </label>
           {seedError && <div style={S.err}>{seedError}</div>}
           {seedResult && (
             <div style={{ marginTop: 8 }}>

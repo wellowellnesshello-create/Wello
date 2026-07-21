@@ -93,6 +93,7 @@ serve(async (req) => {
     days_ago?: number
     start_time?: string
     duration?: number
+    force_bypass_safety_window?: boolean
   } = {}
   try { body = await req.json() } catch { /* empty body is fine */ }
 
@@ -102,6 +103,7 @@ serve(async (req) => {
   const daysAgo     = Math.max(1, Math.floor(Number(body.days_ago   ?? 4))) // last Friday when run on a Tue
   const startTime   = String(body.start_time ?? '18:00').slice(0, 5)
   const duration    = Math.max(15, Math.floor(Number(body.duration ?? 60)))
+  const forceBypass = !!body.force_bypass_safety_window
 
   // Fetch current state
   const { data: biz, error: bizErr } = await db
@@ -111,10 +113,19 @@ serve(async (req) => {
     .maybeSingle()
   if (bizErr || !biz) return ok200(`business ${business_id} not found: ${bizErr?.message ?? ''}`, 404)
 
-  // Guard: safety window blocks backdated confirmed inserts. Rather than
-  // toggle it silently, refuse and tell the caller.
-  if (biz.cancellation_safety_window === true) {
-    return ok200('businesses.cancellation_safety_window is TRUE on this row. The DB trigger will reject a backdated confirmed insert. Set it to false, re-invoke, then flip back if you need to.', 409, { business: biz })
+  // Guard: safety window blocks backdated confirmed inserts. If the caller
+  // passes force_bypass_safety_window we temporarily flip the flag off
+  // around the insert and restore it in the finally block below. Without
+  // that opt-in we refuse — silently mutating the flag on a real business
+  // would be dangerous (the safety-window opt-in is a partner-facing
+  // decision, not something admin tooling should erase by default).
+  const safetyWindowWasOn = biz.cancellation_safety_window === true
+  if (safetyWindowWasOn && !forceBypass) {
+    return ok200('businesses.cancellation_safety_window is TRUE on this row. Re-invoke with force_bypass_safety_window=true (or flip the column off yourself, insert, flip back).', 409, { business: biz })
+  }
+  if (safetyWindowWasOn && forceBypass) {
+    const { error: offErr } = await db.from('businesses').update({ cancellation_safety_window: false }).eq('id', business_id)
+    if (offErr) return ok200(`could not temporarily disable safety window: ${offErr.message}`, 500)
   }
 
   // Fill in commission fields if null. Test defaults per the payout job's
@@ -157,35 +168,55 @@ serve(async (req) => {
     notes:        `test booking for payout dry-run — seeded ${now.toISOString()}`,
     status:       'confirmed',
   }
-  const { data: booking, error: insErr } = await db
-    .from('bookings')
-    .insert(insertPayload)
-    .select('id, business_id, user_id, booking_date, start_time, duration, credits_used, status, notes, payout_at, payout_transfer_id, created_at')
-    .single()
-  if (insErr || !booking) return ok200(`booking insert failed: ${insErr?.message ?? 'unknown'}`, 500, { insertPayload })
+  // The insert lives inside try/finally so a failure — or a Stripe /
+  // network hiccup on the response path — still leaves us with the
+  // safety-window flag restored to whatever the partner had chosen.
+  // Skipping the restore would silently disable the partner's opt-in
+  // cancellation window and is not acceptable, even in test tooling.
+  try {
+    const { data: booking, error: insErr } = await db
+      .from('bookings')
+      .insert(insertPayload)
+      .select('id, business_id, user_id, booking_date, start_time, duration, credits_used, status, notes, payout_at, payout_transfer_id, created_at')
+      .single()
+    if (insErr || !booking) return ok200(`booking insert failed: ${insErr?.message ?? 'unknown'}`, 500, { insertPayload })
 
-  // Return everything the caller needs to eyeball, plus a preview of what
-  // the payout dry-run should say for this business.
-  const rate = biz.terms_accepted_commission ?? 0.15
-  const N    = biz.founding_incentive_bookings ?? 20
-  return json({
-    ok: true,
-    business_id,
-    business_name: biz.name,
-    stripe_account_status: biz.stripe_account_status,
-    commission_updates: Object.keys(updates).length ? updates : 'no-op (all fields already set)',
-    booking,
-    expected_dry_run_for_this_business: {
-      status: biz.stripe_account_status === 'active' ? 'plan' : 'skipped',
-      reason_if_skipped: biz.stripe_account_status !== 'active' ? 'account_not_active' : null,
-      rate,
-      gross_cents:      credits * 100,
-      commission_cents: 0, // first delivered booking within the founding-incentive window
-      net_cents:        credits * 100,
-      booking_count:    1,
-      is_incentive:     true,
-      incentive_remaining_after: Math.max(0, N - 1),
-      note: 'This booking is the partner’s first delivered — it lands inside the founding-incentive window, so commission is 0 and the Transfer would be for the full session value.',
-    },
-  })
+    // Return everything the caller needs to eyeball, plus a preview of what
+    // the payout dry-run should say for this business.
+    const rate = biz.terms_accepted_commission ?? 0.15
+    const N    = biz.founding_incentive_bookings ?? 20
+    return json({
+      ok: true,
+      business_id,
+      business_name: biz.name,
+      stripe_account_status: biz.stripe_account_status,
+      commission_updates: Object.keys(updates).length ? updates : 'no-op (all fields already set)',
+      safety_window_toggled: safetyWindowWasOn,
+      booking,
+      expected_dry_run_for_this_business: {
+        status: biz.stripe_account_status === 'active' ? 'plan' : 'skipped',
+        reason_if_skipped: biz.stripe_account_status !== 'active' ? 'account_not_active' : null,
+        rate,
+        gross_cents:      credits * 100,
+        commission_cents: 0, // first delivered booking within the founding-incentive window
+        net_cents:        credits * 100,
+        booking_count:    1,
+        is_incentive:     true,
+        incentive_remaining_after: Math.max(0, N - 1),
+        note: 'This booking is the partner’s first delivered — it lands inside the founding-incentive window, so commission is 0 and the Transfer would be for the full session value.',
+      },
+    })
+  } finally {
+    if (safetyWindowWasOn) {
+      const { error: restoreErr } = await db
+        .from('businesses')
+        .update({ cancellation_safety_window: true })
+        .eq('id', business_id)
+      if (restoreErr) {
+        // Loud enough to notice in Dashboard logs. Manual DB fix needed:
+        // update businesses set cancellation_safety_window = true where id = <id>;
+        console.error(`CRITICAL: could not restore cancellation_safety_window=true on business ${business_id}: ${restoreErr.message}`)
+      }
+    }
+  }
 })
