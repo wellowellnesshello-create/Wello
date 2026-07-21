@@ -43,7 +43,7 @@ const UPDATE_COLUMN_WHITELIST = new Set([
 ])
 
 interface AdminBusinessesRequest {
-  op: 'list' | 'get' | 'update' | 'insert_slots'
+  op: 'list' | 'get' | 'update' | 'insert_slots' | 'find_by_stripe_account'
   business_id?: number | string | null
   patch?: Record<string, unknown>
   // When op === 'update' and patch.img is set, also mirror the URL onto
@@ -52,6 +52,11 @@ interface AdminBusinessesRequest {
   mirror_img_to_listing?: boolean
   listing_id?: number | string | null
   slot_rows?: Array<Record<string, unknown>>
+  // For op: find_by_stripe_account — reverse lookup from a Stripe Connect
+  // account id back to the Wello business row it belongs to. Useful when
+  // multiple test businesses have Connect accounts and it's not obvious
+  // from the dropdown which one is which.
+  account_id?: string
 }
 
 function respond(status: number, body: unknown): Response {
@@ -82,12 +87,32 @@ serve(async (req) => {
 
   // ── op: list ─────────────────────────────────────────────────────────
   if (body.op === 'list') {
+    // stripe_account_id / stripe_account_status added so the admin
+    // dropdown can tell overlapping test rows apart (one with an active
+    // connected account vs one still pending, etc).
     const { data, error } = await supabase
       .from('businesses')
-      .select('id, name, business_type, category, status, cr, slots, session_offerings, description, address, img, gallery, tags, email, contact_name')
+      .select('id, name, business_type, category, status, cr, slots, session_offerings, description, address, img, gallery, tags, email, contact_name, stripe_account_id, stripe_account_status')
       .order('name', { ascending: true })
     if (error) return respond(500, { error: error.message })
     return respond(200, { businesses: data || [] })
+  }
+
+  // ── op: find_by_stripe_account ───────────────────────────────────────
+  // Reverse lookup: given a Stripe connected-account id, return the Wello
+  // business row that owns it. Used for support triage when there are
+  // multiple test rows and it isn't obvious from the name.
+  if (body.op === 'find_by_stripe_account') {
+    const acctId = String(body.account_id || '').trim()
+    if (!acctId) return respond(400, { error: 'account_id is required.' })
+    const { data, error } = await supabase
+      .from('businesses')
+      .select('id, name, email, user_id, stripe_account_id, stripe_account_status, commission_rate, terms_accepted_commission, founding_incentive_bookings, cancellation_safety_window')
+      .eq('stripe_account_id', acctId)
+      .maybeSingle()
+    if (error) return respond(500, { error: error.message })
+    if (!data) return respond(404, { error: `No business found with stripe_account_id = ${acctId}` })
+    return respond(200, { business: data })
   }
 
   // ── op: get ──────────────────────────────────────────────────────────
