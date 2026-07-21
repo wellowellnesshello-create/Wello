@@ -473,10 +473,11 @@ const fd = d => new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"sho
 // Single source of truth for the footer legal line + any customer-facing
 // contact surface. If any of these change (rebrand, moved to a new
 // registration, new mobile), edit here and every surface picks it up.
-const COMPANY_NAME   = "Wello-Wellness Ltd";
-const COMPANY_NUMBER = "17318025";
-const COMPANY_PHONE  = "+44 7727 302053";
-const COMPANY_EMAIL  = "hello@wello-wellness.com";
+const COMPANY_NAME    = "Wello-Wellness Ltd";
+const COMPANY_NUMBER  = "17318025";
+const COMPANY_ADDRESS = "9 Colville Gardens, GU18 5QQ, UK";
+const COMPANY_PHONE   = "+44 7775 868695";
+const COMPANY_EMAIL   = "hello@wello-wellness.com";
 
 // ─── Atoms ────────────────────────────────────────────────────────────────────
 const F = { display:"'Manrope','Jost',system-ui,sans-serif", body:"'Manrope','Jost',system-ui,sans-serif" };
@@ -11964,14 +11965,7 @@ export default function App() {
           <div style={{maxWidth:1200,margin:"0 auto",display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"flex-start",gap:32}}>
             <div>
               <span style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:20,fontWeight:800,color:"#213C18",letterSpacing:"-0.5px",display:"block",marginBottom:8}}>wello</span>
-              <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",maxWidth:280,lineHeight:1.6,margin:"0 0 6px"}}>© 2026 Wello. Our Sustainability Commitment.</p>
-              <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"#54584F",maxWidth:320,lineHeight:1.6,margin:0}}>
-                {COMPANY_NAME} · Registered in England and Wales · Company No. {COMPANY_NUMBER}
-                <br/>
-                <a href={`tel:${COMPANY_PHONE.replace(/\s+/g,'')}`} style={{color:"#43483F",textDecoration:"none"}}>{COMPANY_PHONE}</a>
-                {' · '}
-                <a href={`mailto:${COMPANY_EMAIL}`} style={{color:"#43483F",textDecoration:"none"}}>{COMPANY_EMAIL}</a>
-              </p>
+              <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",maxWidth:280,lineHeight:1.6,margin:0}}>© 2026 Wello. Our Sustainability Commitment.</p>
             </div>
             <div style={{display:"flex",gap:32,flexWrap:"wrap"}}>
               <a onClick={()=>setView("about")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>About</a>
@@ -11984,6 +11978,11 @@ export default function App() {
               <button style={{width:40,height:40,borderRadius:"50%",border:"1px solid rgba(195,200,188,0.4)",background:"transparent",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,transition:"background .15s"}}
                 onMouseEnter={e=>e.target.style.background="#F0EEE9"} onMouseLeave={e=>e.target.style.background="transparent"}>🌐</button>
             </div>
+          </div>
+          <div style={{maxWidth:1200,margin:"clamp(24px,4vw,40px) auto 0",paddingTop:16,borderTop:"1px solid rgba(195,200,188,0.25)"}}>
+            <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"#7A7E74",lineHeight:1.6,margin:0}}>
+              {COMPANY_NAME} · Registered in England and Wales · Company No. {COMPANY_NUMBER} · Registered office: {COMPANY_ADDRESS} · <a href={`mailto:${COMPANY_EMAIL}`} style={{color:"#7A7E74",textDecoration:"none"}}>{COMPANY_EMAIL}</a>
+            </p>
           </div>
         </footer>
       </div>
