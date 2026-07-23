@@ -54,7 +54,11 @@ interface AdminBusinessesRequest {
     | 'stripe_diagnose'
     | 'stripe_create_connect_endpoint'
     | 'stripe_rotate_connect_endpoint'
+    | 'stripe_delete_webhook_endpoint'
+    | 'stripe_check_webhook_env'
     | 'stripe_nudge_account'
+    | 'stripe_balance_breakdown'
+    | 'stripe_seed_eur_balance'
   business_id?: number | string | null
   patch?: Record<string, unknown>
   // When op === 'update' and patch.img is set, also mirror the URL onto
@@ -70,6 +74,11 @@ interface AdminBusinessesRequest {
   // pointing at a non-default deployment. Defaults to the current
   // project's /functions/v1/stripe-webhook.
   endpoint_url?: string
+  // For op: stripe_seed_eur_balance — amount in EUR cents. Defaults
+  // to 10_000 (€100) which covers several typical test payouts.
+  amount_cents?: number
+  // For op: stripe_delete_webhook_endpoint — the we_... id to delete.
+  webhook_endpoint_id?: string
 }
 
 function respond(status: number, body: unknown): Response {
@@ -322,34 +331,56 @@ serve(async (req) => {
         }
       })
 
-      // Webhook endpoint config. If none of the endpoints has
-      // connect: true AND subscribes to account.updated (or *), Stripe
-      // will never deliver Connect account.updated to us, no matter how
-      // many events fire. This is the most common cause of a stuck
-      // stripe_account_status mirror.
+      // Webhook endpoint config. Stripe accepts `connect: true` as a
+      // create-time parameter but does NOT return it on the endpoint
+      // object — the field is write-only, discoverable only by whoever
+      // created it or via account-level metadata we set ourselves.
+      // As a workaround we tag every Connect endpoint we create with a
+      // description starting `[wello-connect]` and use that as the
+      // heuristic. `probable_connect` is a best-guess based on the tag
+      // OR on the enabled_events list only containing connected-account
+      // events (account.updated in isolation is a strong signal).
       let webhookEndpoints: Array<{
         id: string
         url: string
         status: string
-        connect: boolean
+        probable_connect: boolean
+        probable_connect_reason: string
         enabled_events: string[]
         api_version: string | null
         livemode: boolean
+        description: string | null
       }> = []
       try {
         const list = await stripe.webhookEndpoints.list({ limit: 100 })
-        webhookEndpoints = list.data.map(w => ({
-          id: w.id,
-          url: w.url,
-          status: w.status,
-          // The Stripe types don't expose `connect` on the surface type,
-          // but the API returns it and it's the field that decides
-          // whether the endpoint receives connected-account events.
-          connect: (w as unknown as { connect?: boolean }).connect === true,
-          enabled_events: w.enabled_events,
-          api_version: w.api_version,
-          livemode: w.livemode,
-        }))
+        webhookEndpoints = list.data.map(w => {
+          const desc = w.description ?? ''
+          const events = w.enabled_events ?? []
+          const taggedConnect = desc.startsWith('[wello-connect]')
+          const looksConnect = events.length > 0 && events.every(e =>
+            e === 'account.updated' ||
+            e === 'account.application.deauthorized' ||
+            e === 'capability.updated' ||
+            e === 'person.updated'
+          )
+          const probable_connect = taggedConnect || looksConnect
+          const probable_connect_reason = taggedConnect
+            ? 'description tag'
+            : looksConnect
+              ? 'enabled_events pattern'
+              : 'no signal — assumed direct'
+          return {
+            id: w.id,
+            url: w.url,
+            status: w.status,
+            probable_connect,
+            probable_connect_reason,
+            enabled_events: events,
+            api_version: w.api_version,
+            livemode: w.livemode,
+            description: w.description ?? null,
+          }
+        })
       } catch (e) {
         console.warn('stripe_diagnose: webhookEndpoints.list failed:', (e as Error).message)
       }
@@ -406,16 +437,18 @@ serve(async (req) => {
     })
     const url = String(body.endpoint_url || `${SUPABASE_URL}/functions/v1/stripe-webhook`).trim()
     try {
-      // Guard against double-creation: if a Connect endpoint pointing at
-      // this URL already exists, return the existing one instead of
-      // making a duplicate. Note: Stripe only returns the signing secret
-      // on the create response; a pre-existing endpoint won't include
-      // one, so the caller has to fetch it from the dashboard in that
-      // path.
+      // Guard against double-creation. Stripe does NOT return the
+      // `connect` flag on webhook endpoint objects (it's a write-only
+      // create param), so we can't detect existing Connect endpoints
+      // reliably from the API alone. Instead we tag every Connect
+      // endpoint we create with a `[wello-connect]` description prefix
+      // and match on that. Stripe only returns the signing secret on
+      // the create response; a pre-existing endpoint won't include one,
+      // so the caller has to fetch it from the Dashboard in that path.
       const existing = await stripe.webhookEndpoints.list({ limit: 100 })
       const already = existing.data.find(w =>
         w.url === url &&
-        (w as unknown as { connect?: boolean }).connect === true,
+        (w.description ?? '').startsWith('[wello-connect]'),
       )
       if (already) {
         return respond(200, {
@@ -424,14 +457,14 @@ serve(async (req) => {
           url: already.url,
           enabled_events: already.enabled_events,
           livemode: already.livemode,
-          message: 'A Connect endpoint at this URL already exists. Fetch its signing secret from the Stripe Dashboard (Developers → Webhooks) — Stripe only returns whsec on the initial create.',
+          message: 'A tagged [wello-connect] endpoint at this URL already exists. Fetch its signing secret from the Stripe Dashboard (Developers → Webhooks) — Stripe only returns whsec on the initial create. Or use stripe_rotate_connect_endpoint to replace it.',
         })
       }
       const created = await stripe.webhookEndpoints.create({
         url,
         enabled_events: ['account.updated'],
         connect: true,
-        description: 'Wello Connect events (account.updated). Delivers to same handler as the direct endpoint; handler tries both signing secrets.',
+        description: '[wello-connect] Wello Connect events (account.updated). Delivers to same handler as the direct endpoint; handler tries both signing secrets.',
       })
       return respond(200, {
         id: created.id,
@@ -468,10 +501,14 @@ serve(async (req) => {
     })
     const url = String(body.endpoint_url || `${SUPABASE_URL}/functions/v1/stripe-webhook`).trim()
     try {
+      // Match by our `[wello-connect]` description tag rather than the
+      // `.connect` field (write-only, not returned by Stripe). Older
+      // Connect endpoints we created before the tag existed won't be
+      // matched — use stripe_delete_webhook_endpoint by id for those.
       const existing = await stripe.webhookEndpoints.list({ limit: 100 })
       const toDelete = existing.data.filter(w =>
         w.url === url &&
-        (w as unknown as { connect?: boolean }).connect === true,
+        (w.description ?? '').startsWith('[wello-connect]'),
       )
       const deleted: string[] = []
       for (const w of toDelete) {
@@ -482,7 +519,7 @@ serve(async (req) => {
         url,
         enabled_events: ['account.updated'],
         connect: true,
-        description: 'Wello Connect events (account.updated). Rotated by stripe_rotate_connect_endpoint.',
+        description: '[wello-connect] Wello Connect events (account.updated). Rotated by stripe_rotate_connect_endpoint.',
       })
       return respond(200, {
         deleted,
@@ -496,6 +533,67 @@ serve(async (req) => {
       })
     } catch (e) {
       return respond(500, { error: `stripe_rotate_connect_endpoint failed: ${(e as Error).message}` })
+    }
+  }
+
+  // ── op: stripe_check_webhook_env ─────────────────────────────────────
+  // Reports the presence and shape (length, prefix) of the two webhook
+  // signing secrets stripe-webhook uses to verify signatures. Values
+  // are never returned. Useful when a nudge fires a real Stripe event
+  // (visible in connect_scope_events) but the row doesn't flip — the
+  // most common cause is a missing or truncated CONNECT secret in
+  // Supabase Function env.
+  //
+  // Supabase Function secrets are project-wide, so if the value is
+  // visible here it's visible to stripe-webhook too.
+  if (body.op === 'stripe_check_webhook_env') {
+    const shape = (v: string | undefined) => {
+      if (!v) return { present: false }
+      return {
+        present: true,
+        length: v.length,
+        starts_with: v.slice(0, 6),
+        ends_with: v.slice(-4),
+      }
+    }
+    return respond(200, {
+      stripe_webhook_secret:         shape(Deno.env.get('STRIPE_WEBHOOK_SECRET')),
+      stripe_webhook_secret_connect: shape(Deno.env.get('STRIPE_WEBHOOK_SECRET_CONNECT')),
+      supabase_service_role_key_length: (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').length,
+    })
+  }
+
+  // ── op: stripe_delete_webhook_endpoint ───────────────────────────────
+  // Explicit-by-id delete for a webhook endpoint. Used to remove ghost
+  // endpoints that our tag-based rotate op couldn't identify (e.g.
+  // Connect endpoints created before the [wello-connect] description
+  // tag existed). The endpoint id must be passed explicitly — no
+  // pattern matching, no "delete all Connect endpoints" bulk mode,
+  // because deleting the wrong endpoint silently breaks event
+  // delivery until it's re-created.
+  if (body.op === 'stripe_delete_webhook_endpoint') {
+    if (!STRIPE_SECRET_KEY) return respond(500, { error: 'STRIPE_SECRET_KEY not configured on this environment.' })
+    const wid = String(body.webhook_endpoint_id || '').trim()
+    if (!wid.startsWith('we_')) return respond(400, { error: 'webhook_endpoint_id must be a Stripe webhook endpoint id (starts with we_).' })
+    const stripe = new Stripe(STRIPE_SECRET_KEY, {
+      apiVersion: '2024-09-30.acacia',
+      httpClient: Stripe.createFetchHttpClient(),
+    })
+    try {
+      const before = await stripe.webhookEndpoints.retrieve(wid)
+      const del = await stripe.webhookEndpoints.del(wid)
+      return respond(200, {
+        ok: true,
+        deleted_id: del.id,
+        deleted_object: {
+          url: before.url,
+          enabled_events: before.enabled_events,
+          description: before.description ?? null,
+          livemode: before.livemode,
+        },
+      })
+    } catch (e) {
+      return respond(500, { error: `stripe_delete_webhook_endpoint failed: ${(e as Error).message}` })
     }
   }
 
@@ -534,6 +632,118 @@ serve(async (req) => {
       })
     } catch (e) {
       return respond(500, { error: `stripe_nudge_account failed: ${(e as Error).message}` })
+    }
+  }
+
+  // ── op: stripe_balance_breakdown ─────────────────────────────────────
+  // Returns the platform's balance broken down by source_type. Transfers
+  // to connected accounts draw from specific buckets (card, bank_account,
+  // fpx, etc.); "€X available" in the Dashboard is the *sum*, so a
+  // transfer can fail with insufficient funds even when the total looks
+  // healthy if the bucket the transfer would draw from is empty.
+  //
+  // Also returns pending, instant_available and connect_reserved so we
+  // can see whether funds are earmarked, still clearing, or held back
+  // for the Connect platform.
+  if (body.op === 'stripe_balance_breakdown') {
+    if (!STRIPE_SECRET_KEY) return respond(500, { error: 'STRIPE_SECRET_KEY not configured on this environment.' })
+    const stripe = new Stripe(STRIPE_SECRET_KEY, {
+      apiVersion: '2024-09-30.acacia',
+      httpClient: Stripe.createFetchHttpClient(),
+    })
+    try {
+      const bal = await stripe.balance.retrieve()
+      return respond(200, {
+        livemode: bal.livemode,
+        available: bal.available,
+        pending: bal.pending,
+        instant_available: bal.instant_available ?? null,
+        connect_reserved: bal.connect_reserved ?? null,
+      })
+    } catch (e) {
+      return respond(500, { error: `stripe_balance_breakdown failed: ${(e as Error).message}` })
+    }
+  }
+
+  // ── op: stripe_seed_eur_balance ──────────────────────────────────────
+  // Creates + confirms a test-mode PaymentIntent in EUR against
+  // `pm_card_visa`, producing instantly-available EUR funds on the
+  // platform balance. Used to fund the sandbox for Connect transfer
+  // tests without clicking through the credit checkout.
+  //
+  // Refuses to run against a live key — this would be a real charge
+  // against a real payment method. Also refuses if EUR settlement
+  // isn't enabled on the platform (detected via a subsequent balance
+  // check that shows the funds landed as GBP anyway).
+  if (body.op === 'stripe_seed_eur_balance') {
+    if (!STRIPE_SECRET_KEY) return respond(500, { error: 'STRIPE_SECRET_KEY not configured on this environment.' })
+    if (STRIPE_SECRET_KEY.startsWith('sk_live_')) {
+      return respond(400, { error: 'Refusing to seed against a live Stripe key — this op is test-mode only.' })
+    }
+    const amountCents = Number.isFinite(body.amount_cents) && (body.amount_cents as number) > 0
+      ? Math.round(body.amount_cents as number)
+      : 10_000
+    const stripe = new Stripe(STRIPE_SECRET_KEY, {
+      apiVersion: '2024-09-30.acacia',
+      httpClient: Stripe.createFetchHttpClient(),
+    })
+    try {
+      // Legacy Charges API with `tok_bypassPending` — this is the
+      // documented test-mode path for producing instantly-available
+      // funds. PaymentIntents wrap the same token in a PaymentMethod
+      // but seem to lose the bypass behaviour (charges still land in
+      // pending), so we go direct. Only used for test-mode seeding —
+      // the guard at the top of this op refuses to run against a
+      // live key.
+      const charge = await stripe.charges.create({
+        amount: amountCents,
+        currency: 'eur',
+        source: 'tok_bypassPending',
+        description: 'Wello test-mode EUR balance seed (admin op).',
+      })
+      // Fresh balance snapshot including pending — pm_card_visa is
+      // usually instantly-available, but during the brief settlement
+      // window and depending on account-level auto-conversion settings
+      // the funds may show up in pending first, or in the wrong
+      // currency bucket entirely. Showing all three (available EUR,
+      // pending EUR, available GBP) lets the caller distinguish
+      // "not enabled yet" from "still landing" from "auto-converted".
+      const bal = await stripe.balance.retrieve()
+      const eurAvail = bal.available.find(a => a.currency === 'eur') ?? null
+      const eurPend  = bal.pending.find(a => a.currency === 'eur') ?? null
+      const gbpAvail = bal.available.find(a => a.currency === 'gbp') ?? null
+      const gbpPend  = bal.pending.find(a => a.currency === 'gbp') ?? null
+
+      let settlement_note: string
+      if (eurAvail && eurAvail.amount > 0) {
+        settlement_note = 'EUR available balance present — settlement is EUR-capable and funds are usable for transfers now.'
+      } else if (eurPend && eurPend.amount > 0) {
+        settlement_note = 'EUR funds are in pending — settlement IS EUR-capable but funds need a moment to become available. Re-run in a few seconds.'
+      } else if (gbpPend && gbpPend.amount >= Math.floor(amountCents * 0.7)) {
+        // Rough FX heuristic: if pending GBP jumped by roughly the seed
+        // amount, the charge auto-converted despite EUR being enabled.
+        settlement_note = 'Seed landed in GBP pending. EUR settlement is enabled but auto-conversion is still ON — turn off "Automatically convert to your default currency" in Dashboard → Settings → Balance/Payouts → Currency conversion.'
+      } else {
+        settlement_note = 'No EUR balance visible in available OR pending after seed. Either EUR settlement isn\'t fully enabled yet, or the funds went somewhere unexpected. Re-run stripe_balance_breakdown to inspect the raw balance object.'
+      }
+
+      return respond(200, {
+        ok: true,
+        charge_id: charge.id,
+        status: charge.status,
+        amount_seeded_cents: amountCents,
+        balance_after: {
+          eur_available: eurAvail?.amount ?? 0,
+          eur_pending:   eurPend?.amount ?? 0,
+          eur_source_types_available: eurAvail?.source_types ?? null,
+          gbp_available: gbpAvail?.amount ?? 0,
+          gbp_pending:   gbpPend?.amount ?? 0,
+          gbp_source_types_available: gbpAvail?.source_types ?? null,
+        },
+        settlement_note,
+      })
+    } catch (e) {
+      return respond(500, { error: `stripe_seed_eur_balance failed: ${(e as Error).message}` })
     }
   }
 

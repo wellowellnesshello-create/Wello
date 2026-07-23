@@ -67,3 +67,41 @@ doesn't, use `op: 'stripe_diagnose'` — it reports both event scopes and
 the full list of registered webhook endpoints with their `connect`
 flags, which is the fastest way to see whether Connect deliveries are
 reaching us.
+
+## Stripe: EUR settlement must be active on the platform
+
+Transfers can only debit a platform balance in the same currency as the
+transfer. Payouts to ES-based Connect accounts are in EUR, so the
+platform needs EUR-denominated available funds — not just EUR-priced
+charges that auto-convert to GBP at settlement.
+
+**In test mode we hit this on 2026-07-23:** the platform's default
+settlement currency was GBP. €-priced credit charges landed as GBP
+(£86.12 available, €0 available), so a €48 transfer to business 53
+failed with "insufficient available funds" — misleading: the EUR
+bucket didn't exist, not that it was underfunded.
+
+The Wise EUR IBAN was added to the live platform this week, which
+should enable EUR as an additional settlement currency. Verify before
+the first real payout:
+
+1. Trigger one real €-denominated credit purchase in live mode (yourself
+   or a friendly first user).
+2. Wait for it to settle (usually minutes).
+3. Run `op: 'stripe_balance_breakdown'` on admin-businesses against
+   the live key. Look for a EUR entry under `available`. If the entry
+   is present with a non-zero `card` sub-bucket, settlement is EUR.
+4. If everything's still landing as GBP: Dashboard → **Settings →
+   Payments → Currency conversion** (label moves around) → add EUR
+   as an additional settlement currency.
+
+Without this, the first live payout will fail with the exact "insufficient
+available funds" error even though the Dashboard Balance page shows
+plenty of money.
+
+### Fast path for test-mode seeding
+
+`op: 'stripe_seed_eur_balance'` on admin-businesses creates + confirms
+a test-mode EUR PaymentIntent using `pm_card_visa`. Refuses to run
+against a live key. Only useful after EUR settlement is enabled — a
+seeded PI on a GBP-only platform still lands as GBP.

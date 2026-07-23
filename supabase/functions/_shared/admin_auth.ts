@@ -22,6 +22,12 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
+// Ephemeral CLI bypass. When set (typically by a rotation script that
+// generates a random token, sets it, calls this function once, then
+// unsets it) the token acts as a project-scoped admin credential for
+// automated ops. Not intended to persist between rotations. Anonymous
+// / user JWTs still go through the getUser path.
+const ADMIN_CLI_TOKEN = Deno.env.get('ADMIN_CLI_TOKEN') || ''
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -41,6 +47,20 @@ export type AdminGate =
   | { ok: false; response: Response }
 
 export async function requireAdmin(req: Request): Promise<AdminGate> {
+  // Ephemeral CLI-token bypass via X-Admin-Token header. The header
+  // is separate from Authorization so the request can still carry a
+  // valid anon-key JWT (which the Supabase gateway requires for its
+  // upstream JWT-format check) while this function's own admin gate
+  // is satisfied by the ephemeral token. Constant-time compare —
+  // signature-oracle risk is small (token only set during a rotation
+  // script's window) but the cost is trivial.
+  const cliToken = (req.headers.get('X-Admin-Token') || req.headers.get('x-admin-token') || '').trim()
+  if (cliToken && ADMIN_CLI_TOKEN && cliToken.length === ADMIN_CLI_TOKEN.length) {
+    let diff = 0
+    for (let i = 0; i < cliToken.length; i++) diff |= cliToken.charCodeAt(i) ^ ADMIN_CLI_TOKEN.charCodeAt(i)
+    if (diff === 0) return { ok: true, userId: 'admin_cli' }
+  }
+
   const authHeader = req.headers.get('Authorization') || req.headers.get('authorization') || ''
   const token = authHeader.replace(/^Bearer\s+/i, '').trim()
   if (!token) return { ok: false, response: forbidden('Missing Authorization header.') }
