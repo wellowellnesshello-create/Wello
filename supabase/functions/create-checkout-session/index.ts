@@ -62,11 +62,11 @@ serve(async (req) => {
     const { data: { user }, error: authErr } = await supabase.auth.getUser(token)
     if (authErr || !user) return json({ error: 'Not authenticated' }, 401)
 
-    // Service fee = 10% of credit value (1 credit = €1), capped at €2.50.
+    // Service fee = 10% of credit value (1 credit = €1), capped at €3.99.
     // Computed server-side so the client can't underpay. Added as a separate
     // line item so the customer sees the breakdown on Stripe Checkout.
     const creditValueEuros = q * 1 // 1 credit = €1
-    const feeEuros = Math.min(creditValueEuros * 0.10, 2.5)
+    const feeEuros = Math.min(creditValueEuros * 0.10, 3.99)
     const feeCents = Math.round(feeEuros * 100)
 
     // Credits line is defined inline so the function does not depend on a
@@ -87,7 +87,7 @@ serve(async (req) => {
       lineItems.push({
         price_data: {
           currency: 'eur',
-          product_data: { name: 'Service fee', description: '10% of credits, capped at €2.50' },
+          product_data: { name: 'Service fee', description: '10% of credits, capped at €3.99' },
           unit_amount: feeCents,
         },
         quantity: 1,
