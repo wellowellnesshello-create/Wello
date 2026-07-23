@@ -78,11 +78,11 @@ serve(async (req) => {
       code = generateGiftCode()
     }
 
-    // Service fee = 10% of credit value, capped at €3.99 — same rule as the
+    // Service fee = 10% of credit value, capped at €2.50 — same rule as the
     // regular credit top-up flow. Added as a separate Stripe line item so
     // the sender sees the breakdown on the checkout page.
     const creditValueEuros = credits * 1 // 1 credit = €1
-    const feeEuros = Math.min(creditValueEuros * 0.10, 3.99)
+    const feeEuros = Math.min(creditValueEuros * 0.10, 2.5)
     const feeCents = Math.round(feeEuros * 100)
 
     // Credits line is defined inline so the function does not depend on a
@@ -101,7 +101,7 @@ serve(async (req) => {
       lineItems.push({
         price_data: {
           currency: 'eur',
-          product_data: { name: 'Service fee', description: '10% of credits, capped at €3.99' },
+          product_data: { name: 'Service fee', description: '10% of credits, capped at €2.50' },
           unit_amount: feeCents,
         },
         quantity: 1,

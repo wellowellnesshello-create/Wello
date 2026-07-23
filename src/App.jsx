@@ -3888,7 +3888,7 @@ function CreditsPage({ credits, listings=[], authSession, onCheckout, onSetView 
 
   const qtyNum          = Math.max(0, parseInt(quantity) || 0);
   const creditsSubtotal = qtyNum * PRICE_PER_CREDIT;
-  const serviceFee      = Math.min(creditsSubtotal * 0.10, 3.99);
+  const serviceFee      = Math.min(creditsSubtotal * 0.10, 2.5);
   const grandTotal      = creditsSubtotal + serviceFee;
 
   // Resolve a real Mallorca venue photo for each itinerary card.
@@ -4186,7 +4186,7 @@ CRITICAL: every "credits" value and "total_credits" MUST be a single positive in
                   <span style={{fontFamily:F2,fontSize:13,color:"#43483F",fontWeight:600}}>€{creditsSubtotal.toFixed(2)}</span>
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:10,paddingBottom:10,borderBottom:"1px solid rgba(195,200,188,0.4)"}}>
-                  <span style={{fontFamily:F2,fontSize:12,color:"#54584F"}}>Service fee (10%, capped at €3.99)</span>
+                  <span style={{fontFamily:F2,fontSize:12,color:"#54584F"}}>Service fee (10%, capped at €2.50)</span>
                   <span style={{fontFamily:F2,fontSize:13,color:"#43483F",fontWeight:600}}>€{serviceFee.toFixed(2)}</span>
                 </div>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
@@ -4541,9 +4541,9 @@ function GiftPage({ authSession, profile, onSetView, onGiftCreated }) {
           {err && <p style={{fontFamily:F2,fontSize:12,color:"#C46A4D",margin:"0 0 12px"}}>{err}</p>}
           <button onClick={submit} disabled={!canSubmit}
             style={{width:"100%",padding:"14px 24px",background:!canSubmit?"#E4E2DD":"#213C18",color:!canSubmit?"#54584F":"#FBF9F4",border:"none",borderRadius:999,fontFamily:F2,fontSize:14,fontWeight:700,cursor:!canSubmit?"not-allowed":"pointer",boxShadow:!canSubmit?"none":"0 8px 20px rgba(33,60,24,0.18)"}}>
-            {submitting ? "Opening checkout…" : `Continue to checkout · €${(credits * 1 + Math.min(credits * 0.10, 3.99)).toFixed(2)}`}
+            {submitting ? "Opening checkout…" : `Continue to checkout · €${(credits * 1 + Math.min(credits * 0.10, 2.5)).toFixed(2)}`}
           </button>
-          <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:"12px 0 0",lineHeight:1.5,textAlign:"center"}}>Secure card payment via Stripe. Credit + 10% service fee (capped at €3.99). Recipient claims by email link or code.</p>
+          <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:"12px 0 0",lineHeight:1.5,textAlign:"center"}}>Secure card payment via Stripe. Credit + 10% service fee (capped at €2.50). Recipient claims by email link or code.</p>
         </div>
       </div>
     </div>
