@@ -9,8 +9,17 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // with --no-verify-jwt because Stripe doesn't send a Supabase JWT — we
 // verify Stripe's signature (HMAC against STRIPE_WEBHOOK_SECRET) instead.
 
-const STRIPE_SECRET_KEY         = Deno.env.get('STRIPE_SECRET_KEY')!
-const STRIPE_WEBHOOK_SECRET     = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? ''
+const STRIPE_SECRET_KEY             = Deno.env.get('STRIPE_SECRET_KEY')!
+// Direct endpoint secret — used for platform events (checkout.session.completed).
+const STRIPE_WEBHOOK_SECRET         = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? ''
+// Connect endpoint secret — used for connected-account events
+// (account.updated for Express partners onboarding). Stripe delivers
+// Connect events only to endpoints registered with connect: true, which
+// is a separate endpoint with its own signing secret. We try both when
+// verifying — Stripe signs each delivery with the endpoint's own secret,
+// so the wrong secret produces a signature mismatch, not a corrupted
+// event, and it's safe to fall through.
+const STRIPE_WEBHOOK_SECRET_CONNECT = Deno.env.get('STRIPE_WEBHOOK_SECRET_CONNECT') ?? ''
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const RESEND_API_KEY            = Deno.env.get('RESEND_API_KEY') || ''
@@ -89,22 +98,34 @@ async function sendSenderReceipt(gift: {
 serve(async (req) => {
   if (req.method !== 'POST') return new Response('POST only', { status: 405 })
 
-  if (!STRIPE_WEBHOOK_SECRET) {
-    console.error('stripe-webhook: STRIPE_WEBHOOK_SECRET not configured')
-    return new Response('Webhook secret not configured', { status: 500 })
-  }
-
   try {
     const sig = req.headers.get('stripe-signature')
     if (!sig) return new Response('Missing stripe-signature header', { status: 400 })
 
     const rawBody = await req.text()
 
-    let event: Stripe.Event
-    try {
-      event = await stripe.webhooks.constructEventAsync(rawBody, sig, STRIPE_WEBHOOK_SECRET)
-    } catch (err) {
-      console.error('stripe-webhook: signature verification failed:', (err as Error).message)
+    // Try the direct-endpoint secret first, then the Connect-endpoint
+    // secret. Stripe signs each delivery with exactly one of the two,
+    // so the wrong secret raises SignatureVerificationError and we fall
+    // through to the other. If both fail, the payload isn't legitimately
+    // ours.
+    const candidateSecrets = [STRIPE_WEBHOOK_SECRET, STRIPE_WEBHOOK_SECRET_CONNECT].filter(Boolean)
+    if (candidateSecrets.length === 0) {
+      console.error('stripe-webhook: no signing secrets configured')
+      return new Response('Webhook secret not configured', { status: 500 })
+    }
+    let event: Stripe.Event | null = null
+    let lastErr: string | null = null
+    for (const secret of candidateSecrets) {
+      try {
+        event = await stripe.webhooks.constructEventAsync(rawBody, sig, secret)
+        break
+      } catch (err) {
+        lastErr = (err as Error).message
+      }
+    }
+    if (!event) {
+      console.error('stripe-webhook: signature verification failed against all configured secrets:', lastErr)
       return new Response('Invalid signature', { status: 400 })
     }
 
