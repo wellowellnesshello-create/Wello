@@ -13,6 +13,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+// Shared secret sent by the pg_cron caller in the X-Cron-Token header.
+// Vault holds the same value on the DB side so the cron command can read
+// it without embedding the value in cron.job.command. Constant-time
+// compared inside the handler.
+const CRON_INVOKE_SECRET        = Deno.env.get('CRON_INVOKE_SECRET') || ''
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -24,6 +29,17 @@ const json = (body: unknown, status = 200) =>
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS })
+
+  // Internal auth: pg_cron sends X-Cron-Token; we constant-time compare
+  // against CRON_INVOKE_SECRET. Fail closed if the env var is empty (a
+  // missing secret is a deployment error, not something to shrug at —
+  // otherwise the function accepts anonymous invocations).
+  if (!CRON_INVOKE_SECRET) return json({ error: 'CRON_INVOKE_SECRET not configured.' }, 500)
+  const provided = (req.headers.get('X-Cron-Token') || req.headers.get('x-cron-token') || '').trim()
+  if (!provided || provided.length !== CRON_INVOKE_SECRET.length) return json({ error: 'Unauthorized' }, 401)
+  let diff = 0
+  for (let i = 0; i < provided.length; i++) diff |= provided.charCodeAt(i) ^ CRON_INVOKE_SECRET.charCodeAt(i)
+  if (diff !== 0) return json({ error: 'Unauthorized' }, 401)
 
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {

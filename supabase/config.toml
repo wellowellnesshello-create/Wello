@@ -28,9 +28,25 @@ verify_jwt = false
 # Public HMAC-tokened accept/decline link — the venue clicks it from their
 # email, no Wello session on that device. Auth is handled inside the
 # function by verifying the HMAC signature on the token (same pattern as
-# studio-cancel-booking). The auto_decline server-to-server path is guarded
-# by the fact that only auto-decline-stale-bookings holds the service-role
-# JWT to reach it.
+# studio-cancel-booking).
+#
+# KNOWN GAP: the JSON POST path with { action: 'auto_decline' } currently
+# has no auth check (comment inside the handler says "runs inside the
+# Supabase functions network" — that hasn't been true since we disabled
+# legacy JWTs, and was never enforced by the platform). Any anonymous
+# caller can cancel any pending_venue booking. Follow-up: guard with the
+# same CRON_INVOKE_SECRET header used by auto-decline-stale-bookings.
+# Same bug present in instructor-booking-response.
+verify_jwt = false
+
+[functions.auto-decline-stale-bookings]
+# Called hourly by pg_cron via pg_net. The Supabase gateway only accepts
+# publishable / legacy JWT keys on function URLs (sb_secret_ is rejected),
+# so after the legacy anon/service_role disable there's no gateway-side
+# credential available to a scheduled job that isn't also public. Bypass
+# gateway auth here and enforce a shared header check inside the function
+# using CRON_INVOKE_SECRET. The cron command reads the same value from
+# Vault so it never appears in plaintext in cron.job.command.
 verify_jwt = false
 
 [functions.redeem-partner-invite]
