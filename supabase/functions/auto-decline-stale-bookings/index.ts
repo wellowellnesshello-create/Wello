@@ -66,8 +66,12 @@ serve(async (req) => {
       const targetFn = row.status === 'pending_venue'
         ? 'venue-booking-response'
         : 'instructor-booking-response'
+      // Forward CRON_INVOKE_SECRET as X-Cron-Token so the downstream
+      // handler's auto_decline auth check passes. Same shared secret
+      // this function was invoked with.
       const { data, error: fnErr } = await supabase.functions.invoke(targetFn, {
         body: { booking_id: row.id, action: 'auto_decline' },
+        headers: { 'X-Cron-Token': CRON_INVOKE_SECRET },
       })
       if (fnErr) {
         failures.push({ id: row.id, error: fnErr.message })

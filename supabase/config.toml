@@ -28,15 +28,9 @@ verify_jwt = false
 # Public HMAC-tokened accept/decline link — the venue clicks it from their
 # email, no Wello session on that device. Auth is handled inside the
 # function by verifying the HMAC signature on the token (same pattern as
-# studio-cancel-booking).
-#
-# KNOWN GAP: the JSON POST path with { action: 'auto_decline' } currently
-# has no auth check (comment inside the handler says "runs inside the
-# Supabase functions network" — that hasn't been true since we disabled
-# legacy JWTs, and was never enforced by the platform). Any anonymous
-# caller can cancel any pending_venue booking. Follow-up: guard with the
-# same CRON_INVOKE_SECRET header used by auto-decline-stale-bookings.
-# Same bug present in instructor-booking-response.
+# studio-cancel-booking). The auto_decline JSON POST path is
+# authenticated by an X-Cron-Token header matching CRON_INVOKE_SECRET
+# (same shared secret used by auto-decline-stale-bookings).
 verify_jwt = false
 
 [functions.auto-decline-stale-bookings]
@@ -47,6 +41,15 @@ verify_jwt = false
 # gateway auth here and enforce a shared header check inside the function
 # using CRON_INVOKE_SECRET. The cron command reads the same value from
 # Vault so it never appears in plaintext in cron.job.command.
+verify_jwt = false
+
+[functions.instructor-booking-response]
+# Same reason as venue-booking-response: the auto_decline path is called
+# server-to-server by auto-decline-stale-bookings via
+# supabase.functions.invoke, which sends SUPABASE_SERVICE_ROLE_KEY (now
+# sb_secret_) as Bearer — but the gateway rejects sb_secret_ on function
+# URLs. Bypass gateway auth and enforce per-action checks inside the
+# function: user JWT for confirm/decline, X-Cron-Token for auto_decline.
 verify_jwt = false
 
 [functions.redeem-partner-invite]

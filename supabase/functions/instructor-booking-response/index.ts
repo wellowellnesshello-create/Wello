@@ -13,6 +13,10 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const RESEND_API_KEY            = Deno.env.get('RESEND_API_KEY')!
+// Shared secret sent by auto-decline-stale-bookings in X-Cron-Token when
+// invoking the auto_decline action. Same value used across the cron
+// chain; mirrored into vault.secrets for the pg_cron caller.
+const CRON_INVOKE_SECRET        = Deno.env.get('CRON_INVOKE_SECRET') || ''
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -50,11 +54,19 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    // auto_decline is called by the scheduled job — no JWT, runs as service role.
-    // For confirm/decline by an instructor we verify their JWT matches the
-    // business owner so a partner can't respond to someone else's bookings.
+    // Auth per action. confirm/decline: instructor's JWT must map to the
+    // business owner (partner-portal caller). auto_decline: X-Cron-Token
+    // matching CRON_INVOKE_SECRET (pg_cron caller via
+    // auto-decline-stale-bookings, which forwards the header).
     let actingUserId: string | null = null
-    if (action !== 'auto_decline') {
+    if (action === 'auto_decline') {
+      if (!CRON_INVOKE_SECRET) return json({ error: 'CRON_INVOKE_SECRET not configured.' }, 500)
+      const provided = (req.headers.get('X-Cron-Token') || req.headers.get('x-cron-token') || '').trim()
+      if (!provided || provided.length !== CRON_INVOKE_SECRET.length) return json({ error: 'Unauthorized' }, 401)
+      let diff = 0
+      for (let i = 0; i < provided.length; i++) diff |= provided.charCodeAt(i) ^ CRON_INVOKE_SECRET.charCodeAt(i)
+      if (diff !== 0) return json({ error: 'Unauthorized' }, 401)
+    } else {
       const authHeader = req.headers.get('Authorization')
       if (!authHeader) return json({ error: 'Not authenticated' }, 401)
       const token = authHeader.replace(/^Bearer\s+/i, '')

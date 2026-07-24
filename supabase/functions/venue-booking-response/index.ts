@@ -14,14 +14,19 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 //
 // Auto-decline invocation from auto-decline-stale-bookings:
 //   POST body: { booking_id: <id>, action: 'auto_decline' }
-//   No token check — caller must hold the service-role JWT (auto-decline
-//   runs inside the Supabase functions network so this is safe).
+//   Authenticated by an X-Cron-Token header carrying CRON_INVOKE_SECRET
+//   (same value stored in Vault so pg_cron reads it via
+//   vault.decrypted_secrets). The old comment claiming this ran "inside
+//   the Supabase functions network" was wishful: the function has
+//   verify_jwt=false at the gateway, so without this header check any
+//   anonymous caller can cancel a pending_venue booking.
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_ANON_KEY         = Deno.env.get('SUPABASE_ANON_KEY')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const RESEND_API_KEY            = Deno.env.get('RESEND_API_KEY')            || ''
 const SAFETY_CANCEL_SECRET      = Deno.env.get('SAFETY_CANCEL_SECRET')      || ''
+const CRON_INVOKE_SECRET        = Deno.env.get('CRON_INVOKE_SECRET')        || ''
 const PUBLIC_ORIGIN             = Deno.env.get('PUBLIC_ORIGIN')             || 'https://wello-wellness.com'
 
 const CORS = {
@@ -289,14 +294,21 @@ serve(async (req) => {
       const bookingId = Number(jsonBody.booking_id)
       if (!Number.isFinite(bookingId)) return json({ error: 'booking_id required' }, 400)
 
-      const ctx = await loadContext(supabase, bookingId)
-      if (!ctx.ok) return json({ error: ctx.error }, 404)
-      const { booking, business, customer } = ctx
-      if (booking.status !== 'pending_venue') return json({ skipped: 'not pending_venue', status: booking.status })
-
-      // Auth check for user-invoked confirm/decline. auto_decline runs
-      // inside the Supabase functions network and skips this check.
-      if (action === 'confirm' || action === 'decline') {
+      // Auth per action BEFORE any DB lookup — otherwise a 404 vs 200
+      // difference leaks whether a given booking_id exists to
+      // unauthenticated callers.
+      //   confirm/decline: venue-owner JWT (partner portal path)
+      //   auto_decline:    X-Cron-Token matching CRON_INVOKE_SECRET
+      //                    (pg_cron path via auto-decline-stale-bookings)
+      let acceptingUserId: string | null = null
+      if (action === 'auto_decline') {
+        if (!CRON_INVOKE_SECRET) return json({ error: 'CRON_INVOKE_SECRET not configured.' }, 500)
+        const provided = (req.headers.get('X-Cron-Token') || req.headers.get('x-cron-token') || '').trim()
+        if (!provided || provided.length !== CRON_INVOKE_SECRET.length) return json({ error: 'Unauthorized' }, 401)
+        let diff = 0
+        for (let i = 0; i < provided.length; i++) diff |= provided.charCodeAt(i) ^ CRON_INVOKE_SECRET.charCodeAt(i)
+        if (diff !== 0) return json({ error: 'Unauthorized' }, 401)
+      } else if (action === 'confirm' || action === 'decline') {
         const authHeader = req.headers.get('Authorization') || req.headers.get('authorization') || ''
         const jwt = authHeader.replace(/^Bearer\s+/i, '').trim()
         if (!jwt) return json({ error: 'Sign in to respond to this request.' }, 401)
@@ -305,11 +317,21 @@ serve(async (req) => {
         })
         const { data: userData, error: userErr } = await anonClient.auth.getUser(jwt)
         if (userErr || !userData?.user) return json({ error: 'Session expired.' }, 401)
-        if (!business || (business as { user_id?: string }).user_id !== userData.user.id) {
-          return json({ error: 'This booking does not belong to your business.' }, 403)
-        }
-      } else if (action !== 'auto_decline') {
+        acceptingUserId = userData.user.id
+      } else {
         return json({ error: 'action must be confirm, decline or auto_decline' }, 400)
+      }
+
+      const ctx = await loadContext(supabase, bookingId)
+      if (!ctx.ok) return json({ error: ctx.error }, 404)
+      const { booking, business, customer } = ctx
+      if (booking.status !== 'pending_venue') return json({ skipped: 'not pending_venue', status: booking.status })
+
+      // Ownership check runs after loadContext for confirm/decline —
+      // needed the business row to compare against the authenticated
+      // user. auto_decline skips this: it's the internal cron caller.
+      if (acceptingUserId && (!business || (business as { user_id?: string }).user_id !== acceptingUserId)) {
+        return json({ error: 'This booking does not belong to your business.' }, 403)
       }
 
       // Apply the effect.
