@@ -560,6 +560,7 @@ serve(async (req) => {
       stripe_webhook_secret:         shape(Deno.env.get('STRIPE_WEBHOOK_SECRET')),
       stripe_webhook_secret_connect: shape(Deno.env.get('STRIPE_WEBHOOK_SECRET_CONNECT')),
       supabase_service_role_key_length: (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '').length,
+      supabase_anon_key_length: (Deno.env.get('SUPABASE_ANON_KEY') || '').length,
     })
   }
 
