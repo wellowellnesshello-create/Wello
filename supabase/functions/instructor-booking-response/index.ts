@@ -230,17 +230,20 @@ serve(async (req) => {
       }
     }
 
-    // Refund the held credits. Best-effort: log loudly if refund fails so
-    // support can spot orphaned holds, but do NOT roll the cancellation
-    // back — a stuck-cancelled booking with a missing refund is easier to
-    // reconcile than a stuck-pending row nobody can action.
+    // Refund the held credits via the ledger. Best-effort: log loudly
+    // if refund fails so support can spot orphaned holds, but do NOT
+    // roll the cancellation back — a stuck-cancelled booking with a
+    // missing refund is easier to reconcile than a stuck-pending row
+    // nobody can action. refund_by_booking is idempotent so retrying
+    // is safe.
     if (customer && (booking.credits_used ?? 0) > 0) {
-      const cost = Number(booking.credits_used) || 0
-      const newBalance = (customer.credits ?? 0) + cost
-      const { error: refErr } = await supabase
-        .from('profiles').update({ credits: newBalance }).eq('id', customer.id)
-      if (refErr) console.error('Decline: refund failed for booking', booking.id, refErr.message)
-      else console.log('Refunded', cost, 'credits to', customer.id, 'for declined booking', booking.id)
+      const { data: refunded, error: refErr } = await supabase.rpc('refund_by_booking', {
+        p_booking_id: booking.id,
+        p_source:     action === 'auto_decline' ? 'auto_decline' : 'decline',
+        p_note:       `instructor ${action}`,
+      })
+      if (refErr) console.error('Decline: refund_by_booking failed for booking', booking.id, refErr.message)
+      else console.log('Refunded', refunded, 'credits to', customer.id, 'for declined booking', booking.id)
     }
 
     const customerEmail = customer?.email

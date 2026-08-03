@@ -55,20 +55,10 @@ serve(async (req) => {
     if (gift.status === 'refunded')        return json({ error: 'This gift is no longer valid.' }, 410)
     if (gift.status !== 'available')       return json({ error: 'This gift is not ready to redeem yet.' }, 409)
 
-    // 2. Fetch the caller's current credit balance.
-    const { data: profile, error: profErr } = await supabase
-      .from('profiles')
-      .select('credits')
-      .eq('id', user.id)
-      .single()
-    if (profErr || !profile) {
-      console.error('redeem-gift: profile not found', user.id, profErr?.message)
-      return json({ error: 'Your profile could not be loaded. Try refreshing.' }, 500)
-    }
-
-    // 3. Atomically flip the gift to claimed AND increment credits.
-    // We do the update conditional on status='available' to guard against
-    // simultaneous double-claim attempts (last write wins otherwise).
+    // 2. Atomically flip the gift to claimed. We do the update conditional
+    // on status='available' to guard against simultaneous double-claim
+    // attempts (last write wins otherwise). The ledger insert is a
+    // separate step so a failing grant can be rolled back cleanly.
     const { data: claimedRow, error: claimErr } = await supabase
       .from('gifts')
       .update({
@@ -89,21 +79,31 @@ serve(async (req) => {
       return json({ error: 'This gift was just claimed by someone else.' }, 409)
     }
 
-    const newBalance = (profile.credits || 0) + gift.credits
-    const { error: creditErr } = await supabase
-      .from('profiles')
-      .update({ credits: newBalance })
-      .eq('id', user.id)
-    if (creditErr) {
+    // 3. Grant the credits via the ledger. Gifts are purchased credits
+    // (the sender paid for them), so credit_type = 'purchased'.
+    const { error: grantErr } = await supabase.rpc('grant_credits', {
+      p_user_id:     user.id,
+      p_amount:      gift.credits,
+      p_credit_type: 'purchased',
+      p_source:      'gift',
+      p_expires_at:  null,
+      p_note:        `gift ${gift.code}`,
+    })
+    if (grantErr) {
       // Roll the gift back so we don't leave it stuck 'claimed' with no credit landed.
       await supabase.from('gifts').update({
         status: 'available',
         claimed_by_user_id: null,
         claimed_at: null,
       }).eq('id', gift.id)
-      console.error('redeem-gift: credit update failed', creditErr.message)
+      console.error('redeem-gift: grant_credits failed', grantErr.message)
       return json({ error: 'Credits could not be added. Please try again.' }, 500)
     }
+
+    // Read the trigger-refreshed balance so the response body reports it.
+    const { data: profile } = await supabase
+      .from('profiles').select('credits').eq('id', user.id).maybeSingle()
+    const newBalance = profile?.credits ?? gift.credits
 
     console.log(`redeem-gift: +${gift.credits} credits to ${user.id} via ${gift.code}`)
     return json({

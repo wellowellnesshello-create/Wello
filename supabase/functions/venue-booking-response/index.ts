@@ -170,8 +170,8 @@ async function findAlternatives(
 // (see request-treatment-booking), so decline is a real refund now.
 async function applyDecline(
   supabase: ReturnType<typeof createClient>,
-  { bookingId, mode, tokenSig, credits, customerId, customerCredits }:
-  { bookingId: number; mode: 'token' | 'auth' | 'auto'; tokenSig?: string; credits: number; customerId: string; customerCredits: number },
+  { bookingId, mode, tokenSig, credits, customerId, source }:
+  { bookingId: number; mode: 'token' | 'auth' | 'auto'; tokenSig?: string; credits: number; customerId: string; source: string },
 ): Promise<{ ok: true } | { ok: false; alreadyHandled?: boolean; error?: string }> {
   const q = supabase
     .from('bookings')
@@ -187,16 +187,18 @@ async function applyDecline(
   if (updErr) return { ok: false, error: updErr.message }
   if (!updated) return { ok: false, alreadyHandled: true }
 
-  // Refund the held credits. If this fails we log loudly rather than
-  // rolling the cancellation back — a stuck-cancelled booking with a
-  // missing refund is easier to spot and fix in support than a stuck
-  // pending row that no-one owns any more.
+  // Refund the held credits via the ledger. If this fails we log
+  // loudly rather than rolling the cancellation back — a stuck-
+  // cancelled booking with a missing refund is easier to spot and fix
+  // in support than a stuck pending row that no-one owns any more.
+  // refund_by_booking is idempotent so retrying is safe.
   if (credits > 0 && customerId) {
-    const { error: refErr } = await supabase
-      .from('profiles')
-      .update({ credits: customerCredits + credits })
-      .eq('id', customerId)
-    if (refErr) console.error('applyDecline: refund failed for booking', bookingId, refErr.message)
+    const { error: refErr } = await supabase.rpc('refund_by_booking', {
+      p_booking_id: bookingId,
+      p_source:     source,
+      p_note:       `venue ${mode} decline`,
+    })
+    if (refErr) console.error('applyDecline: refund_by_booking failed for booking', bookingId, refErr.message)
   }
   return { ok: true }
 }
@@ -361,8 +363,10 @@ serve(async (req) => {
       // decline OR auto_decline. Refund the held credits.
       const cost    = Number(booking.credits_used) || 0
       const custId  = String((customer as { id?: string } | null)?.id || '')
-      const balance = Number((customer as { credits?: number } | null)?.credits) || 0
-      const result = await applyDecline(supabase, { bookingId, mode: 'auth', credits: cost, customerId: custId, customerCredits: balance })
+      const result = await applyDecline(supabase, {
+        bookingId, mode: 'auth', credits: cost, customerId: custId,
+        source: action === 'auto_decline' ? 'auto_decline' : 'decline',
+      })
       if (!result.ok && result.alreadyHandled) return json({ error: 'Already handled' }, 409)
       if (!result.ok) return json({ error: result.error || 'decline failed' }, 500)
       await emailCustomerDecline(supabase, { booking, business, customer, autoDecline: action === 'auto_decline' })
@@ -509,15 +513,18 @@ serve(async (req) => {
   if (updErr) return html(page('Error', `<h1>Error</h1><p class="err">Could not decline the booking: ${updErr.message}</p>`), 500)
   if (!updated) return html(page('Already handled', `<h1>Already handled</h1><p>This request has already been actioned.</p>`), 409)
 
-  // Refund credits held at request time. Best-effort — log if it fails so
-  // we can spot orphaned holds in support, but do not roll the decline
-  // back (a stuck-cancelled row is easier to reconcile than a stuck-
-  // pending row nobody can actioned any more).
+  // Refund credits held at request time via the ledger. Best-effort —
+  // log if it fails so we can spot orphaned holds in support, but do
+  // not roll the decline back (a stuck-cancelled row is easier to
+  // reconcile than a stuck-pending row nobody can action any more).
+  // refund_by_booking is idempotent so retrying is safe.
   if (credits > 0 && customer?.id) {
-    const balance = Number(customer.credits) || 0
-    const { error: refErr } = await supabase
-      .from('profiles').update({ credits: balance + credits }).eq('id', customer.id)
-    if (refErr) console.error('venue-booking-response: refund failed for booking', booking.id, refErr.message)
+    const { error: refErr } = await supabase.rpc('refund_by_booking', {
+      p_booking_id: booking.id,
+      p_source:     'decline',
+      p_note:       'venue token decline',
+    })
+    if (refErr) console.error('venue-booking-response: refund_by_booking failed for booking', booking.id, refErr.message)
   }
 
   // Email the member with rule-based alternatives, same shape as the

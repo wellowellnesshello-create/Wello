@@ -3079,7 +3079,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
 // ═══════════════════════════════════════════════════════════════
 // PAGE: PROFILE
 // ═══════════════════════════════════════════════════════════════
-function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetView, isBiz, onToggleBiz, onPreviewDashboard, profile, authSession, onSignOut, onOpenSignIn, bookingsVersion = 0, onSaveInterests, onProfilePatch, onCancelBooking }) {
+function ProfilePage({ bookings, savedIds, listings, credits, creditSplit = { purchased: 0, bonus: 0 }, onSelect, onSetView, isBiz, onToggleBiz, onPreviewDashboard, profile, authSession, onSignOut, onOpenSignIn, bookingsVersion = 0, onSaveInterests, onProfilePatch, onCancelBooking }) {
   const [tab,setTab]=useState("reservations");
   const [resTab,setResTab] = useState("upcoming"); // "upcoming" | "past"
   const saved=listings.filter(b=>savedIds.includes(b.id));
@@ -3216,7 +3216,13 @@ function ProfilePage({ bookings, savedIds, listings, credits, onSelect, onSetVie
           </div>
           {/* Stats row */}
           <div style={{display:"flex",gap:16,flexWrap:"wrap",background:"#F5F3EE",borderRadius:12,padding:"12px 16px"}}>
-            {[["📍","Mallorca"],["◈",`${credits} credits`],["📅",`${shownBookings.length} bookings`]].map(([icon,val])=>(
+            {[
+              ["📍","Mallorca"],
+              ["◈", creditSplit.bonus > 0
+                ? `${credits} credits (${creditSplit.purchased} purchased · ${creditSplit.bonus} bonus)`
+                : `${credits} credits`],
+              ["📅",`${shownBookings.length} bookings`],
+            ].map(([icon,val])=>(
               <div key={val} style={{display:"flex",alignItems:"center",gap:6,fontFamily:F2,fontSize:13,fontWeight:600,color:"#213C18"}}>
                 <span>{icon}</span><span>{val}</span>
               </div>
@@ -3865,7 +3871,7 @@ function PartnersPage({ onSetView }) {
 }
 
 
-function CreditsPage({ credits, listings=[], authSession, onCheckout, onSetView }) {
+function CreditsPage({ credits, creditSplit = { purchased: 0, bonus: 0 }, listings=[], authSession, onCheckout, onSetView }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   const PRICE_PER_CREDIT = 1; // EUR. 1 credit equals one euro of credit value.
 
@@ -4106,9 +4112,17 @@ CRITICAL: every "credits" value and "total_credits" MUST be a single positive in
               {phase === "select" ? "Choose your credits" : "Plan your time"}
             </h1>
           </div>
-          <div style={{background:"#213C18",borderRadius:999,padding:"10px 18px",color:"#fff"}}>
-            <span style={{fontFamily:F2,fontSize:10,letterSpacing:"2px",textTransform:"uppercase",color:"rgba(255,255,255,0.55)",marginRight:8}}>Balance</span>
-            <span style={{fontFamily:F2,fontSize:14,fontWeight:800}}>◈ {credits}</span>
+          <div style={{background:"#213C18",borderRadius:12,padding:"10px 16px",color:"#fff",display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2,minWidth:170}}>
+            <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+              <span style={{fontFamily:F2,fontSize:10,letterSpacing:"2px",textTransform:"uppercase",color:"rgba(255,255,255,0.55)"}}>Balance</span>
+              <span style={{fontFamily:F2,fontSize:14,fontWeight:800}}>◈ {credits}</span>
+            </div>
+            {creditSplit.bonus > 0 && (
+              <div style={{display:"flex",gap:10,fontFamily:F2,fontSize:10,color:"rgba(255,255,255,0.70)",lineHeight:1.2}}>
+                <span>Purchased ◈ {creditSplit.purchased}</span>
+                <span>Bonus ◈ {creditSplit.bonus}</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -11662,17 +11676,50 @@ export default function App() {
   const [bkData,setBkData]     = useState(null);
   // Credit derivation lives here because it reads `profile` and `localCredits`,
   // both declared at the top of the component.
+  //
+  // profiles.credits is a cached total maintained by the credit_ledger
+  // trigger. The client must NOT persist it directly — that would race
+  // with the trigger and corrupt the balance. setCredits therefore only
+  // updates local state (optimistic UI); the real mutation happens via
+  // edge functions (spend-booking-credits, cancel-booking, etc.) and
+  // reconcileCredits refetches the trigger-refreshed value.
   const credits = profile ? profile.credits : localCredits;
+  // Split of the cached total: purchased vs bonus (non-expired only).
+  // Populated by reconcileCredits; used for the split display on the
+  // credits page. Falls back to {purchased: credits, bonus: 0} until
+  // the first fetch resolves.
+  const [creditSplit, setCreditSplit] = useState({ purchased: 0, bonus: 0 });
   function setCredits(updater) {
     if (profile) {
-      const next = typeof updater === 'function' ? updater(profile.credits) : updater;
-      setProfile(p => p ? { ...p, credits: next } : p);
-      supabase.from('profiles').update({ credits: next }).eq('id', profile.id)
-        .then(({ error }) => { if (error) console.warn('credits persist failed:', error.message); });
+      setProfile(p => p ? { ...p, credits: typeof updater === 'function' ? updater(p.credits) : updater } : p);
     } else {
       setLocalCredits(updater);
     }
   }
+  async function reconcileCredits() {
+    if (!profile?.id) return;
+    const [{ data: prof, error: profErr }, { data: split, error: splitErr }] = await Promise.all([
+      supabase.from('profiles').select('credits').eq('id', profile.id).maybeSingle(),
+      supabase.rpc('credit_balance', { p_user_id: profile.id }),
+    ]);
+    if (profErr) console.warn('reconcileCredits profile fetch failed:', profErr.message);
+    else if (prof) setProfile(p => p ? { ...p, credits: prof.credits } : p);
+    if (splitErr) console.warn('reconcileCredits split fetch failed:', splitErr.message);
+    else if (Array.isArray(split) && split[0]) {
+      setCreditSplit({
+        purchased: Number(split[0].purchased) || 0,
+        bonus:     Number(split[0].bonus)     || 0,
+      });
+    }
+  }
+  // Populate the purchased/bonus split whenever a profile becomes
+  // available. Same trigger-refreshed values as profile.credits, so
+  // the split just needs a one-shot fetch on load — subsequent ledger
+  // ops call reconcileCredits explicitly.
+  useEffect(() => {
+    if (profile?.id) reconcileCredits();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id]);
   const [saved,setSaved]       = useState([]);
   const [isBiz,setIsBiz]       = useState(false);
   const [bizPreview,setBizPreview] = useState(false);
@@ -11858,6 +11905,7 @@ export default function App() {
     }
     if (data.credits_refunded > 0) {
       setCredits(c => c + data.credits_refunded);
+      reconcileCredits();
     }
     setBookingsVersion(v => v + 1);
     showToast(`Booking cancelled. ${data.credits_refunded || 0} credits refunded.`, "success", 3200);
@@ -11946,13 +11994,10 @@ export default function App() {
       }
     }
 
-    // 1. Instant UI:
-    // - regular bookings: deduct credits immediately, mark slot booked
-    // - private requests: HOLD credits (deduct now, refund on decline).
-    //   Matches the pending_venue flow so a customer cannot double-spend
-    //   credits during the 48h instructor confirmation window. Slot
-    //   capacity is not incremented yet — the request has not yet been
-    //   accepted.
+    // 1. Optimistic UI: decrement locally so the user sees an instant
+    // update. The real debit runs server-side via spend-booking-credits
+    // (below). If that fails we revert the optimistic decrement so the
+    // balance doesn't stay wrong.
     if (!isPrivateBooking) {
       setCredits(c=>c-cost);
       setListings(p=>p.map(b=>b.id!==biz.id?b:{...b,slots:b.slots.map(s=>s.id!==slot.id?s:{...s,booked:s.booked+form.guests})}));
@@ -12027,11 +12072,39 @@ export default function App() {
           ? "Foreign-key violation — business_id or user_id doesn't exist. Check listings.business_id is populated for this listing."
           : null;
         if (hint) console.error('[onConfirm] hint:', hint);
+        // Insert failed, no ledger movement yet — revert the optimistic
+        // decrement locally so the balance doesn't stay wrong.
+        setCredits(c => c + cost);
         showToast("Couldn't save your booking. Check the console for details.","error");
         return;
       }
 
       console.log('[onConfirm] bookings INSERT OK', { booking_id: inserted.id });
+
+      // Deduct credits via the ledger. Doing this after the insert (as
+      // opposed to before) lets us tag the spend row with the booking
+      // id so refund_by_booking can find it on cancel / decline. Uses
+      // the spend-booking-credits edge fn because spend_credits is
+      // service_role only.
+      const spendRes = await supabase.functions.invoke('spend-booking-credits', {
+        body: { booking_id: inserted.id, source: isPrivateBooking ? 'booking_hold' : 'booking' },
+      });
+      if (spendRes.error || spendRes.data?.error) {
+        const err = spendRes.error?.message || spendRes.data?.error || 'spend failed';
+        console.error('[onConfirm] spend-booking-credits failed:', err);
+        // Server has already deleted the booking (or attempted to).
+        // Revert optimistic decrement locally so the balance snaps back.
+        setCredits(c => c + cost);
+        setBookings(p => p.filter(bk => bk.id !== inserted.id && bk.status !== (isPrivateBooking ? 'pending_instructor' : 'confirmed')));
+        if (err === 'insufficient_credits') {
+          showToast("Not enough credits. Top up and try again.","error");
+        } else {
+          showToast("Couldn't hold your credits — booking was rolled back.","error");
+        }
+        return;
+      }
+      // Trigger has refreshed profiles.credits authoritatively; pull it.
+      reconcileCredits();
 
       // Tick the bookings refresh counter so ProfilePage refetches and the
       // new row shows up immediately (it was rendered from a fetched list).
@@ -12092,7 +12165,7 @@ export default function App() {
       showToast("Something went wrong. Please try again.","error");
     }
   }
-  function onPurchase(purchase){ setCredits(c=>c+purchase.cr); showToast(`◈ ${purchase.cr} credits added!`,"gold"); }
+  function onPurchase(purchase){ setCredits(c=>c+purchase.cr); showToast(`◈ ${purchase.cr} credits added!`,"gold"); reconcileCredits(); }
   function toggleSave(id){ setSaved(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]); showToast(saved.includes(id)?"Removed from saved":"Saved!","success"); }
   function handleNavClick(id){
     // Unauthenticated visitors clicking Business see the /partners landing,
@@ -12249,9 +12322,9 @@ export default function App() {
         <div style={{paddingTop:headerH}}>
           {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds} onGotoCredits={gotoCredits}/>}
           {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds} profile={profile} authSession={authSession} onSaveInterests={saveInterests}/>}
-          {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion} onSaveInterests={saveInterests} onCancelBooking={cancelBooking} onProfilePatch={(patch)=>setProfile(p => p ? { ...p, ...patch } : { id: authSession?.user?.id, ...patch })}/>}
+          {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} creditSplit={creditSplit} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion} onSaveInterests={saveInterests} onCancelBooking={cancelBooking} onProfilePatch={(patch)=>setProfile(p => p ? { ...p, ...patch } : { id: authSession?.user?.id, ...patch })}/>}
           {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
-          {view==="credits"    &&<CreditsPage credits={credits} listings={listings} authSession={authSession} onCheckout={(qty)=>{ if (!authSession) requireAuthForCheckout(qty); else doCheckout(qty); }} onSetView={setView}/>}
+          {view==="credits"    &&<CreditsPage credits={credits} creditSplit={creditSplit} listings={listings} authSession={authSession} onCheckout={(qty)=>{ if (!authSession) requireAuthForCheckout(qty); else doCheckout(qty); }} onSetView={setView}/>}
           {view==="about"      &&<AboutPage onSetView={setView}/>}
           {view==="terms"      &&<TermsPage/>}
           {view==="partners"   &&<PartnersPage onSetView={setView}/>}
@@ -12259,7 +12332,7 @@ export default function App() {
             ? <GiftSentPage gift={lastGift} onSetView={(v)=>{ setLastGift(null); setView(v); }}/>
             : <GiftPage authSession={authSession} profile={profile} onSetView={setView} onGiftCreated={(g)=>setLastGift(g)}/>
           )}
-          {view==="redeem"     &&<RedeemPage authSession={authSession} prefilledCode={prefilledClaimCode} onSetView={setView} onOpenSignIn={()=>setAuthModal({mode:"signin"})} onCreditsAdded={(newBal)=>{ setCredits(newBal); try { const url = new URL(window.location.href); url.searchParams.delete("claim"); window.history.replaceState({}, "", url.toString()); } catch { /* noop */ } setPrefilledClaimCode(""); }}/>}
+          {view==="redeem"     &&<RedeemPage authSession={authSession} prefilledCode={prefilledClaimCode} onSetView={setView} onOpenSignIn={()=>setAuthModal({mode:"signin"})} onCreditsAdded={(newBal)=>{ setCredits(newBal); reconcileCredits(); try { const url = new URL(window.location.href); url.searchParams.delete("claim"); window.history.replaceState({}, "", url.toString()); } catch { /* noop */ } setPrefilledClaimCode(""); }}/>}
           {view==="adminSetup" &&<AdminSetupPage/>}
           {view==="partnerInvite" &&<PartnerInviteRedirect/>}
         </div>

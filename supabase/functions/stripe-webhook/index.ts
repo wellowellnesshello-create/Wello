@@ -256,27 +256,25 @@ serve(async (req) => {
       })
     }
 
-    const { data: profile, error: readErr } = await supabase
-      .from('profiles')
-      .select('credits')
-      .eq('id', userId)
-      .single()
+    const { error: grantErr } = await supabase.rpc('grant_credits', {
+      p_user_id:     userId,
+      p_amount:      credits,
+      p_credit_type: 'purchased',
+      p_source:      'stripe',
+      p_expires_at:  null,
+      p_note:        `stripe session ${session.id}`,
+    })
 
-    if (readErr || !profile) {
-      console.error('stripe-webhook: profile not found', userId, readErr?.message)
-      return new Response('Profile not found', { status: 404 })
-    }
-
-    const newBalance = (profile.credits || 0) + credits
-    const { error: updErr } = await supabase
-      .from('profiles')
-      .update({ credits: newBalance })
-      .eq('id', userId)
-
-    if (updErr) {
-      console.error('stripe-webhook: profile update failed', updErr.message)
+    if (grantErr) {
+      console.error('stripe-webhook: grant_credits failed', grantErr.message)
       return new Response('Update failed', { status: 500 })
     }
+
+    // The ledger trigger has already refreshed profiles.credits. Read
+    // it back so the response body still carries a new_balance.
+    const { data: profile } = await supabase
+      .from('profiles').select('credits').eq('id', userId).maybeSingle()
+    const newBalance = profile?.credits ?? credits
 
     console.log(`stripe-webhook: +${credits} credits to ${userId} (new balance ${newBalance}, session ${session.id})`)
     return new Response(JSON.stringify({ ok: true, user_id: userId, credits_added: credits, new_balance: newBalance }), {

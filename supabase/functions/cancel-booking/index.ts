@@ -91,27 +91,23 @@ serve(async (req) => {
       if (!pUpdated) return json({ error: 'Request was already actioned.' }, 409)
 
       // Both pending flavours now hold credits at request time, so a
-      // customer cancel is a genuine refund. Read a fresh profile to
-      // avoid stale balances if two tabs race a cancel.
+      // customer cancel is a genuine refund. refund_by_booking looks
+      // up every spend row tagged with this booking and reverses each
+      // one back onto the grant it came from. Idempotent, so a retry
+      // after a partial failure is safe.
       let creditsRefunded = 0
       const cost = Number(booking.credits_used) || 0
       if (cost > 0) {
-        const { data: prof, error: profErr } = await supabase
-          .from('profiles').select('credits').eq('id', user.id).single()
-        if (profErr || !prof) {
-          console.error('cancel-booking: refund lookup failed', profErr?.message)
-          // Cancellation stands — surface the refund miss instead of
-          // rolling back to keep the row consistent.
-          return json({ success: true, credits_refunded: 0, refund_error: 'Could not read profile', was_pending: true })
-        }
-        const newBalance = (prof.credits || 0) + cost
-        const { error: refErr } = await supabase
-          .from('profiles').update({ credits: newBalance }).eq('id', user.id)
+        const { data: refunded, error: refErr } = await supabase.rpc('refund_by_booking', {
+          p_booking_id: booking.id,
+          p_source:     'cancel_pending',
+          p_note:       'customer cancel of pending booking',
+        })
         if (refErr) {
-          console.error('cancel-booking: refund update failed', refErr.message)
+          console.error('cancel-booking: refund_by_booking failed', refErr.message)
           return json({ success: true, credits_refunded: 0, refund_error: refErr.message, was_pending: true })
         }
-        creditsRefunded = cost
+        creditsRefunded = Number(refunded) || 0
       }
 
       console.log(`cancel-booking: pending booking ${booking.id} cancelled by customer ${user.id}, refunded ${creditsRefunded}`)
@@ -156,23 +152,19 @@ serve(async (req) => {
     }
     if (!updated) return json({ error: 'Booking was cancelled by another session already.' }, 409)
 
-    // 5. Refund credits to the profile. If this fails we roll the booking
-    // status back so the customer isn't left with a cancelled booking + no
-    // refund.
+    // 5. Refund credits via the ledger. If this fails we roll the
+    // booking status back so the customer isn't left with a cancelled
+    // booking + no refund. refund_by_booking is idempotent, so on a
+    // partial failure the operator can safely re-invoke.
     const refund = Number(booking.credits_used) || 0
     if (refund > 0) {
-      const { data: profile, error: profileErr } = await supabase
-        .from('profiles').select('credits').eq('id', user.id).single()
-      if (profileErr || !profile) {
-        console.error('cancel-booking: profile lookup failed', profileErr?.message)
-        await supabase.from('bookings').update({ status: booking.status }).eq('id', booking.id)
-        return json({ error: 'Could not refund your credits. The cancellation was rolled back.' }, 500)
-      }
-      const newBalance = (profile.credits || 0) + refund
-      const { error: refundErr } = await supabase
-        .from('profiles').update({ credits: newBalance }).eq('id', user.id)
+      const { error: refundErr } = await supabase.rpc('refund_by_booking', {
+        p_booking_id: booking.id,
+        p_source:     'cancel_window',
+        p_note:       `customer cancel in ${windowHours}h window`,
+      })
       if (refundErr) {
-        console.error('cancel-booking: refund update failed', refundErr.message)
+        console.error('cancel-booking: refund_by_booking failed', refundErr.message)
         await supabase.from('bookings').update({ status: booking.status }).eq('id', booking.id)
         return json({ error: 'Could not refund your credits. The cancellation was rolled back.' }, 500)
       }

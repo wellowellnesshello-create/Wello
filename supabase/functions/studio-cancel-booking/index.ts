@@ -212,14 +212,17 @@ serve(async (req) => {
     return html(page('Already cancelled', `<h1>Already cancelled</h1><p>Looks like this booking was cancelled by another action in the meantime. No further action is needed.</p>`), 409)
   }
 
-  // Refund credits.
+  // Refund credits via the ledger. refund_by_booking is idempotent so
+  // a partial failure that's later retried won't double-refund.
   const refund = Number(booking.credits_used) || 0
   if (refund > 0 && customer) {
-    const newBalance = (customer.credits ?? 0) + refund
-    const { error: refundErr } = await supabase
-      .from('profiles').update({ credits: newBalance }).eq('id', customer.id)
+    const { error: refundErr } = await supabase.rpc('refund_by_booking', {
+      p_booking_id: booking.id,
+      p_source:     'safety_window',
+      p_note:       'studio safety-window cancel',
+    })
     if (refundErr) {
-      console.error('studio-cancel: refund failed, rolling booking back', refundErr.message)
+      console.error('studio-cancel: refund_by_booking failed, rolling booking back', refundErr.message)
       await supabase.from('bookings').update({ status: 'confirmed', safety_cancelled_at: null, safety_cancel_token: sig }).eq('id', booking.id)
       return html(page('Error', `<h1>Refund failed</h1><p class="err">We could not return the customer's credits. The cancellation has been rolled back. Please try again in a minute or email hello@wello-wellness.com.</p>`), 500)
     }

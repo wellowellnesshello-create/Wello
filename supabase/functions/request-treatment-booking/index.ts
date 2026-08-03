@@ -149,30 +149,11 @@ serve(async (req) => {
     return json({ error: 'insufficient_credits', required: priceEur, balance }, 402)
   }
 
-  // Hold the credits atomically at request time so the customer cannot
-  // spend them elsewhere while the venue is deciding. This is what the
-  // customer-facing copy already promises ("credits are held from your
-  // balance while the request is pending") and it makes decline /
-  // auto-decline / customer-cancel a real refund rather than a no-op.
-  //
-  // Conditional on the current balance to defeat the classic double-spend
-  // race: two simultaneous requests will not both succeed if only one lot
-  // of credits is available.
-  const heldBalance = balance - priceEur
-  const { data: heldRow, error: holdErr } = await supabase
-    .from('profiles')
-    .update({ credits: heldBalance })
-    .eq('id', customerId)
-    .gte('credits', priceEur)
-    .select('id, credits')
-    .maybeSingle()
-  if (holdErr) {
-    console.error('request-treatment-booking hold failed:', holdErr.message)
-    return json({ error: `Could not hold credits: ${holdErr.message}` }, 500)
-  }
-  if (!heldRow) {
-    return json({ error: 'insufficient_credits', required: priceEur, balance }, 402)
-  }
+  // The credit hold happens after the booking row is inserted (see
+  // below) so spend_credits can tag the ledger row with the booking id
+  // and refund_by_booking has something to look up on decline / cancel.
+  // The pre-check above is a UX shortcut; spend_credits is the real
+  // atomic gate.
 
   // Anchor start_time so the booking has a sensible sort value even for
   // preference-only requests. The venue will confirm the actual time.
@@ -226,15 +207,32 @@ serve(async (req) => {
     .single()
   if (insErr || !inserted) {
     console.error('request-treatment-booking insert failed:', insErr?.message)
-    // Roll back the credit hold so the customer does not lose credits on
-    // a booking that never landed. Best-effort: log if the refund itself
-    // fails so we can spot orphaned holds in support.
-    const { error: rbErr } = await supabase
-      .from('profiles').update({ credits: balance }).eq('id', customerId)
-    if (rbErr) console.error('request-treatment-booking rollback failed for user', customerId, rbErr.message)
     return json({ error: `Could not create request: ${insErr?.message || 'unknown error'}` }, 500)
   }
   const bookingId = inserted.id
+
+  // Now hold the credits via the ledger. spend_credits draws
+  // bonus-first / oldest-first inside a row lock so two concurrent
+  // requests can't both draw the same last credits. It raises
+  // 'insufficient_credits' (sqlstate P0001) if the balance can't cover
+  // the price — in which case we roll the pending booking back so the
+  // customer isn't left with an un-actionable row.
+  const { error: holdErr } = await supabase.rpc('spend_credits', {
+    p_user_id:    customerId,
+    p_amount:     priceEur,
+    p_source:     'booking_hold',
+    p_booking_id: bookingId,
+    p_note:       `pending_venue ${businessId}/${offeringType}`,
+  })
+  if (holdErr) {
+    await supabase.from('bookings').delete().eq('id', bookingId)
+    const msg = (holdErr as { message?: string }).message || ''
+    if (msg.includes('insufficient_credits')) {
+      return json({ error: 'insufficient_credits', required: priceEur, balance }, 402)
+    }
+    console.error('request-treatment-booking hold failed:', msg)
+    return json({ error: `Could not hold credits: ${msg}` }, 500)
+  }
 
   // ── Mint accept + decline tokens ──────────────────────────────────────
   // Same 48h clock as auto-decline plus a small buffer so late clicks
@@ -259,11 +257,15 @@ serve(async (req) => {
   if (tokErr) {
     console.error('request-treatment-booking token store failed:', tokErr.message)
     // Best effort roll-back so the booking doesn't sit un-actionable AND
-    // the credit hold is returned to the customer.
+    // the credit hold is returned to the customer. refund_by_booking is
+    // idempotent so a partial failure here is safe to retry from ops.
+    const { error: rbErr } = await supabase.rpc('refund_by_booking', {
+      p_booking_id: bookingId,
+      p_source:     'request_rollback',
+      p_note:       'token store failed',
+    })
+    if (rbErr) console.error('request-treatment-booking refund_by_booking failed for user', customerId, rbErr.message)
     await supabase.from('bookings').delete().eq('id', bookingId)
-    const { error: rbErr } = await supabase
-      .from('profiles').update({ credits: balance }).eq('id', customerId)
-    if (rbErr) console.error('request-treatment-booking rollback failed for user', customerId, rbErr.message)
     return json({ error: `Could not finalise request: ${tokErr.message}` }, 500)
   }
 
