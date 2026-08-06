@@ -133,6 +133,33 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
+    // ── Idempotency gate ──────────────────────────────────────
+    // Record event.id BEFORE running any side-effect. A duplicate
+    // insert (23505) means Stripe already delivered this event and
+    // we handled it — short-circuit with 200 so Stripe stops
+    // retrying. Doing this in front of every branch means the guard
+    // covers every event type, not just credit grants (gift claims,
+    // account.updated mirrors, and any future branches).
+    //
+    // If the downstream side-effect later fails, we've committed to
+    // "processed" for this event.id — the tradeoff is dropping a
+    // legit event on a downstream failure vs. double-granting on a
+    // Stripe retry. Double-granting is by far the worse of the two
+    // for a credits ledger, so record-first is the right call.
+    const { error: dedupErr } = await supabase
+      .from('stripe_processed_events')
+      .insert({ event_id: event.id, event_type: event.type })
+    if (dedupErr) {
+      if (dedupErr.code === '23505') {
+        console.log(`stripe-webhook: replay of ${event.id} (${event.type}) — no-op`)
+        return new Response(JSON.stringify({ ok: true, duplicate: true, event_id: event.id }), {
+          status: 200, headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      console.error('stripe-webhook: dedup insert failed:', dedupErr.message)
+      return new Response('Dedup check failed', { status: 500 })
+    }
+
     // ── Connected-account updates (Stripe Connect onboarding progress) ──
     // Fired when a partner completes any step of Stripe's hosted onboarding,
     // when Stripe re-verifies documents, when payouts become enabled, and
