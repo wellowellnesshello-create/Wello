@@ -105,3 +105,28 @@ plenty of money.
 a test-mode EUR PaymentIntent using `pm_card_visa`. Refuses to run
 against a live key. Only useful after EUR settlement is enabled — a
 seeded PI on a GBP-only platform still lands as GBP.
+
+## Stripe Connect: first-transfer prerequisites
+
+Two things surfaced while running the sandbox payment + payout loop
+that will bite the same way in live mode if we don't check them
+before the first real payout.
+
+- **Platform Stripe balance must be funded before the first Connect
+  transfer.** Test accounts start at zero available balance, and a
+  freshly-live platform account is the same until its first real
+  charge settles. Connect transfers debit the platform balance, so
+  a "first transfer, no charges yet" run fails with `insufficient
+  available funds` — different from the EUR-vs-GBP issue above and
+  not fixed by adding a settlement currency alone. Trigger and
+  settle a real member top-up before kicking off the first payout
+  batch. In test mode, `pm_card_bypassPending` credits the balance
+  instantly, which is what the sandbox-loop dev tool relies on.
+- **Connect accounts need `business_profile.url` set before the
+  `transfers` capability activates.** Even with full identity, TOS,
+  and bank-account data, transfers stay `inactive` with
+  `disabled_reason: requirements.past_due` and
+  `currently_due: ["business_profile.url"]`. Setting the URL flips
+  the capability to `active` immediately. Express hosted onboarding
+  collects this; a Custom account wired up directly through the API
+  needs it added explicitly.

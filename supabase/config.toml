@@ -43,6 +43,16 @@ verify_jwt = false
 # Vault so it never appears in plaintext in cron.job.command.
 verify_jwt = false
 
+[functions.run-weekly-payouts]
+# Same sb_secret_ gateway rejection as auto-decline-stale-bookings — the
+# service_role token path in the function body is unreachable when Kong
+# rejects sb_secret_ before dispatch. Bypass gateway auth and let the
+# function's own authorise() gate (service_role literal OR admin-allowlist
+# JWT) decide. Belt and braces: without this, calling run-weekly-payouts
+# with a Bearer sb_secret_ returns 401 at the gateway and the function
+# never runs.
+verify_jwt = false
+
 [functions.instructor-booking-response]
 # Same reason as venue-booking-response: the auto_decline path is called
 # server-to-server by auto-decline-stale-bookings via
