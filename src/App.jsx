@@ -942,6 +942,15 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
   // venue group classes (where the studio can fall back to email).
   const [myPhone, setMyPhone] = useState(profile?.phone || "");
   const isPrivateBooking = biz.cat === "Private Instructor";
+  // Booking-mode is per-service (slots.booking_mode). Physical-service
+  // concerns (travel, on-site location, phone) stay tied to
+  // category=Private Instructor above; the request-vs-instant switch
+  // is independent. A Private Instructor slot could be instant, or a
+  // studio slot could be request (Transcend's Fire & Ice as instant
+  // and massage as request is the canonical mixed-mode case). Falls
+  // back to 'instant' when the column is absent — safe default for
+  // any listing cached from before the migration.
+  const isRequestMode = String(slot?.booking_mode || 'instant') === 'request';
   // Extra guests requested for a private session (separate from the studio
   // guest chip list). Only visible when the matched offering allows it.
   const [privateExtras, setPrivateExtras] = useState(0);
@@ -1221,7 +1230,7 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                 const cta = !canAfford ? "Insufficient Credits"
                   : !phoneOk           ? "Add your mobile number to continue"
                   : !locationOk        ? "Add the session address to continue"
-                  : isPrivateBooking   ? `Request booking · ◈ ${cost} held`
+                  : isRequestMode      ? `Request booking · ◈ ${cost} held`
                   : `Confirm · ◈ ${cost} credits`;
                 const cancelWindow = cancelWindowHoursFor(biz.cat);
                 // Detect "late booking" — slot start is within 24h of now.
@@ -1273,12 +1282,16 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
 
         {step===2&&(
           <div style={{padding:"48px 32px",textAlign:"center"}}>
-            <div style={{width:64,height:64,background:isPrivateBooking?"#FFE6C7":"#CAECBA",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>{isPrivateBooking?"⏳":"✓"}</div>
-            <h2 style={{fontFamily:F2,fontSize:22,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.5px"}}>{isPrivateBooking?"Booking requested":"Booking confirmed!"}</h2>
+            <div style={{width:64,height:64,background:isRequestMode?"#FFE6C7":"#CAECBA",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>{isRequestMode?"⏳":"✓"}</div>
+            <h2 style={{fontFamily:F2,fontSize:22,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.5px"}}>{isRequestMode?"Booking requested":"Booking confirmed!"}</h2>
             <p style={{fontFamily:F2,fontSize:14,color:"#54584F",margin:"0 0 4px"}}>{slot.name} · {biz.name}</p>
             <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 20px"}}>{fd(slot.date)} · {slot.time}</p>
-            {isPrivateBooking && (
-              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 20px",lineHeight:1.6}}>Your instructor has been notified by SMS. They have 48 hours to confirm. We'll email you the moment they do — credits stay on your account until then.</p>
+            {isRequestMode && (
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 20px",lineHeight:1.6}}>
+                {isPrivateBooking
+                  ? "Your instructor has been notified by SMS. They have 48 hours to confirm. We'll email you the moment they do — credits stay on your account until then."
+                  : "The venue has been emailed. They have 48 hours to confirm. We'll email you the moment they do — credits stay on your account until then."}
+              </p>
             )}
             {guests.filter(g=>g.type==="new").length>0&&(
               <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 16px",marginBottom:20,textAlign:"left"}}>
@@ -1738,6 +1751,12 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                       const avail = sl.spots - sl.booked;
                       const full = avail === 0;
                       const pct = (sl.booked / sl.spots) * 100;
+                      // Per-class photo lookup. class_photos is keyed by
+                      // the exact slot name; falls back to biz.img so
+                      // venues without class-specific photos still get
+                      // a thumbnail rather than a blank cell.
+                      const classPhotoMap = (biz.class_photos && typeof biz.class_photos === 'object') ? biz.class_photos : null;
+                      const classImg = (classPhotoMap && classPhotoMap[sl.name]) || biz.img || null;
                       return (
                         <div key={sl.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",flexWrap:"wrap",background:full?"#F5F3EE":"#FBF9F4",borderRadius:12,border:`1px solid ${full?"rgba(195,200,188,0.3)":"rgba(195,200,188,0.5)"}`,opacity:full?0.6:1,transition:"all .15s"}}
                           onMouseEnter={e=>{if(!full)e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.06)"}}
@@ -1748,6 +1767,12 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                             <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>{sl.dur}</p>
                           </div>
                           <div style={{width:1,height:32,background:"rgba(195,200,188,0.5)",flexShrink:0}}/>
+                          {/* Class thumbnail */}
+                          {classImg && (
+                            <div style={{width:44,height:44,borderRadius:6,overflow:"hidden",flexShrink:0,background:"#E4E2DD"}}>
+                              <img src={classImg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                            </div>
+                          )}
                           {/* Info */}
                           <div style={{flex:1,minWidth:120}}>
                             <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#1B1C19",margin:"0 0 4px"}}>{sl.name}</p>
@@ -1792,9 +1817,19 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                   const price = Number.isFinite(Number(o?.price_eur)) ? Number(o.price_eur) : biz.cr;
                   const durLabel = humanDuration(o?.length_min);
                   const open = openOfferingIdx === i;
+                  // Per-offering photo drives the small thumbnail on the
+                  // offering row. Falls back to biz.img so venues that
+                  // haven't attached class-specific photos still look
+                  // populated rather than gappy.
+                  const offeringImg = (typeof o?.img === 'string' && o.img) ? o.img : (biz.img || null);
                   return (
                     <div key={i} style={{padding:"14px 16px",background:"#FBF9F4",borderRadius:12,border:"1px solid rgba(195,200,188,0.5)",transition:"all .15s"}}>
                       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                        {offeringImg && (
+                          <div style={{width:64,height:64,borderRadius:8,overflow:"hidden",flexShrink:0,background:"#E4E2DD"}}>
+                            <img src={offeringImg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                          </div>
+                        )}
                         <div style={{flex:"1 1 200px",minWidth:0}}>
                           <p style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#1B1C19",margin:"0 0 4px",letterSpacing:"-0.2px"}}>{o?.type || "Session"}</p>
                           <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
@@ -3539,7 +3574,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, creditSplit = { pu
                         })}
                       </div>
                       <button onClick={()=>setEditingInterests(true)}
-                        style={{background:"transparent",color:"#213C18",border:"1px solid #213C18",borderRadius:999,padding:"8px 18px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                        style={{background:"transparent",color:"#1B1C19",border:"1px solid rgba(27,28,25,0.28)",borderRadius:999,padding:"8px 18px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>
                         Edit preferences
                       </button>
                     </>
@@ -4790,6 +4825,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   });
   const [saving, setSaving]       = useState(false);
   const [saveMsg, setSaveMsg]     = useState({ kind:"", text:"" }); // { kind:"settings"|"listing"|"golive"|"err", text }
+  // Which sub-section of the Settings tab is currently visible. Only one
+  // section body renders at a time so the Settings screen doesn't feel
+  // like an infinite stack of cards. Status banner stays above the
+  // dropdown regardless — it's contextual, not editable content.
+  const [settingsSection, setSettingsSection] = useState('profile');
   const [linkedListingId, setLinkedListingId] = useState(null);
   const [dbSlots, setDbSlots]     = useState(null); // null = loading | [] = empty | [...] = loaded
   const [statusLive, setStatusLive] = useState(bizData.status === 'approved' || bizData.status === 'submitted');
@@ -4827,6 +4867,16 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     Number.isFinite(bizData?.session_duration_min) && bizData?.session_duration_min > 0
       ? bizData.session_duration_min : 60
   );
+  // Per-class-name photo map for studio-type venues. Keyed by the class
+  // name exactly as it appears in slots[].name. Studios don't use
+  // session_offerings, so the instructor-side per-offering photo model
+  // doesn't apply — the equivalent lives here as a jsonb map on
+  // businesses.class_photos. Populated by the partner via the "Class
+  // photos" panel in the Schedule tab.
+  const [dashClassPhotos, setDashClassPhotos] = useState(
+    (bizData?.class_photos && typeof bizData.class_photos === 'object') ? bizData.class_photos : {}
+  );
+
   // Mirror of session_offerings — see wizard equivalent for the shape.
   // extra_person_eur is the additional cost per extra guest beyond the first
   // person. Nullable: offerings without a value are strictly 1-to-1.
@@ -4838,6 +4888,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           price_eur:  Number.isFinite(o?.price_eur)  && o.price_eur  > 0 ? o.price_eur  : (bizData?.cr || 50),
           extra_person_eur: Number.isFinite(o?.extra_person_eur) && o.extra_person_eur > 0 ? o.extra_person_eur : null,
           max_people:       Number.isFinite(o?.max_people)       && o.max_people       > 0 ? o.max_people       : null,
+          // Optional per-offering photo. Falls back to biz.img on the
+          // marketplace card + BizPanel offering row when unset.
+          img: (typeof o?.img === 'string' && o.img) ? o.img : null,
         }))
       : []
   );
@@ -4879,7 +4932,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     const extra_person_eur = Number.isFinite(extraRaw) && extraRaw > 0 ? extraRaw : null;
     const maxRaw   = parseInt(newOff.max_people, 10);
     const max_people       = Number.isFinite(maxRaw)   && maxRaw   > 1 ? maxRaw   : null;
-    setDashSessionOfferings(prev => [...prev, { type, length_min, price_eur, extra_person_eur, max_people }]);
+    setDashSessionOfferings(prev => [...prev, { type, length_min, price_eur, extra_person_eur, max_people, img: null }]);
     setNewOff({ type: "", length_min: 60, price_eur: 50, extra_person_eur: "", max_people: "" });
     setShowAddOffering(false);
   }
@@ -4888,6 +4941,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       type: bizData?.category || "Yoga",
       length_min: 60,
       price_eur: bizData?.cr || 50,
+      img: null,
     }]);
   }
   function dashUpdateOffering(idx, patch) {
@@ -5179,7 +5233,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   async function handleAddGalleryPhoto(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (galleryImgs.length >= 4) { setPhotoErr("Up to 4 gallery photos."); return; }
+    if (galleryImgs.length >= 12) { setPhotoErr("Up to 12 gallery photos."); return; }
     setPhotoErr(""); setUploadingGallery(true);
     const { url, error } = await uploadPhotoFile(file, `gallery-${galleryImgs.length}`);
     setUploadingGallery(false);
@@ -5189,6 +5243,60 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     await supabase.from('businesses').update({ gallery: next }).eq('id', bizData.id);
     setBizData(prev => ({ ...prev, gallery: next }));
   }
+  // Per-offering photo upload. `idx` addresses into dashSessionOfferings.
+  // Persists the full array back to businesses.session_offerings so the
+  // per-offering img is picked up by BizPanel + any downstream consumers
+  // on the next fetch. Small local busy-index so a partner uploading one
+  // offering photo doesn't blank the whole panel.
+  const [offeringPhotoBusy, setOfferingPhotoBusy] = useState(null); // idx | null
+  async function handleOfferingPhotoUpload(idx, e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setPhotoErr(""); setOfferingPhotoBusy(idx);
+    const { url, error } = await uploadPhotoFile(file, `offering-${idx}`);
+    if (error) { setOfferingPhotoBusy(null); setPhotoErr("Couldn't upload class photo. " + error); return; }
+    const next = dashSessionOfferings.map((o, i) => i === idx ? { ...o, img: url } : o);
+    setDashSessionOfferings(next);
+    await supabase.from('businesses').update({ session_offerings: next }).eq('id', bizData.id);
+    setBizData(prev => ({ ...prev, session_offerings: next }));
+    setOfferingPhotoBusy(null);
+  }
+  async function removeOfferingPhoto(idx) {
+    const next = dashSessionOfferings.map((o, i) => i === idx ? { ...o, img: null } : o);
+    setDashSessionOfferings(next);
+    await supabase.from('businesses').update({ session_offerings: next }).eq('id', bizData.id);
+    setBizData(prev => ({ ...prev, session_offerings: next }));
+  }
+
+  // Studio-side per-class photo upload. `className` is the distinct
+  // name as it appears in slots[].name. We slugify only for the storage
+  // path (Supabase Storage keys don't like spaces/emoji); the map key
+  // stays the raw class name so BizPanel lookup is a direct
+  // class_photos[slot.name] without any name normalisation.
+  const [classPhotoBusy, setClassPhotoBusy] = useState(null); // className | null
+  async function handleClassPhotoUpload(className, e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setPhotoErr(""); setClassPhotoBusy(className);
+    const safeSlug = String(className).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'class';
+    const { url, error } = await uploadPhotoFile(file, `class-${safeSlug}`);
+    if (error) { setClassPhotoBusy(null); setPhotoErr("Couldn't upload class photo. " + error); return; }
+    const next = { ...dashClassPhotos, [className]: url };
+    setDashClassPhotos(next);
+    await supabase.from('businesses').update({ class_photos: next }).eq('id', bizData.id);
+    setBizData(prev => ({ ...prev, class_photos: next }));
+    setClassPhotoBusy(null);
+  }
+  async function removeClassPhoto(className) {
+    const next = { ...dashClassPhotos };
+    delete next[className];
+    setDashClassPhotos(next);
+    await supabase.from('businesses').update({ class_photos: next }).eq('id', bizData.id);
+    setBizData(prev => ({ ...prev, class_photos: next }));
+  }
+
   async function removeGalleryPhoto(idx) {
     const url = galleryImgs[idx];
     const next = galleryImgs.filter((_, i) => i !== idx);
@@ -6123,7 +6231,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                           <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:0}}>Session address</p>
                           {customerLocation && customerLocation !== 'Not provided' && (
                             <button type="button" onClick={()=>copyAddress(req.id, customerLocation)}
-                              style={{background:"transparent",border:"1px solid #213C18",color:"#213C18",fontFamily:F2,fontSize:9,fontWeight:700,padding:"2px 10px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                              style={{background:"transparent",color:"#1B1C19",border:"1px solid rgba(27,28,25,0.28)",fontFamily:F2,fontSize:9,fontWeight:700,padding:"2px 10px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
                               {copiedBookingId === req.id ? "✓ Copied" : "Copy"}
                             </button>
                           )}
@@ -6287,6 +6395,49 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 </div>
               )}
             </div>
+
+            {/* Class photos — one photo per offering. Optional but drives
+                sharper discovery: Explore's category rails and BizPanel's
+                offering rows use these when set, otherwise fall back to
+                the venue's primary photo. Only shown when the partner
+                actually has offerings to attach photos to. */}
+            {dashSessionOfferings.length > 0 && (
+              <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:14}}>
+                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>Class photos <span style={{fontWeight:500,textTransform:"none",letterSpacing:0,fontSize:11,color:"#A3B18A",marginLeft:6}}>Optional</span></p>
+                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Attach a specific photo to each class type. Shows on your venue popup and — when guests filter by that class on Explore — on your marketplace card. Skipped classes use your primary venue photo.</p>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {dashSessionOfferings.map((off, idx) => {
+                    const thumb = off?.img || null;
+                    const busy = offeringPhotoBusy === idx;
+                    return (
+                      <div key={idx} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 10px",background:"#F5F3EE",borderRadius:8}}>
+                        <div style={{width:56,height:56,borderRadius:6,overflow:"hidden",background:"#E4E2DD",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",border:"1px solid rgba(195,200,188,0.5)"}}>
+                          {thumb
+                            ? <img src={thumb} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                            : <span style={{fontFamily:F2,fontSize:9,fontWeight:700,color:"#A3B18A",letterSpacing:"0.5px",textAlign:"center",padding:"0 4px"}}>NO PHOTO</span>}
+                        </div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:"0 0 2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{off.type}</p>
+                          <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0}}>{off.length_min} min · €{off.price_eur}</p>
+                        </div>
+                        <div style={{display:"flex",gap:6,flexShrink:0}}>
+                          <label style={{padding:"6px 12px",background:busy?"#E4E2DD":"#213C18",color:busy?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:busy?"not-allowed":"pointer",letterSpacing:"0.3px"}}>
+                            {busy ? "Uploading…" : (thumb ? "Replace" : "Add photo")}
+                            <input type="file" accept="image/*" onChange={(e)=>handleOfferingPhotoUpload(idx,e)} style={{display:"none"}} disabled={busy}/>
+                          </label>
+                          {thumb && !busy && (
+                            <button type="button" onClick={()=>removeOfferingPhoto(idx)}
+                              style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"6px 10px",borderRadius:6,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Weekly availability — multi-day picker. Each existing window
                 shows as a row with day, time range, and a clear Remove button.
@@ -6588,6 +6739,59 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
 
         {tab==="manage" && manageSubTab==="schedule" && !dashIsPrivate && (
           <div>
+            {/* Class photos — one photo per distinct class name from the
+                timetable. Optional. Drives sharper discovery: Explore
+                category rails and BizPanel timetable rows use these
+                when set, otherwise fall back to the venue's primary
+                photo. Distinct names derived from bizData.slots[].name
+                so the panel only lists classes actually on the
+                timetable. Hidden entirely when no slots exist yet. */}
+            {(() => {
+              const rawSlots = Array.isArray(bizData?.slots) ? bizData.slots : [];
+              const distinctClassNames = Array.from(new Set(
+                rawSlots.map(s => (s?.name || '').trim()).filter(Boolean)
+              )).sort((a, b) => a.localeCompare(b));
+              if (distinctClassNames.length === 0) return null;
+              return (
+                <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:18}}>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>Class photos <span style={{fontWeight:500,textTransform:"none",letterSpacing:0,fontSize:11,color:"#A3B18A",marginLeft:6}}>Optional</span></p>
+                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Attach a specific photo to each class type on your timetable. Shows on your venue popup and — when guests filter by that class on Explore — on your marketplace card. Skipped classes use your primary venue photo.</p>
+                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                    {distinctClassNames.map(name => {
+                      const thumb = dashClassPhotos[name] || null;
+                      const busy = classPhotoBusy === name;
+                      const slotCount = rawSlots.filter(s => (s?.name || '').trim() === name).length;
+                      return (
+                        <div key={name} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 10px",background:"#F5F3EE",borderRadius:8}}>
+                          <div style={{width:56,height:56,borderRadius:6,overflow:"hidden",background:"#E4E2DD",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",border:"1px solid rgba(195,200,188,0.5)"}}>
+                            {thumb
+                              ? <img src={thumb} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                              : <span style={{fontFamily:F2,fontSize:9,fontWeight:700,color:"#A3B18A",letterSpacing:"0.5px",textAlign:"center",padding:"0 4px"}}>NO PHOTO</span>}
+                          </div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:"0 0 2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</p>
+                            <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0}}>{slotCount} slot{slotCount === 1 ? '' : 's'} on the timetable</p>
+                          </div>
+                          <div style={{display:"flex",gap:6,flexShrink:0}}>
+                            <label style={{padding:"6px 12px",background:busy?"#E4E2DD":"#213C18",color:busy?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:busy?"not-allowed":"pointer",letterSpacing:"0.3px"}}>
+                              {busy ? "Uploading…" : (thumb ? "Replace" : "Add photo")}
+                              <input type="file" accept="image/*" onChange={(e)=>handleClassPhotoUpload(name, e)} style={{display:"none"}} disabled={busy}/>
+                            </label>
+                            {thumb && !busy && (
+                              <button type="button" onClick={()=>removeClassPhoto(name)}
+                                style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"6px 10px",borderRadius:6,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                                Remove
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Day selector */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
               <div style={{display:"flex",gap:6,overflowX:"auto",scrollbarWidth:"none"}}>
@@ -6954,12 +7158,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             </div>
 
             {/* Photos card — spans both columns so partners have room to
-                manage the primary hero and up to 4 gallery photos here.
+                manage the primary hero and up to 12 gallery photos here.
                 Uploads persist immediately (no need to click Save first). */}
             {!isPreview && (
               <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",gridColumn:"1 / -1"}}>
                 <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Photos</h3>
-                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 16px",lineHeight:1.6}}>Your primary photo shows on the marketplace card. Add up to 4 gallery photos and guests can swipe through them on your venue popup.</p>
+                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 16px",lineHeight:1.6}}>Your primary photo shows on the marketplace card. Add up to 12 gallery photos and guests can swipe through them on your venue popup.</p>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,180px),1fr))",gap:14}}>
                   {/* Primary */}
                   <label style={{position:"relative",aspectRatio:"1",borderRadius:12,overflow:"hidden",cursor:"pointer",border:"2px solid #213C18",display:"block"}}>
@@ -6979,9 +7183,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     </div>
                   ))}
                   {/* Add gallery button */}
-                  {galleryImgs.length < 4 && (
+                  {galleryImgs.length < 12 && (
                     <label style={{position:"relative",aspectRatio:"1",borderRadius:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",background:"#F5F3EE",border:"1px dashed rgba(33,60,24,0.35)",fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:600,textAlign:"center",padding:12}}>
-                      {uploadingGallery ? "Uploading…" : `+ Add photo (${galleryImgs.length}/4)`}
+                      {uploadingGallery ? "Uploading…" : `+ Add photo (${galleryImgs.length}/12)`}
                       <input type="file" accept="image/*" onChange={handleAddGalleryPhoto} style={{display:"none"}} disabled={uploadingGallery}/>
                     </label>
                   )}
@@ -7099,7 +7303,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     {agreementSaving ? "Saving" : needsReacceptance ? "Re-accept agreement" : "Accept agreement"}
                   </button>
                   <button onClick={printAgreement}
-                    style={{padding:"12px 20px",background:"transparent",color:"#213C18",border:"1px solid #213C18",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+                    style={{padding:"12px 20px",background:"transparent",color:"#1B1C19",border:"1px solid rgba(27,28,25,0.28)",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer"}}>
                     Print / preview
                   </button>
                 </div>
@@ -7112,7 +7316,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
 
         {/* ── SETTINGS ── */}
         {tab==="settings"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:560}}>
+          // Section dropdown pattern — status banner always visible up
+          // top (contextual, not editable), then a single dropdown
+          // picks which section body renders. One focused screen at a
+          // time instead of stacked cards.
+          <div style={{display:"flex",flexDirection:"column",gap:16,maxWidth:720}}>
             {/* Listing status + Go-live / Pause / Resume CTA */}
             {!isPreview && (() => {
               const s = bizData.status;
@@ -7139,7 +7347,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   )}
                   {isLive && (
                     <button onClick={pauseListing} disabled={saving}
-                      style={{padding:"10px 20px",background:"transparent",color:"#213C18",border:"1px solid #213C18",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:saving?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
+                      style={{padding:"10px 20px",background:"transparent",color:"#1B1C19",border:"1px solid rgba(27,28,25,0.28)",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:saving?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
                       {saving ? "…" : "Pause listing"}
                     </button>
                   )}
@@ -7154,7 +7362,22 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             })()}
             {saveMsg.kind === "golive" && <p style={{fontFamily:F2,fontSize:12,color:"#213C18",margin:0,textAlign:"center"}}>{saveMsg.text}</p>}
 
-            {/* Profile + contact — Settings tab per spec: name, description, address, website, instagram, phone, email */}
+            {/* Section selector — one dropdown drives which body renders
+                below. In preview mode we hide the Account option (all
+                three cards inside it are gated by !isPreview and would
+                render as an empty section otherwise). */}
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <label htmlFor="settings-section" style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F"}}>Section</label>
+              <select id="settings-section" value={settingsSection} onChange={(e)=>setSettingsSection(e.target.value)}
+                style={{padding:"10px 14px",fontFamily:F2,fontSize:14,fontWeight:600,color:"#1B1C19",background:"#fff",border:"1px solid rgba(27,28,25,0.15)",borderRadius:10,cursor:"pointer",minWidth:220}}>
+                <option value="profile">Business profile</option>
+                <option value="channels">Booking channels</option>
+                {!isPreview && <option value="account">Account</option>}
+              </select>
+            </div>
+
+            {/* ── Business profile section ── */}
+            {settingsSection === 'profile' && (
             <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
               <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 14px"}}>Business profile</h3>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -7192,7 +7415,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 {saveMsg.kind === "err"      && <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:"4px 0 0"}}>{saveMsg.text}</p>}
               </div>
             </div>
+            )}
 
+            {/* ── Booking channels section ── */}
+            {settingsSection === 'channels' && (
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>
             {/* Integrations */}
             <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
               <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Booking system integration</h3>
@@ -7245,11 +7472,17 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 {saving ? "Saving" : "Save WhatsApp number"}
               </button>
             </div>
+            </div>
+            )}
+
+            {/* ── Account section ── */}
+            {settingsSection === 'account' && !isPreview && (
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>
 
             {/* Change listing type — surfaces the same picker the partner
                 used at registration so they can amend their original choice
                 without contacting support. */}
-            {!isPreview && onChangeType && (
+            {onChangeType && (
               <div style={{padding:"16px 18px",border:"1px solid #E4E2DD",borderRadius:12,background:"#fff"}}>
                 <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 6px"}}>Listing type</p>
                 <p style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#1B1C19",margin:"0 0 4px"}}>
@@ -7259,7 +7492,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   Switching changes the wizard, dashboard tabs, and customer-facing card to match. Your fields stay intact.
                 </p>
                 <button onClick={onChangeType}
-                  style={{padding:"8px 14px",background:"transparent",color:"#213C18",border:"1px solid #213C18",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                  style={{padding:"8px 14px",background:"transparent",color:"#1B1C19",border:"1px solid rgba(27,28,25,0.28)",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer"}}>
                   Change listing type
                 </button>
               </div>
@@ -7267,28 +7500,25 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
 
             {/* Partner agreement — post-acceptance reference. Opens the
                 agreement modal in dismissible mode. */}
-            {!isPreview && (
-              <div style={{marginTop:8,background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
-                <div>
-                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 4px"}}>Partner agreement</p>
-                  <p style={{fontFamily:F2,fontSize:13,color:"#1B1C19",margin:0,lineHeight:1.55}}>
-                    {agreementAccepted
-                      ? <>Accepted on {new Date(bizData.terms_accepted_at).toLocaleDateString('en-GB',{dateStyle:'long'})} · Version {bizData.terms_version || TERMS_VERSION}</>
-                      : "Not yet accepted"}
-                  </p>
-                </div>
-                <button onClick={()=>setShowAgreementRef(true)}
-                  style={{padding:"9px 18px",background:"transparent",color:"#213C18",border:"1px solid #213C18",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
-                  View agreement
-                </button>
+            <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+              <div>
+                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 4px"}}>Partner agreement</p>
+                <p style={{fontFamily:F2,fontSize:13,color:"#1B1C19",margin:0,lineHeight:1.55}}>
+                  {agreementAccepted
+                    ? <>Accepted on {new Date(bizData.terms_accepted_at).toLocaleDateString('en-GB',{dateStyle:'long'})} · Version {bizData.terms_version || TERMS_VERSION}</>
+                    : "Not yet accepted"}
+                </p>
               </div>
-            )}
+              <button onClick={()=>setShowAgreementRef(true)}
+                style={{padding:"9px 18px",background:"transparent",color:"#1B1C19",border:"1px solid rgba(27,28,25,0.28)",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                View agreement
+              </button>
+            </div>
 
-            {/* Danger zone — remove this venue. Only shown to authenticated
-                partners (not preview), behind a strong confirm so it's hard
-                to fire by accident. */}
-            {!isPreview && onDeleteVenue && (
-              <div style={{marginTop:32,padding:"18px 20px",border:"1px solid #E8B8A8",borderRadius:12,background:"#FFF5F2"}}>
+            {/* Danger zone — remove this venue. Behind a strong confirm
+                so it's hard to fire by accident. */}
+            {onDeleteVenue && (
+              <div style={{marginTop:16,padding:"18px 20px",border:"1px solid #E8B8A8",borderRadius:12,background:"#FFF5F2"}}>
                 <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#C46A4D",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 6px"}}>Danger zone</p>
                 <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:"0 0 4px"}}>Remove this venue</p>
                 <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 14px",lineHeight:1.6}}>
@@ -7299,6 +7529,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   Remove venue
                 </button>
               </div>
+            )}
+            </div>
             )}
           </div>
         )}
@@ -7722,6 +7954,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
           // Optional per-offering category. Null / empty means inherit the
           // venue's primary category (bizData.category).
           category:   o?.category || '',
+          img: (typeof o?.img === 'string' && o.img) ? o.img : null,
         }))
       : []
   );
@@ -7732,6 +7965,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
       length_min: 60,
       price_eur: bizData.cr || 50,
       category: '',
+      img: null,
     }]);
   }
   function updateOffering(idx, patch) {
@@ -8347,7 +8581,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
       const file = e.target.files?.[0];
       e.target.value = "";
       if (!file) return;
-      if (gallery.length >= 4) { setPhotoErr("Up to 4 gallery photos."); return; }
+      if (gallery.length >= 12) { setPhotoErr("Up to 12 gallery photos."); return; }
       if (!/^image\//.test(file.type)) { setPhotoErr("That doesn't look like an image. Pick a JPEG or PNG."); return; }
       setPhotoErr("");
       setCropTarget({ kind: 'gallery', file });
@@ -8404,7 +8638,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
     const totalUploading = primaryUploading || galleryUploadCount > 0;
 
     return (
-      <OWrap title="Add photos" sub="A square primary photo is required. Drag and zoom to set the crop. Up to four extras for your gallery." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} listingTypeLabel={listingTypeLabel} onChangeType={onChangeType} onPreview={()=>setPreviewOpen(true)}
+      <OWrap title="Add photos" sub="A square primary photo is required. Drag and zoom to set the crop. Up to 12 extras for your gallery." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} listingTypeLabel={listingTypeLabel} onChangeType={onChangeType} onPreview={()=>setPreviewOpen(true)}
         footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(2)} label="← Back" variant="secondary"/>,
                  <OBtn key="n" saving={saving} onClick={()=>goNext({img,gallery})} label="Save & continue →" disabled={!img||totalUploading}/>]}>
         <label style={FL}>Primary photo <span style={{color:T.clay,fontWeight:600}}>*</span></label>
@@ -8434,7 +8668,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
         {img && <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"0 0 18px"}}>Want a different crop or photo? Tap × and pick again.</p>}
         <input id="wph-primary" type="file" accept="image/*" style={{display:"none"}} onChange={pickPrimary}/>
 
-        <label style={FL}>Gallery photos (up to 4)</label>
+        <label style={FL}>Gallery photos (up to 12)</label>
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:8}}>
           {gallery.map((url,i)=>{
             const isLocal = url.startsWith('blob:');
@@ -8523,6 +8757,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
                      length_min: o.length_min,
                      price_eur: o.price_eur,
                      category: (o.category && String(o.category).trim()) || null,
+                     img: (typeof o.img === 'string' && o.img) || null,
                    }));
                    goNext({
                      availability_windows: availabilityWindows,
@@ -10177,6 +10412,13 @@ function AdminSetupPage() {
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [photoErr, setPhotoErr] = useState('');
 
+  // ── Member preview state ──
+  // Renders the marketplace's BizPanel popup with the currently-loaded
+  // business so an admin can see exactly what a member sees before
+  // approving. Uses the in-progress enrichment fields (description,
+  // address, tags, photos) so unsaved edits are previewable too.
+  const [previewOpen, setPreviewOpen] = useState(false);
+
   // ── Ownership handoff state ──
   const [partnerEmail, setPartnerEmail] = useState('');
   // Contact person's first name (or full name — we use split on space when
@@ -10366,7 +10608,7 @@ function AdminSetupPage() {
   async function handleAddGalleryPhoto(e) {
     const f = e.target.files?.[0];
     if (!f || !bizRow?.id) return;
-    if (gallery.length >= 4) { setPhotoErr('Up to 4 gallery photos.'); return; }
+    if (gallery.length >= 12) { setPhotoErr('Up to 12 gallery photos.'); return; }
     setPhotoErr(''); setUploadingGallery(true);
     const { url, error } = await uploadPhotoFile(f, `gallery-${gallery.length}`);
     setUploadingGallery(false);
@@ -10975,7 +11217,16 @@ function AdminSetupPage() {
       {/* ── Step 4: Enrich business ── */}
       {bizRow && (
         <div style={S.card}>
-          <h2 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 4px' }}>4. Enrich business</h2>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '0 0 4px' }}>
+            <h2 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>4. Enrich business</h2>
+            <button
+              onClick={() => setPreviewOpen(true)}
+              title="Open the marketplace venue popup with these fields — includes any unsaved enrichment edits."
+              style={{ padding: '6px 12px', background: '#213C18', color: '#FBF9F4', border: 'none', borderRadius: 4, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+            >
+              Preview as member →
+            </button>
+          </div>
           <p style={{ fontSize: 12, color: '#555', margin: '0 0 12px' }}>Description, address, tags, and photos. Terms acceptance and payout details are deliberately excluded and remain the partner's job in the wizard.</p>
 
           <div style={{ marginBottom: 12 }}>
@@ -11031,7 +11282,7 @@ function AdminSetupPage() {
           </div>
 
           <div style={{ marginBottom: 12 }}>
-            <label style={S.label}>Gallery ({gallery.length}/4)</label>
+            <label style={S.label}>Gallery ({gallery.length}/12)</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
               {gallery.map((url, i) => (
                 <div key={i} style={{ position: 'relative' }}>
@@ -11040,7 +11291,7 @@ function AdminSetupPage() {
                 </div>
               ))}
             </div>
-            {gallery.length < 4 && (
+            {gallery.length < 12 && (
               <input type="file" accept="image/jpeg,image/png" onChange={handleAddGalleryPhoto} disabled={uploadingGallery}/>
             )}
             {uploadingGallery && <span style={{ marginLeft: 8, fontSize: 12, color: '#555' }}>uploading...</span>}
@@ -11323,6 +11574,47 @@ function AdminSetupPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── Member preview modal ── */}
+      {previewOpen && bizRow && (
+        <BizPanel
+          biz={{
+            // Base fields from the DB row.
+            id: bizRow.id,
+            business_id: bizRow.id,
+            name: bizRow.name,
+            cat: bizRow.category,
+            category: bizRow.category,
+            business_type: bizRow.business_type,
+            cr: bizRow.cr,
+            slots: Array.isArray(bizRow.slots) ? bizRow.slots : [],
+            session_offerings: Array.isArray(bizRow.session_offerings) ? bizRow.session_offerings : [],
+            // Overlay the in-progress enrichment fields so unsaved edits
+            // are previewable — this is the whole point of a pre-approve
+            // preview, otherwise you'd just navigate to the marketplace.
+            description,
+            address,
+            tags,
+            img: primaryImg || bizRow.img,
+            gallery,
+            // Class photos are partner-managed in the dashboard; admin
+            // just displays whatever's already set on the row so the
+            // preview matches what a member sees.
+            class_photos: (bizRow.class_photos && typeof bizRow.class_photos === 'object') ? bizRow.class_photos : null,
+          }}
+          onClose={() => setPreviewOpen(false)}
+          // Preview-only: booking / auth / credits are stubbed so the
+          // BizPanel doesn't try to write bookings from the admin's own
+          // account.
+          onBook={() => {}}
+          authSession={null}
+          credits={0}
+          onOpenSignIn={() => {}}
+          onGotoCredits={() => {}}
+          onBookingsChanged={() => {}}
+          showToast={() => {}}
+        />
       )}
     </div>
   );
@@ -11827,6 +12119,7 @@ export default function App() {
             booked: s.booked,
             credits: s.credits,
             acuity_type_id: s.acuity_type_id ?? null,
+            booking_mode: s.booking_mode || 'instant',
           }))
       }));
       // Ordering: real partners first, demo seeds last. Real partners are
@@ -11991,10 +12284,19 @@ export default function App() {
       return;
     }
 
-    // Private-instructor bookings are requests, not immediate confirmations.
-    // We hold the slot visually but DO NOT deduct credits until the instructor
-    // confirms (or auto-confirm hits at the 48h deadline).
+    // Physical-service concerns (address, phone, group vs 1:1 pricing)
+    // stay tied to category=Private Instructor. The request-vs-instant
+    // switch is per-service (slot.booking_mode) — Transcend can have
+    // Fire & Ice as instant and massage as request without changing
+    // partner-level settings.
     const isPrivateBooking = biz.cat === "Private Instructor";
+    const isRequestMode    = String(slot?.booking_mode || 'instant') === 'request';
+    // Which pending status a request-mode booking gets. Instructor
+    // bookings still route through pending_instructor + SMS. Studio
+    // request bookings route through pending_venue with a slot_id set
+    // — venue-booking-response handles both.
+    const pendingStatus    = isPrivateBooking ? 'pending_instructor' : 'pending_venue';
+    const bookingStatus    = isRequestMode ? pendingStatus : 'confirmed';
 
     // Persist the phone the customer typed into the booking modal onto their
     // profile so a returning customer won't have to retype it next time, and
@@ -12021,9 +12323,13 @@ export default function App() {
     } else {
       setCredits(c=>c-cost);
     }
-    setBookings(p=>[{id:Date.now(),biz,slot,form,cost,status:isPrivateBooking?'pending_instructor':'confirmed'},...p]);
+    setBookings(p=>[{id:Date.now(),biz,slot,form,cost,status:bookingStatus},...p]);
     showToast(
-      isPrivateBooking ? "Request sent. Instructor has 48 hours to confirm." : `Booked! ◈ ${cost} credits used.`,
+      isRequestMode
+        ? (isPrivateBooking
+            ? "Request sent. Instructor has 48 hours to confirm."
+            : "Request sent. The venue has 48 hours to confirm.")
+        : `Booked! ◈ ${cost} credits used.`,
       "success"
     );
 
@@ -12059,7 +12365,7 @@ export default function App() {
         duration: slot.dur,
         credits_used: cost,
         peak_flag,
-        status: isPrivateBooking ? 'pending_instructor' : 'confirmed',
+        status: bookingStatus,
         notes,
       };
       console.log('[onConfirm] inserting bookings row', payload);
@@ -12104,7 +12410,7 @@ export default function App() {
       // the spend-booking-credits edge fn because spend_credits is
       // service_role only.
       const spendRes = await supabase.functions.invoke('spend-booking-credits', {
-        body: { booking_id: inserted.id, source: isPrivateBooking ? 'booking_hold' : 'booking' },
+        body: { booking_id: inserted.id, source: isRequestMode ? 'booking_hold' : 'booking' },
       });
       if (spendRes.error || spendRes.data?.error) {
         const err = spendRes.error?.message || spendRes.data?.error || 'spend failed';
@@ -12112,7 +12418,7 @@ export default function App() {
         // Server has already deleted the booking (or attempted to).
         // Revert optimistic decrement locally so the balance snaps back.
         setCredits(c => c + cost);
-        setBookings(p => p.filter(bk => bk.id !== inserted.id && bk.status !== (isPrivateBooking ? 'pending_instructor' : 'confirmed')));
+        setBookings(p => p.filter(bk => bk.id !== inserted.id && bk.status !== bookingStatus));
         if (err === 'insufficient_credits') {
           showToast("Not enough credits. Top up and try again.","error");
         } else {
@@ -12141,15 +12447,24 @@ export default function App() {
         console.warn('[onConfirm] slots.booked bump exception:', e?.message);
       }
 
-      // 3. Fire-and-forget downstream signals:
-      // - Private instructor bookings → SMS the instructor via Twilio.
-      // - Everything else → Acuity sync (writes appointment_id back).
-      if (isPrivateBooking) {
+      // 3. Fire-and-forget downstream signals — three modes:
+      //   - request + private instructor → SMS the instructor.
+      //   - request + studio venue     → email the venue with
+      //     accept/decline HMAC links (via notify-venue-slot-request).
+      //   - instant                    → Acuity sync + safety alert.
+      if (isRequestMode && isPrivateBooking) {
         supabase.functions.invoke('notify-instructor-sms', {
           body: { booking_id: inserted.id },
         }).then(({ data, error }) => {
           if (error) console.warn('[notify-instructor-sms] invoke failed:', error.message);
           else console.log('[notify-instructor-sms] result:', data);
+        });
+      } else if (isRequestMode && !isPrivateBooking) {
+        supabase.functions.invoke('notify-venue-slot-request', {
+          body: { booking_id: inserted.id },
+        }).then(({ data, error }) => {
+          if (error) console.warn('[notify-venue-slot-request] invoke failed:', error.message);
+          else console.log('[notify-venue-slot-request] result:', data);
         });
       } else {
         supabase.functions.invoke('bookings-sync', {
@@ -12309,7 +12624,7 @@ export default function App() {
                 </div>
               ) : (
                 <button onClick={()=>setAuthModal({mode:"signin"})}
-                  style={{background:"transparent",border:"1px solid #213C18",color:"#213C18",borderRadius:999,padding:"6px 14px",cursor:"pointer",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:12,fontWeight:700}}>
+                  style={{background:"transparent",color:"#1B1C19",border:"1px solid rgba(27,28,25,0.28)",borderRadius:999,padding:"6px 14px",cursor:"pointer",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:12,fontWeight:700}}>
                   Sign in
                 </button>
               )}

@@ -182,10 +182,30 @@ async function applyDecline(
     })
     .eq('id', bookingId)
     .eq('status', 'pending_venue')
+    .select('id, slot_id')
   if (mode === 'token' && tokenSig) q.eq('venue_decline_token', tokenSig)
-  const { data: updated, error: updErr } = await q.select('id').maybeSingle()
+  const { data: updated, error: updErr } = await q.maybeSingle()
   if (updErr) return { ok: false, error: updErr.message }
   if (!updated) return { ok: false, alreadyHandled: true }
+
+  // Slot-based pending_venue bookings (studio in request mode) carry a
+  // slot_id; the older offering-based flow does not. When present,
+  // decrement slots.booked so the slot returns to the marketplace —
+  // same shape as instructor-booking-response.
+  const declinedSlotId = (updated as { slot_id?: string | null }).slot_id
+  if (declinedSlotId) {
+    const slotIdNum = Number(declinedSlotId)
+    if (Number.isFinite(slotIdNum)) {
+      const { data: slotRow } = await supabase
+        .from('slots').select('id, booked').eq('id', slotIdNum).maybeSingle()
+      if (slotRow) {
+        const newBooked = Math.max(0, ((slotRow as { booked?: number }).booked || 0) - 1)
+        const { error: slotErr } = await supabase
+          .from('slots').update({ booked: newBooked }).eq('id', slotIdNum)
+        if (slotErr) console.warn('applyDecline: slots.booked decrement failed:', slotErr.message)
+      }
+    }
+  }
 
   // Refund the held credits via the ledger. If this fails we log
   // loudly rather than rolling the cancellation back — a stuck-
@@ -508,10 +528,25 @@ serve(async (req) => {
     .eq('id', booking.id)
     .eq('status', 'pending_venue')
     .eq('venue_decline_token', sig)
-    .select('id')
+    .select('id, slot_id')
     .maybeSingle()
   if (updErr) return html(page('Error', `<h1>Error</h1><p class="err">Could not decline the booking: ${updErr.message}</p>`), 500)
   if (!updated) return html(page('Already handled', `<h1>Already handled</h1><p>This request has already been actioned.</p>`), 409)
+
+  // Slot-based decline: decrement slots.booked so the slot returns to
+  // the marketplace. Offering-based (slot_id null) skips this.
+  const declinedSlotId = (updated as { slot_id?: string | null }).slot_id
+  if (declinedSlotId) {
+    const slotIdNum = Number(declinedSlotId)
+    if (Number.isFinite(slotIdNum)) {
+      const { data: slotRow } = await supabase
+        .from('slots').select('id, booked').eq('id', slotIdNum).maybeSingle()
+      if (slotRow) {
+        const newBooked = Math.max(0, ((slotRow as { booked?: number }).booked || 0) - 1)
+        await supabase.from('slots').update({ booked: newBooked }).eq('id', slotIdNum)
+      }
+    }
+  }
 
   // Refund credits held at request time via the ledger. Best-effort —
   // log if it fails so we can spot orphaned holds in support, but do
