@@ -79,6 +79,30 @@ serve(async (req) => {
     return json({ ok: true, credits_spent: cost, already: true })
   }
 
+  // Collision gate. Runs under an advisory lock on (business_id,
+  // booking_date) inside assert_no_slot_collision, so two concurrent
+  // bookings for the same day at the same partner serialize on the
+  // check — the second one sees the first's row and raises. This
+  // covers the sibling-overlap case that the slot's own spots/booked
+  // count can't (e.g. 13:00·30min and 13:00·45min are separate rows
+  // and booking one doesn't touch the other's booked count).
+  const { error: collisionErr } = await supabase.rpc('assert_no_slot_collision', {
+    p_booking_id: bookingId,
+  })
+  if (collisionErr) {
+    const msg = collisionErr.message || ''
+    if (msg.includes('slot_collision')) {
+      // Another booking beat us to the same time range. Roll the
+      // client-inserted booking back so the user can retry a
+      // different slot.
+      await supabase.from('bookings').delete().eq('id', bookingId)
+      return json({ error: 'slot_collision' }, 409)
+    }
+    console.error('spend-booking-credits: collision check failed', msg)
+    await supabase.from('bookings').delete().eq('id', bookingId)
+    return json({ error: msg }, 500)
+  }
+
   const { error: spendErr } = await supabase.rpc('spend_credits', {
     p_user_id:    userId,
     p_amount:     cost,

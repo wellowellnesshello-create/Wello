@@ -11751,6 +11751,22 @@ export default function App() {
       console.error("Error fetching listings:", error);
       setListings(LISTINGS);
     } else if (listingRows && listingRows.length > 0) {
+      // Collision filter: for partners generating multiple durations
+      // from the same daily window, sibling slots overlap in time
+      // (13:00·30min + 13:00·45min + 13:00·60min all coexist). A
+      // booking on one shouldn't consume the others via booked+1,
+      // so we ask Postgres which slot ids are blocked by an active
+      // booking's range and drop them here. Cheap (single RPC,
+      // returns only blocked ids) and idempotent — falls open on
+      // error so a network blip doesn't hide the whole marketplace.
+      const listingIds = listingRows.map(r => r.id).filter(Boolean);
+      const blockedSlotIds = new Set();
+      if (listingIds.length > 0) {
+        const { data: blocked, error: blockedErr } = await supabase
+          .rpc('slot_ids_blocked_by_bookings', { p_listing_ids: listingIds });
+        if (blockedErr) console.warn('slot_ids_blocked_by_bookings failed:', blockedErr.message);
+        else if (Array.isArray(blocked)) for (const id of blocked) blockedSlotIds.add(String(id));
+      }
       const transformed = listingRows.map(row => ({
         id: row.id,
         business_id: row.business_id || null,
@@ -11795,6 +11811,7 @@ export default function App() {
         // on bookings is the authoritative check; this is the UX layer.
         cancellation_safety_window: !!row.businesses?.cancellation_safety_window,
         slots: (row.slots || [])
+          .filter(s => !blockedSlotIds.has(String(s.id)))
           .filter(s => {
             if (!row.businesses?.cancellation_safety_window) return true;
             const start = new Date(`${s.date}T${(s.time || '00:00').slice(0,5)}:00`);
