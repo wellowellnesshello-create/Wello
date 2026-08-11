@@ -383,8 +383,9 @@ async function step4(ctx) {
 // Seed a delivered confirmed booking (session yesterday) so
 // run-weekly-payouts finds something to pay.
 async function step5(ctx) {
-  // 7 days back sits before any reasonable weekly cutoff (function
-  // uses "last Monday Madrid noon" or similar).
+  // 7 days back sits before any reasonable weekly cutoff — the
+  // function uses "most recent Monday 00:00 Madrid" so we're deep
+  // into the delivered window.
   const past = new Date(Date.now() - 7 * 24 * 3600e3).toISOString().slice(0, 10)
   const { data: pastBk, error: pastErr } = await admin.from('bookings').insert({
     user_id:       ctx.custId,
@@ -400,14 +401,46 @@ async function step5(ctx) {
   }).select('id').single()
   if (pastErr) return fail('Step 5 — payout', `seed past booking: ${pastErr.message}`)
 
-  // Invoke run-weekly-payouts with service-role auth (path A).
+  // Pre-check the platform Stripe balance. Every successful transfer
+  // depletes it, and the sandbox drops to €0 after enough runs. When
+  // low, top up via pm_card_bypassPending (charges the test card and
+  // the funds land in `available` immediately). Skips the top-up if
+  // STRIPE_SECRET_KEY isn't in scope — the transfer will then fail
+  // with a clear "insufficient available funds" error which we treat
+  // as an infra failure, not a code failure.
+  if (STRIPE_SECRET_KEY) {
+    const balRes = await fetch('https://api.stripe.com/v1/balance', {
+      headers: { 'Authorization': `Bearer ${STRIPE_SECRET_KEY}` },
+    })
+    const bal = await balRes.json().catch(() => null)
+    const euroAvail = Number(bal?.available?.find?.(x => x.currency === 'eur')?.amount || 0)
+    if (euroAvail < 2000) {
+      console.log(`  [step 5] platform EUR balance ${euroAvail}c — topping up €50 via pm_card_bypassPending`)
+      const topUp = new URLSearchParams({
+        amount: '5000', currency: 'eur',
+        payment_method: 'pm_card_bypassPending', confirm: 'true',
+        'payment_method_types[]': 'card',
+      })
+      await fetch('https://api.stripe.com/v1/payment_intents', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: topUp.toString(),
+      })
+    }
+  }
+
+  // Invoke run-weekly-payouts scoped to THIS run's business only. The
+  // local DB accumulates orphan sandbox businesses across runs, some
+  // with the older Express Connect account that never had its
+  // transfers capability activated. Scoping keeps the response
+  // focused on what this run is actually testing.
   const res = await fetch(`${SUPABASE_URL}/functions/v1/run-weekly-payouts`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
       'Content-Type':  'application/json',
     },
-    body: JSON.stringify({ dry_run: false }),
+    body: JSON.stringify({ dry_run: false, business_ids: [ctx.bizId] }),
   })
   const text = await res.text()
   let payload
