@@ -66,8 +66,13 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 // Parse and verify token; returns { bookingId, expiryIso, action, sig }.
+// Payload shape is `<bookingId>.<expiryIso>.<action>`. bookingId is a
+// UUID (has hyphens, no dots), action is a word (no dots), only
+// expiryIso can contain dots — .toISOString() yields "…:00.000Z". Pull
+// bookingId from the front and action from the back so millisecond-
+// bearing timestamps survive.
 async function verifyToken(token: string): Promise<
-  | { ok: true; bookingId: number; expiryIso: string; action: string; sig: string }
+  | { ok: true; bookingId: string; expiryIso: string; action: string; sig: string }
   | { ok: false; error: string }
 > {
   const parts = token.split('.')
@@ -77,10 +82,10 @@ async function verifyToken(token: string): Promise<
   const payload = decodeURIComponent(payloadEncoded)
   const bits = payload.split('.')
   if (bits.length < 3) return { ok: false, error: 'Malformed token payload' }
-  const [bookingIdStr, expiryIso, action, ...rest] = bits
-  if (rest.length > 0) return { ok: false, error: 'Unexpected token payload' }
-  const bookingId = parseInt(bookingIdStr, 10)
-  if (!Number.isFinite(bookingId)) return { ok: false, error: 'Invalid booking id' }
+  const bookingId  = bits[0]
+  const action     = bits[bits.length - 1]
+  const expiryIso  = bits.slice(1, -1).join('.')
+  if (!bookingId)                  return { ok: false, error: 'Missing booking id' }
   if (!expiryIso)                  return { ok: false, error: 'Missing expiry' }
   if (action !== 'accept' && action !== 'decline') return { ok: false, error: 'Unknown action' }
   const expected = await hmacSign(payload, SAFETY_CANCEL_SECRET)
@@ -117,7 +122,7 @@ async function sendEmail(to: string, subject: string, htmlBody: string) {
 }
 
 // Load context needed to email + decide flow. Reused by both action paths.
-async function loadContext(supabase: ReturnType<typeof createClient>, bookingId: number) {
+async function loadContext(supabase: ReturnType<typeof createClient>, bookingId: string) {
   const { data: booking, error: bookErr } = await supabase
     .from('bookings')
     .select('id, user_id, business_id, booking_date, start_time, credits_used, notes, status, offering_type, venue_accept_token, venue_decline_token, venue_action_expires_at, created_at')
@@ -171,7 +176,7 @@ async function findAlternatives(
 async function applyDecline(
   supabase: ReturnType<typeof createClient>,
   { bookingId, mode, tokenSig, credits, customerId, source }:
-  { bookingId: number; mode: 'token' | 'auth' | 'auto'; tokenSig?: string; credits: number; customerId: string; source: string },
+  { bookingId: string; mode: 'token' | 'auth' | 'auto'; tokenSig?: string; credits: number; customerId: string; source: string },
 ): Promise<{ ok: true } | { ok: false; alreadyHandled?: boolean; error?: string }> {
   const q = supabase
     .from('bookings')
@@ -228,7 +233,7 @@ async function applyDecline(
 async function applyAccept(
   supabase: ReturnType<typeof createClient>,
   { bookingId, tokenSig }:
-  { bookingId: number; tokenSig?: string },
+  { bookingId: string; tokenSig?: string },
 ): Promise<{ ok: true } | { ok: false; error: string; alreadyHandled?: boolean }> {
   const q = supabase
     .from('bookings')
@@ -313,8 +318,8 @@ serve(async (req) => {
 
     if (jsonBody && jsonBody.action && jsonBody.booking_id) {
       const action = jsonBody.action
-      const bookingId = Number(jsonBody.booking_id)
-      if (!Number.isFinite(bookingId)) return json({ error: 'booking_id required' }, 400)
+      const bookingId = String(jsonBody.booking_id).trim()
+      if (!bookingId) return json({ error: 'booking_id required' }, 400)
 
       // Auth per action BEFORE any DB lookup — otherwise a 404 vs 200
       // difference leaks whether a given booking_id exists to
