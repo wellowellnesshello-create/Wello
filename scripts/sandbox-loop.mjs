@@ -495,6 +495,292 @@ async function step6(ctx) {
     `replay landed but state unchanged (stripe-grants=${grantCountAfter}, purchased=${balAfter.purchased})`)
 }
 
+// ── Transcend fixture ────────────────────────────────────────────
+// One business (NOT Private Instructor — so studio pending_venue
+// path exercises), one listing, multiple slots at 13:00 for
+// collision, request-mode slots at 15:00 and 16:00 for booking-mode
+// tests, and one sibling to prove the pending_venue hold blocks
+// overlapping slots.
+//
+// Also grants the customer 100 bonus credits so steps 7-9 have
+// enough runway on top of whatever step 1's grant left after
+// steps 2-4.
+async function seedTranscend(ctx) {
+  console.log('\n── Seeding Transcend fixture ────────────────────')
+
+  await admin.rpc('grant_credits', {
+    p_user_id:     ctx.custId,
+    p_amount:      100,
+    p_credit_type: 'bonus',
+    p_source:      'sandbox_transcend_runway',
+    p_expires_at:  null,
+    p_note:        'runway for steps 7-9',
+  })
+
+  const email = `sandbox-transcend-${Date.now()}@test.local`
+  const { data: biz, error: bizErr } = await admin.from('businesses').insert({
+    name: 'Sandbox Transcend',
+    category: 'Wellness',
+    status: 'active',
+    email,
+  }).select('id').single()
+  if (bizErr) throw new Error(`transcend biz: ${bizErr.message}`)
+
+  const { data: lst, error: lstErr } = await admin.from('listings').insert({
+    name: 'Sandbox Transcend Studio',
+    cat: 'Wellness',
+    loc: 'Palma',
+    cr: 10,
+    business_id: biz.id,
+    status: 'active',
+  }).select('id').single()
+  if (lstErr) throw new Error(`transcend listing: ${lstErr.message}`)
+
+  const date = new Date(Date.now() + 14 * 24 * 3600e3).toISOString().slice(0, 10)
+
+  async function makeSlot({ time, dur, mode = 'instant' }) {
+    const { data, error } = await admin.from('slots').insert({
+      listing_id:   lst.id,
+      name:         `${dur} Session`,
+      date, time, dur,
+      spots: 1, booked: 0, credits: 10, live: true,
+      booking_mode: mode,
+    }).select('id').single()
+    if (error) throw new Error(`slot ${time}/${dur}/${mode}: ${error.message}`)
+    return data.id
+  }
+
+  const slots = {
+    // 13:00 siblings, all instant — step 7 collision fixture.
+    s30_1300: await makeSlot({ time: '13:00', dur: '30 min' }),
+    s45_1300: await makeSlot({ time: '13:00', dur: '45 min' }),
+    s60_1300: await makeSlot({ time: '13:00', dur: '60 min' }),
+    s90_1300: await makeSlot({ time: '13:00', dur: '90 min' }),
+    // 15:00 request-mode — step 8 accept path.
+    request_1500: await makeSlot({ time: '15:00', dur: '60 min', mode: 'request' }),
+    // 16:00 request-mode + sibling — step 9 pending-hold + decline.
+    request_1600: await makeSlot({ time: '16:00', dur: '60 min', mode: 'request' }),
+    s30_1600:     await makeSlot({ time: '16:00', dur: '30 min' }),
+  }
+
+  console.log(`  transcend biz:  #${biz.id}  (studio, not Private Instructor)`)
+  console.log(`  listing:        #${lst.id}`)
+  console.log(`  slots @ ${date}: ${Object.keys(slots).length} rows`)
+
+  ctx.transcendBiz     = biz.id
+  ctx.transcendListing = lst.id
+  ctx.transcendDate    = date
+  ctx.slots            = slots
+}
+
+// ── Booking helpers shared by steps 7-9 ──────────────────────────
+function customerClient(ctx) {
+  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { headers: { Authorization: `Bearer ${ctx.custJwt}` } },
+  })
+}
+
+async function insertBooking({ ctx, slotId, time, duration, status, cost = 10 }) {
+  const { data, error } = await admin.from('bookings').insert({
+    user_id:      ctx.custId,
+    business_id:  ctx.transcendBiz,
+    venue_id:     ctx.transcendBiz,
+    slot_id:      String(slotId),
+    booking_date: ctx.transcendDate,
+    start_time:   time,
+    duration,
+    credits_used: cost,
+    status,
+  }).select('id').single()
+  if (error) throw new Error(`insert booking: ${error.message}`)
+  return data.id
+}
+
+async function bumpSlotBooked(slotId, delta) {
+  const { data: row } = await admin.from('slots').select('booked').eq('id', slotId).maybeSingle()
+  const next = Math.max(0, (row?.booked || 0) + delta)
+  await admin.from('slots').update({ booked: next }).eq('id', slotId)
+  return next
+}
+
+async function blockedSet(listingId) {
+  const { data } = await admin.rpc('slot_ids_blocked_by_bookings', { p_listing_ids: [listingId] })
+  return new Set((data || []).map(id => Number(id)))
+}
+
+// notify-venue-slot-request builds accept/decline URLs using
+// SUPABASE_URL as seen INSIDE the edge runtime container — which
+// is Kong's Docker hostname (`http://kong:8000`). The driver runs
+// outside Docker and can't resolve that. Rewrite to the URL the
+// driver uses.
+function fixupHost(url) {
+  return url.replace(/^https?:\/\/[^/]+/, SUPABASE_URL)
+}
+
+// ── Step 7 · Collision (marketplace filter + booking-time reject) ─
+async function step7(ctx) {
+  // Book the 45-min slot at 13:00 via the same path the frontend uses.
+  const bookingId = await insertBooking({
+    ctx, slotId: ctx.slots.s45_1300,
+    time: '13:00', duration: '45 min', status: 'confirmed',
+  })
+  const spend = await customerClient(ctx).functions.invoke('spend-booking-credits', {
+    body: { booking_id: bookingId, source: 'booking' },
+  })
+  if (spend.error || spend.data?.error) {
+    return fail('Step 7 — collision', `initial book failed: ${JSON.stringify(spend.data || spend.error)}`)
+  }
+
+  // Read filter: siblings 30/60/90 at 13:00 must be blocked; the
+  // booked slot itself must NOT appear (spots/booked handles that).
+  const blocked = await blockedSet(ctx.transcendListing)
+  const siblings = ['s30_1300', 's60_1300', 's90_1300']
+  const missing  = siblings.filter(k => !blocked.has(Number(ctx.slots[k])))
+  if (missing.length) return fail('Step 7 — collision', `siblings not blocked: ${missing.join(', ')}`)
+  if (blocked.has(Number(ctx.slots.s45_1300))) return fail('Step 7 — collision', 'booked slot appears in block set')
+
+  // Write gate: attempting to book the 30-min sibling must be
+  // rejected with slot_collision and the booking row rolled back.
+  const collidingId = await insertBooking({
+    ctx, slotId: ctx.slots.s30_1300,
+    time: '13:00', duration: '30 min', status: 'confirmed',
+  })
+  // Raw fetch — functions.invoke opaques out non-2xx bodies. We want
+  // the exact status + { error: 'slot_collision' } payload.
+  const collideRes = await fetch(`${SUPABASE_URL}/functions/v1/spend-booking-credits`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${ctx.custJwt}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ booking_id: collidingId, source: 'booking' }),
+  })
+  const collideBody = await collideRes.text()
+  if (collideRes.status !== 409 || !collideBody.includes('slot_collision')) {
+    return fail('Step 7 — collision',
+      `expected 409 slot_collision on 30-min sibling, got ${collideRes.status}: ${collideBody.slice(0, 200)}`)
+  }
+  const { data: leftover } = await admin.from('bookings').select('id').eq('id', collidingId).maybeSingle()
+  if (leftover) return fail('Step 7 — collision', 'orphan booking row remains after slot_collision reject')
+
+  return pass('Step 7 — collision',
+    `45-min booked; 30/60/90-min siblings blocked in read filter; 30-min booking attempt rejected with slot_collision + row rolled back`)
+}
+
+// ── Step 8 · Booking mode (request → pending_venue → accept) ─────
+async function step8(ctx) {
+  // slots.booked is auto-managed by two AFTER triggers on bookings
+  // (booking_inserted_bump_slot, booking_cancelled_unbump_slot), so
+  // no explicit bump / unbump from the driver.
+  const bookingId = await insertBooking({
+    ctx, slotId: ctx.slots.request_1500,
+    time: '15:00', duration: '60 min', status: 'pending_venue',
+  })
+  const spend = await customerClient(ctx).functions.invoke('spend-booking-credits', {
+    body: { booking_id: bookingId, source: 'booking_hold' },
+  })
+  if (spend.error || spend.data?.error) {
+    return fail('Step 8 — request mode + accept', `spend failed: ${JSON.stringify(spend.data || spend.error)}`)
+  }
+
+  // Notify the venue → mints tokens, returns accept_url.
+  const notify = await customerClient(ctx).functions.invoke('notify-venue-slot-request', {
+    body: { booking_id: bookingId },
+  })
+  if (notify.error) return fail('Step 8 — request mode + accept', `notify failed: ${notify.error.message}`)
+  const acceptUrl = notify.data?.accept_url
+  if (!acceptUrl) return fail('Step 8 — request mode + accept', `no accept_url returned: ${JSON.stringify(notify.data)}`)
+
+  // Balance snapshot BEFORE accept so we can assert no refund happened.
+  const balBefore = await balance(ctx.custId)
+
+  // Simulate the venue clicking the accept link.
+  const acceptRes = await fetch(fixupHost(acceptUrl), { method: 'POST' })
+  if (acceptRes.status !== 200) {
+    const body = await acceptRes.text()
+    return fail('Step 8 — request mode + accept', `accept returned ${acceptRes.status}: ${body.slice(0, 400)}`)
+  }
+
+  const { data: bk } = await admin.from('bookings').select('status').eq('id', bookingId).maybeSingle()
+  if (bk?.status !== 'confirmed') return fail('Step 8 — request mode + accept', `status=${bk?.status}, expected confirmed`)
+
+  // Accept must NOT refund and must NOT decrement slots.booked.
+  const balAfter = await balance(ctx.custId)
+  if (balAfter.purchased + balAfter.bonus !== balBefore.purchased + balBefore.bonus) {
+    return fail('Step 8 — request mode + accept',
+      `credits changed on accept: before=${balBefore.purchased + balBefore.bonus}, after=${balAfter.purchased + balAfter.bonus} (accept should not refund)`)
+  }
+  const { data: slotRow } = await admin.from('slots').select('booked').eq('id', ctx.slots.request_1500).maybeSingle()
+  if ((slotRow?.booked || 0) !== 1) {
+    return fail('Step 8 — request mode + accept', `slots.booked=${slotRow?.booked}, expected 1 (accept preserves)`)
+  }
+
+  return pass('Step 8 — request mode + accept',
+    `pending_venue → confirmed via accept token; credits held (not refunded), slots.booked preserved at 1`)
+}
+
+// ── Step 9 · Pending holds availability + decline releases ───────
+async function step9(ctx) {
+  const bookingId = await insertBooking({
+    ctx, slotId: ctx.slots.request_1600,
+    time: '16:00', duration: '60 min', status: 'pending_venue',
+  })
+  const spend = await customerClient(ctx).functions.invoke('spend-booking-credits', {
+    body: { booking_id: bookingId, source: 'booking_hold' },
+  })
+  if (spend.error || spend.data?.error) {
+    return fail('Step 9 — pending holds + decline', `spend failed: ${JSON.stringify(spend.data || spend.error)}`)
+  }
+
+  // A pending_venue booking with a slot_id must block overlapping
+  // siblings via the read filter. 16:00·30min sibling ⊂ 16:00·60min.
+  const blockedWhilePending = await blockedSet(ctx.transcendListing)
+  if (!blockedWhilePending.has(Number(ctx.slots.s30_1600))) {
+    return fail('Step 9 — pending holds + decline',
+      `sibling 30-min at 16:00 was NOT blocked while pending_venue held the slot`)
+  }
+
+  // Balance snapshot BEFORE decline so we can assert the refund
+  // landed. Also grab grant remainings so we can prove
+  // refund_by_booking restored them.
+  const balBefore = await balance(ctx.custId)
+
+  const notify = await customerClient(ctx).functions.invoke('notify-venue-slot-request', {
+    body: { booking_id: bookingId },
+  })
+  const declineUrl = notify.data?.decline_url
+  if (!declineUrl) return fail('Step 9 — pending holds + decline', 'no decline_url returned')
+
+  const declineRes = await fetch(fixupHost(declineUrl), { method: 'POST' })
+  if (declineRes.status !== 200) {
+    return fail('Step 9 — pending holds + decline', `decline returned ${declineRes.status}`)
+  }
+
+  const { data: bk } = await admin.from('bookings').select('status').eq('id', bookingId).maybeSingle()
+  if (bk?.status !== 'cancelled') {
+    return fail('Step 9 — pending holds + decline', `status=${bk?.status}, expected cancelled`)
+  }
+
+  const { data: slotRow } = await admin.from('slots').select('booked').eq('id', ctx.slots.request_1600).maybeSingle()
+  if ((slotRow?.booked || 0) !== 0) {
+    return fail('Step 9 — pending holds + decline', `slots.booked=${slotRow?.booked}, expected 0 (decline should decrement)`)
+  }
+
+  const balAfter = await balance(ctx.custId)
+  const refunded = (balAfter.purchased + balAfter.bonus) - (balBefore.purchased + balBefore.bonus)
+  if (refunded !== 10) {
+    return fail('Step 9 — pending holds + decline',
+      `refund delta=${refunded}, expected +10 (was ${balBefore.purchased + balBefore.bonus}, now ${balAfter.purchased + balAfter.bonus})`)
+  }
+
+  // And the sibling must now be free again.
+  const blockedAfterDecline = await blockedSet(ctx.transcendListing)
+  if (blockedAfterDecline.has(Number(ctx.slots.s30_1600))) {
+    return fail('Step 9 — pending holds + decline', 'sibling still blocked after decline')
+  }
+
+  return pass('Step 9 — pending holds + decline',
+    `pending_venue blocked sibling; decline cancelled booking, decremented slots.booked, refunded +10 credits, released sibling`)
+}
+
 // ── Main ─────────────────────────────────────────────────────────
 const ctx = await seed()
 console.log('\n── Running steps ───────────────────────────────────')
@@ -504,6 +790,12 @@ await step3(ctx)
 await step4(ctx)
 await step5(ctx)
 await step6(ctx)
+
+await seedTranscend(ctx)
+console.log('\n── Running Transcend steps ────────────────────────')
+await step7(ctx)
+await step8(ctx)
+await step9(ctx)
 
 console.log('\n── Summary ────────────────────────────────────────')
 for (const r of results) console.log(`${r.status.padEnd(4)}  ${r.step}`)
