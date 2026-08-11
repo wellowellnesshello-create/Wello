@@ -661,8 +661,34 @@ async function step7(ctx) {
   const { data: leftover } = await admin.from('bookings').select('id').eq('id', collidingId).maybeSingle()
   if (leftover) return fail('Step 7 — collision', 'orphan booking row remains after slot_collision reject')
 
+  // slots.booked accounting after the collision reject:
+  //   s45_1300: booked=1 from the initial successful book
+  //   s30_1300: bump_slot_on_booking auto-fired on the rejected
+  //             INSERT; unbump_slot_on_cancel must also fire on
+  //             DELETE so this returns to 0. If it doesn't, the
+  //             rejected sibling silently loses a unit of
+  //             capacity forever.
+  //   s60_1300, s90_1300: never touched, still 0.
+  const { data: slotRows } = await admin.from('slots')
+    .select('id, booked')
+    .in('id', [ctx.slots.s30_1300, ctx.slots.s45_1300, ctx.slots.s60_1300, ctx.slots.s90_1300])
+  const bookedById = Object.fromEntries((slotRows || []).map(r => [Number(r.id), r.booked]))
+  const expected = {
+    [ctx.slots.s45_1300]: 1,
+    [ctx.slots.s30_1300]: 0,
+    [ctx.slots.s60_1300]: 0,
+    [ctx.slots.s90_1300]: 0,
+  }
+  const wrong = Object.entries(expected)
+    .filter(([id, want]) => bookedById[Number(id)] !== want)
+    .map(([id, want]) => `slot ${id}: booked=${bookedById[Number(id)]} (expected ${want})`)
+  if (wrong.length > 0) {
+    return fail('Step 7 — collision',
+      `slots.booked drifted after collision reject: ${wrong.join('; ')}`)
+  }
+
   return pass('Step 7 — collision',
-    `45-min booked; 30/60/90-min siblings blocked in read filter; 30-min booking attempt rejected with slot_collision + row rolled back`)
+    `45-min booked; 30/60/90-min siblings blocked in read filter; 30-min booking attempt rejected with slot_collision + row rolled back; slots.booked correct across all four siblings (rejected DELETE released its slot)`)
 }
 
 // ── Step 8 · Booking mode (request → pending_venue → accept) ─────
