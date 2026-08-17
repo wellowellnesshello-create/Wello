@@ -5338,6 +5338,17 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           price_eur:  Number.isFinite(o?.price_eur)  && o.price_eur  > 0 ? o.price_eur  : (bizData?.cr || 50),
           extra_person_eur: Number.isFinite(o?.extra_person_eur) && o.extra_person_eur > 0 ? o.extra_person_eur : null,
           max_people:       Number.isFinite(o?.max_people)       && o.max_people       > 0 ? o.max_people       : null,
+          // Preserve the multi-location shape when present so hybrid
+          // partners (Noor: Private + Group private with studio/at-home
+          // options) don't lose their per-location prices on the next
+          // save. Undefined for legacy single-price offerings.
+          locations: Array.isArray(o?.locations) && o.locations.length > 0
+            ? o.locations.map(l => ({
+                label: String(l?.label || ''),
+                price_eur: Number.isFinite(Number(l?.price_eur)) && Number(l.price_eur) >= 0 ? Math.round(Number(l.price_eur)) : 0,
+                venue_side: l?.venue_side === 'customer' ? 'customer' : 'instructor',
+              }))
+            : undefined,
           // Optional per-offering photo. Falls back to biz.img on the
           // marketplace card + BizPanel offering row when unset.
           img: (typeof o?.img === 'string' && o.img) ? o.img : null,
