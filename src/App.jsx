@@ -1963,79 +1963,117 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                 })}
               </div>
 
-              {/* Timetable rows for selected day, sorted by start time. */}
+              {/* Timetable for selected day. Grouped by time: single-entry
+                  groups render as flat rows (unchanged look for the common
+                  "one class per time" partner). Multi-entry groups get a
+                  compact time header + sub-rows underneath, so a hybrid
+                  partner (Noor: 5 offerings all at 10:00) doesn't produce
+                  20 near-identical rows. */}
               <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>
                 {slotsForDate.length > 0 ? `${slotsForDate.length} class${slotsForDate.length === 1 ? "" : "es"} on ${fd(selDate)}` : `Nothing on ${fd(selDate)}`}
               </p>
               <div style={{display:"flex",flexDirection:"column",gap:8,paddingBottom:8}}>
-                {slotsForDate.length === 0
-                  ? <p style={{fontFamily:F2,fontSize:13,color:"#54584F",padding:"20px 0",textAlign:"center"}}>Try a different day or clear filters.</p>
-                  : slotsForDate.map(sl => {
-                      const avail = sl.spots - sl.booked;
-                      const full = avail === 0;
-                      const pct = (sl.booked / sl.spots) * 100;
-                      // Per-class photo lookup. class_photos is keyed by
-                      // the exact slot name; falls back to biz.img so
-                      // venues without class-specific photos still get
-                      // a thumbnail rather than a blank cell.
-                      const classPhotoMap = (biz.class_photos && typeof biz.class_photos === 'object') ? biz.class_photos : null;
-                      const classImg = (classPhotoMap && classPhotoMap[sl.name]) || biz.img || null;
-                      return (
-                        <div key={sl.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",flexWrap:"wrap",background:full?"#F5F3EE":"#FBF9F4",borderRadius:12,border:`1px solid ${full?"rgba(195,200,188,0.3)":"rgba(195,200,188,0.5)"}`,opacity:full?0.6:1,transition:"all .15s"}}
-                          onMouseEnter={e=>{if(!full)e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.06)"}}
-                          onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
-                          {/* Time */}
-                          <div style={{textAlign:"center",minWidth:48,flexShrink:0}}>
-                            <p style={{fontFamily:F2,fontSize:16,fontWeight:800,color:"#213C18",margin:0,letterSpacing:"-0.5px"}}>{sl.time}</p>
-                            <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>{sl.dur}</p>
-                          </div>
-                          <div style={{width:1,height:32,background:"rgba(195,200,188,0.5)",flexShrink:0}}/>
-                          {/* Class thumbnail */}
-                          {classImg && (
-                            <div style={{width:44,height:44,borderRadius:6,overflow:"hidden",flexShrink:0,background:"#E4E2DD"}}>
-                              <img src={classImg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                {slotsForDate.length === 0 ? (
+                  <p style={{fontFamily:F2,fontSize:13,color:"#54584F",padding:"20px 0",textAlign:"center"}}>Try a different day or clear filters.</p>
+                ) : (() => {
+                  // Group by exact start time. Sort within a group by name
+                  // for stable order across renders.
+                  const groups = new Map();
+                  for (const sl of slotsForDate) {
+                    if (!groups.has(sl.time)) groups.set(sl.time, []);
+                    groups.get(sl.time).push(sl);
+                  }
+                  const sortedTimes = Array.from(groups.entries())
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([time, items]) => [time, items.slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''))]);
+                  // Shared row body. showTime=true renders the flat variant
+                  // (with the time column on the left); false is the compact
+                  // sub-row used inside a multi-entry group.
+                  function renderRow(sl, { showTime }) {
+                    const avail = sl.spots - sl.booked;
+                    const full = avail === 0;
+                    const pct = (sl.booked / sl.spots) * 100;
+                    // Per-class photo lookup. class_photos is keyed by the
+                    // exact slot name; falls back to biz.img so venues
+                    // without class-specific photos still get a thumbnail.
+                    const classPhotoMap = (biz.class_photos && typeof biz.class_photos === 'object') ? biz.class_photos : null;
+                    const classImg = (classPhotoMap && classPhotoMap[sl.name]) || biz.img || null;
+                    const price = (Number.isFinite(Number(sl.credits)) && Number(sl.credits) > 0) ? Number(sl.credits) : biz.cr;
+                    return (
+                      <div key={sl.id} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",flexWrap:"wrap",background:full?"#F5F3EE":"#FBF9F4",borderRadius:12,border:`1px solid ${full?"rgba(195,200,188,0.3)":"rgba(195,200,188,0.5)"}`,opacity:full?0.6:1,transition:"all .15s"}}
+                        onMouseEnter={e=>{if(!full)e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.06)"}}
+                        onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
+                        {/* Time column — omitted for sub-rows inside a
+                            group (the group header carries the time). */}
+                        {showTime && (
+                          <>
+                            <div style={{textAlign:"center",minWidth:48,flexShrink:0}}>
+                              <p style={{fontFamily:F2,fontSize:16,fontWeight:800,color:"#213C18",margin:0,letterSpacing:"-0.5px"}}>{sl.time}</p>
+                              <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>{sl.dur}</p>
                             </div>
-                          )}
-                          {/* Info — name plus an "At your home" badge on
-                              rows where the partner travels to the customer.
-                              At-your-venue rows carry no badge because that's
-                              the default and stating it would be noise. */}
-                          <div style={{flex:1,minWidth:120}}>
-                            <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#1B1C19",margin:"0 0 4px"}}>
-                              {sl.name}
-                              {sl.venue_side === 'customer' && (
-                                <span style={{display:"inline-block",marginLeft:6,padding:"2px 8px",borderRadius:999,background:"rgba(184,146,92,0.15)",border:"1px solid rgba(184,146,92,0.35)",fontFamily:F2,fontSize:10,fontWeight:600,color:"#766149",letterSpacing:"0.2px",verticalAlign:"middle"}}>
-                                  At your home
-                                </span>
-                              )}
-                            </p>
-                            <div style={{display:"flex",alignItems:"center",gap:8}}>
-                              <div style={{width:80,height:4,background:"#E4E2DD",borderRadius:999}}>
-                                <div style={{width:`${pct}%`,height:"100%",background:pct>80?"#B8925C":"#213C18",borderRadius:999,transition:"width .3s"}}/>
-                              </div>
-                              <span style={{fontFamily:F2,fontSize:11,color:full?"#e05c5c":pct>80?"#B8925C":"#213C18",fontWeight:600}}>
-                                {full ? "Full" : `${avail} of ${sl.spots} left`}
+                            <div style={{width:1,height:32,background:"rgba(195,200,188,0.5)",flexShrink:0}}/>
+                          </>
+                        )}
+                        {/* Class thumbnail */}
+                        {classImg && (
+                          <div style={{width:44,height:44,borderRadius:6,overflow:"hidden",flexShrink:0,background:"#E4E2DD"}}>
+                            <img src={classImg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                          </div>
+                        )}
+                        {/* Info — name plus an "At your home" badge on
+                            rows where the partner travels to the customer.
+                            At-your-venue rows carry no badge because that's
+                            the default and stating it would be noise. */}
+                        <div style={{flex:1,minWidth:120}}>
+                          <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#1B1C19",margin:"0 0 4px"}}>
+                            {sl.name}
+                            {sl.venue_side === 'customer' && (
+                              <span style={{display:"inline-block",marginLeft:6,padding:"2px 8px",borderRadius:999,background:"rgba(184,146,92,0.15)",border:"1px solid rgba(184,146,92,0.35)",fontFamily:F2,fontSize:10,fontWeight:600,color:"#766149",letterSpacing:"0.2px",verticalAlign:"middle"}}>
+                                At your home
                               </span>
+                            )}
+                          </p>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            <div style={{width:80,height:4,background:"#E4E2DD",borderRadius:999}}>
+                              <div style={{width:`${pct}%`,height:"100%",background:pct>80?"#B8925C":"#213C18",borderRadius:999,transition:"width .3s"}}/>
                             </div>
-                          </div>
-                          {/* Book button */}
-                          <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-                            {/* Per-slot credits when set — matches what the
-                                BookingModal will actually charge. Falls back
-                                to biz.cr for legacy rows without an explicit
-                                credits value on the slot. */}
-                            <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18"}}>◈ {(Number.isFinite(Number(sl.credits)) && Number(sl.credits) > 0) ? Number(sl.credits) : biz.cr}</span>
-                            <button onClick={()=>!full&&onBook(biz,sl)} disabled={full}
-                              style={{padding:"10px 20px",background:full?"#E4E2DD":"#213C18",color:full?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:full?"not-allowed":"pointer",transition:"all .15s",whiteSpace:"nowrap"}}
-                              onMouseEnter={e=>{if(!full)e.currentTarget.style.opacity="0.85"}}
-                              onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-                              {full ? "Full" : "Book →"}
-                            </button>
+                            <span style={{fontFamily:F2,fontSize:11,color:full?"#e05c5c":pct>80?"#B8925C":"#213C18",fontWeight:600}}>
+                              {full ? "Full" : `${avail} of ${sl.spots} left`}
+                            </span>
                           </div>
                         </div>
-                      );
-                    })
-                }
+                        {/* Price + book */}
+                        <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+                          <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18"}}>◈ {price}</span>
+                          <button onClick={()=>!full&&onBook(biz,sl)} disabled={full}
+                            style={{padding:"10px 20px",background:full?"#E4E2DD":"#213C18",color:full?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:full?"not-allowed":"pointer",transition:"all .15s",whiteSpace:"nowrap"}}
+                            onMouseEnter={e=>{if(!full)e.currentTarget.style.opacity="0.85"}}
+                            onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+                            {full ? "Full" : "Book →"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return sortedTimes.map(([time, items]) => {
+                    if (items.length === 1) return renderRow(items[0], { showTime: true });
+                    const dur = items[0].dur;
+                    return (
+                      <div key={time}>
+                        {/* Time header — subdued weight, so it visually
+                            anchors the sub-rows below without competing
+                            with them. */}
+                        <div style={{display:"flex",alignItems:"baseline",gap:10,padding:"6px 4px 8px",borderBottom:"1px solid rgba(195,200,188,0.35)",marginBottom:8}}>
+                          <span style={{fontFamily:F2,fontSize:15,fontWeight:800,color:"#213C18",letterSpacing:"-0.4px"}}>{time}</span>
+                          <span style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>{dur} · {items.length} options</span>
+                        </div>
+                        <div style={{display:"flex",flexDirection:"column",gap:6,paddingLeft:8}}>
+                          {items.map(sl => renderRow(sl, { showTime: false }))}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </>
           )}
