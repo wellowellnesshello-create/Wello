@@ -2033,6 +2033,13 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                     const avail = sl.spots - sl.booked;
                     const full = avail === 0;
                     const pct = (sl.booked / sl.spots) * 100;
+                    // Hide the "N of M left" bar when the class effectively
+                    // has no cap (spots >= 50). Partners running open
+                    // drop-ins set high sentinel values (Noor: 999); the
+                    // literal readout looks silly. Threshold is a shared
+                    // rule, not partner-specific.
+                    const UNCAPPED_THRESHOLD = 50;
+                    const uncapped = Number(sl.spots) >= UNCAPPED_THRESHOLD;
                     // Per-class photo lookup. class_photos is keyed by the
                     // exact slot name; falls back to biz.img so venues
                     // without class-specific photos still get a thumbnail.
@@ -2073,14 +2080,16 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                               </span>
                             )}
                           </p>
-                          <div style={{display:"flex",alignItems:"center",gap:8}}>
-                            <div style={{width:80,height:4,background:"#E4E2DD",borderRadius:999}}>
-                              <div style={{width:`${pct}%`,height:"100%",background:pct>80?"#B8925C":"#213C18",borderRadius:999,transition:"width .3s"}}/>
+                          {!uncapped && (
+                            <div style={{display:"flex",alignItems:"center",gap:8}}>
+                              <div style={{width:80,height:4,background:"#E4E2DD",borderRadius:999}}>
+                                <div style={{width:`${pct}%`,height:"100%",background:pct>80?"#B8925C":"#213C18",borderRadius:999,transition:"width .3s"}}/>
+                              </div>
+                              <span style={{fontFamily:F2,fontSize:11,color:full?"#e05c5c":pct>80?"#B8925C":"#213C18",fontWeight:600}}>
+                                {full ? "Full" : `${avail} of ${sl.spots} left`}
+                              </span>
                             </div>
-                            <span style={{fontFamily:F2,fontSize:11,color:full?"#e05c5c":pct>80?"#B8925C":"#213C18",fontWeight:600}}>
-                              {full ? "Full" : `${avail} of ${sl.spots} left`}
-                            </span>
-                          </div>
+                          )}
                         </div>
                         {/* Price + book */}
                         <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
