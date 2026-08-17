@@ -7,30 +7,31 @@
 -- so a second run finds nothing to change. The session_offerings write is
 -- an overwrite; safe to re-run.
 
--- 1. Drop the three offering types that move out of the timetable.
---    Verified: zero bookings on any of these rows before writing this.
+-- 1. Drop the four offering types that leave the timetable.
+--    - Private × 2 and Group at home move to session_offerings (below).
+--    - Large group is collapsed into a single at-studio class along with
+--      Small group; the surviving Small group rows are relabelled to "Yoga"
+--      as the sole timetable class per time. Verified: zero bookings on
+--      any of these rows.
 delete from slots
  where listing_id = 23
    and name in (
      'Private · at her place or by the sea · 60 min',
      'Private · at your home · 60 min',
-     'Group · at your home · 60 min'
-   );
-
--- 2. Rename the two remaining offering groups to bare display names.
---    venue_side stays 'instructor' (backfilled earlier), spots stays as
---    seeded (4 and 30), credits stays (20 and 15).
-update slots
-   set name = case
-     when name = 'Small group (2-4) · at her place or by the sea · 60 min' then 'Small group'
-     when name = 'Large group · at her place or by the sea · 60 min'        then 'Large group'
-     else name
-   end
- where listing_id = 23
-   and name in (
-     'Small group (2-4) · at her place or by the sea · 60 min',
+     'Group · at your home · 60 min',
      'Large group · at her place or by the sea · 60 min'
    );
+
+-- 2. Rename Small group to bare "Yoga" and drop the capacity cap. spots
+--    goes to 999 as a sentinel ("no cap for now") since slots.spots is a
+--    non-null integer and the day-list UI multiplies through it — a real
+--    NULL would render as "NaN of null left". 20cr per person stays.
+--    venue_side stays 'instructor'.
+update slots
+   set name  = 'Yoga',
+       spots = 999
+ where listing_id = 23
+   and name = 'Small group (2-4) · at her place or by the sea · 60 min';
 
 -- 3. Populate businesses.session_offerings with the two request-based
 --    offerings. Each carries a locations array; the request-treatment-
