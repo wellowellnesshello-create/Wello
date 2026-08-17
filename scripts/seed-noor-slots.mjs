@@ -155,7 +155,7 @@ for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
 }
 
 console.log(`\n— Plan: ${rows.length} slot rows for business #${biz.id} / listing #${listing.id}`)
-const byOff = rows.reduce((acc, r) => { (acc[r.name] ||= 0)++; return acc }, {})
+const byOff = rows.reduce((acc, r) => { acc[r.name] = (acc[r.name] || 0) + 1; return acc }, {})
 for (const [name, n] of Object.entries(byOff)) console.log(`  ${n.toString().padStart(3)}  ${name}`)
 console.log(`  first: ${rows[0]?.date} ${rows[0]?.time}    last: ${rows[rows.length-1]?.date} ${rows[rows.length-1]?.time}`)
 

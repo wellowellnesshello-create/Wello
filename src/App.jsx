@@ -1006,30 +1006,32 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
   // venue group classes (where the studio can fall back to email).
   const [myPhone, setMyPhone] = useState(profile?.phone || "");
   const isPrivateBooking = biz.cat === "Private Instructor";
-  // Booking-mode is per-service (slots.booking_mode). Physical-service
-  // concerns (travel, on-site location, phone) stay tied to
-  // category=Private Instructor above; the request-vs-instant switch
-  // is independent. A Private Instructor slot could be instant, or a
-  // studio slot could be request (Transcend's Fire & Ice as instant
-  // and massage as request is the canonical mixed-mode case). Falls
-  // back to 'instant' when the column is absent — safe default for
-  // any listing cached from before the migration.
+  // Booking-mode is per-service (slots.booking_mode). The request-vs-instant
+  // switch is independent of category: a Private Instructor slot could be
+  // instant, and a studio slot could be request (Transcend's Fire & Ice as
+  // instant + Massage as request is the canonical mixed-mode case). Falls
+  // back to 'instant' when the column is absent.
   const isRequestMode = String(slot?.booking_mode || 'instant') === 'request';
-  // Per-slot venue side. 'instructor' means the session happens at a
-  // location the partner controls (their studio, an outdoor spot), so we
-  // skip the customer-address prompt and the whole travel-fee path.
-  // 'customer' (default) keeps the mobile-instructor behaviour.
-  const isAtInstructorVenue = isPrivateBooking && (slot?.venue_side || 'customer') === 'instructor';
-  const needsCustomerAddress = isPrivateBooking && !isAtInstructorVenue;
-  // Group-class path for private-instructor slots with real capacity. When
-  // spots > 1 we run the same flow as a studio group class: each attendee
-  // credits individually, the extras-for-a-friend UI is hidden, and the
-  // slot fills over time. Cap == 1 keeps the classic 1-on-1 flow with the
-  // extras stepper.
+  // Per-slot venue side is now the sole gate for the address-prompt and
+  // travel-zone path. 'customer' = the session happens at the customer's
+  // address (partner travels to them); 'instructor' = the session happens
+  // at a location the partner controls. This lets a hybrid partner (say a
+  // yoga studio that also offers at-your-home privates) mix modes without
+  // recategorising the business. Existing partners are unaffected because
+  // the 20260817000000 backfill flipped studio slots to 'instructor'; PI
+  // slots stayed at the 'customer' default.
+  const isAtInstructorVenue = String(slot?.venue_side || 'customer') === 'instructor';
+  const needsCustomerAddress = !isAtInstructorVenue;
+  // Group-class path for Private Instructor category slots with real
+  // capacity: when spots > 1, run the studio-group flow (each attendee
+  // credits individually, extras-stepper hidden, guest-invite panel
+  // available). Kept category-gated because the extras stepper below
+  // depends on session_offerings.extra_person_eur, which is Private
+  // Instructor-specific data.
   const isGroupPrivateSlot = isPrivateBooking && Number(slot?.spots || 1) > 1;
   // effectiveRequestMode below is recomputed once outsideCoverage is known,
-  // so a private-instructor instant slot with an out-of-coverage address
-  // still goes into pending_instructor instead of confirming at €0.
+  // so an instant slot with an out-of-coverage address still goes into a
+  // pending state instead of confirming at €0.
   // Extra guests requested for a private session (separate from the studio
   // guest chip list). Only visible when the matched offering allows it.
   const [privateExtras, setPrivateExtras] = useState(0);
@@ -1770,9 +1772,12 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
             </div>
           )}
 
-          {/* Private instructors: surface coverage areas as pills so guests
-              know exactly where the instructor travels to */}
-          {biz.cat === "Private Instructor" && Array.isArray(biz.coverage_areas) && biz.coverage_areas.length > 0 && (
+          {/* Any partner that travels: surface coverage areas as pills so
+              guests know where the partner goes. Data-gated, not category-
+              gated, so hybrid partners (Yoga studio that also offers
+              at-your-home privates) get the same display without needing to
+              be recategorised as Private Instructor. */}
+          {Array.isArray(biz.coverage_areas) && biz.coverage_areas.length > 0 && (
             <div style={{marginBottom:20}}>
               <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 8px"}}>Travels to</p>
               <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
@@ -4932,6 +4937,15 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // classification.
   const dashHasOfferings = Array.isArray(bizData?.session_offerings) && bizData.session_offerings.length > 0;
   const dashSupportsRequests = dashIsPrivate || dashHasOfferings;
+  // Any partner who travels to the customer's address needs the coverage +
+  // travel-zone editor. Private instructors get it implicitly; studios and
+  // hybrid partners opt in via businesses.offers_at_customer (settable from
+  // the Settings toggle). Zone data already populated also counts, so old
+  // rows keep their editor without waiting for a partner to toggle.
+  const dashHasTravel = dashIsPrivate
+    || !!bizData?.offers_at_customer
+    || (Array.isArray(bizData?.coverage_areas) && bizData.coverage_areas.length > 0)
+    || (Array.isArray(bizData?.travel_areas)   && bizData.travel_areas.length   > 0);
   // Sub-tab within Manage. Defaults to Requests for private instructors
   // (most actionable), Schedule for everyone else.
   const [manageSubTab, setManageSubTab] = useState(() => {
@@ -4997,6 +5011,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     // Stored as a string here so the input can be cleared mid-edit; parsed
     // and validated in saveSettings before we write to the businesses row.
     cancellation_window_hours: bizData.cancellation_window_hours != null ? String(bizData.cancellation_window_hours) : "24",
+    // Opt-in for at-customer sessions. When true, the Schedule tab reveals
+    // the Coverage & travel-zone editor for this partner. Private-instructor
+    // businesses have this implicitly via business_type and don't need to set it.
+    offers_at_customer: !!bizData.offers_at_customer,
   });
   const [saving, setSaving]       = useState(false);
   const [saveMsg, setSaveMsg]     = useState({ kind:"", text:"" }); // { kind:"settings"|"listing"|"golive"|"err", text }
@@ -5339,6 +5357,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       email:             settingsForm.email.trim() || bizData.email, // keep email if cleared
       bookings_whatsapp: settingsForm.bookings_whatsapp.trim() || null,
       cancellation_window_hours: cwhNum,
+      offers_at_customer: !!settingsForm.offers_at_customer,
     };
     const { error } = await supabase.from('businesses').update(payload).eq('id', bizData.id);
     if (!error) {
@@ -6870,78 +6889,85 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               })()}
             </div>
 
-            {/* Coverage areas — sits on the Schedule tab so partners set
-                where they travel to at the same time as when they're
-                available. Extended-travel picker sits underneath. */}
-            <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:18}}>
-              <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Coverage areas</h3>
-              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 14px",lineHeight:1.6}}>The Mallorca areas you travel to. Guests filter by location, so update this whenever your radius changes.</p>
+          </div>
+        )}
+
+        {/* ── COVERAGE + TRAVEL ZONES ─────────────────────────────────
+            Extracted from the PI-only block so hybrid partners (a
+            studio with at-your-home offerings) get it alongside the
+            regular studio schedule. Gate is dashHasTravel:
+            private-instructors implicitly, everyone else via the
+            "This business travels to customers" toggle in Settings,
+            or automatically if zone data is already populated. */}
+        {tab==="manage" && manageSubTab==="schedule" && dashHasTravel && (
+          <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:18}}>
+            <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Coverage areas</h3>
+            <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 14px",lineHeight:1.6}}>The Mallorca areas you travel to. Guests filter by location, so update this whenever your radius changes.</p>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
+              {MALLORCA_LOCATIONS.map(loc => {
+                const on = coverageAreas.includes(loc);
+                return (
+                  <button key={loc} type="button" onClick={()=>toggleCoverageArea(loc)}
+                    style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${on?"#213C18":"rgba(195,200,188,0.5)"}`,background:on?"#213C18":"#fff",color:on?"#fff":"#1B1C19",fontFamily:F2,fontSize:11,fontWeight:on?600:400,cursor:"pointer",transition:"all .12s"}}>
+                    {on?"✓ ":""}{loc}
+                  </button>
+                );
+              })}
+            </div>
+            {/* Extended travel — optional. Places the partner will also
+                travel to for an additional surcharge on top of the session
+                price. Each zone carries its own fee (Palma might be free,
+                Sóller €20), added to the booking when the customer's typed
+                address matches. */}
+            <div style={{marginTop:20,paddingTop:18,borderTop:"1px solid #E4E2DD"}}>
+              <h4 style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Extended travel (optional)</h4>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Add places outside your usual coverage that you'll travel to. Set a per-zone fee — guests booking to that area pay it automatically on top of the session price.</p>
               <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
                 {MALLORCA_LOCATIONS.map(loc => {
-                  const on = coverageAreas.includes(loc);
+                  const isCore   = coverageAreas.includes(loc);
+                  const isExtra  = travelAreas.some(z => z.area === loc);
+                  const disabled = isCore;
                   return (
-                    <button key={loc} type="button" onClick={()=>toggleCoverageArea(loc)}
-                      style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${on?"#213C18":"rgba(195,200,188,0.5)"}`,background:on?"#213C18":"#fff",color:on?"#fff":"#1B1C19",fontFamily:F2,fontSize:11,fontWeight:on?600:400,cursor:"pointer",transition:"all .12s"}}>
-                      {on?"✓ ":""}{loc}
+                    <button key={loc} type="button" onClick={()=>toggleTravelArea(loc)} disabled={disabled}
+                      style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${isExtra?"#B8925C":"rgba(195,200,188,0.5)"}`,background:isExtra?"#B8925C":"#fff",color:isExtra?"#fff":(disabled?"#A3B18A":"#1B1C19"),fontFamily:F2,fontSize:11,fontWeight:isExtra?600:400,cursor:disabled?"not-allowed":"pointer",transition:"all .12s",opacity:disabled?0.5:1}}>
+                      {isExtra?"✓ ":""}{loc}
                     </button>
                   );
                 })}
               </div>
-              {/* Extended travel — optional. Places the instructor will also
-                  travel to for an additional surcharge on top of the session
-                  price. Each zone carries its own fee (Palma might be free,
-                  Sóller €20), added to the booking when the customer's typed
-                  address matches. */}
-              <div style={{marginTop:20,paddingTop:18,borderTop:"1px solid #E4E2DD"}}>
-                <h4 style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Extended travel (optional)</h4>
-                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Add places outside your usual coverage that you'll travel to. Set a per-zone fee — guests booking to that area pay it automatically on top of the session price.</p>
-                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
-                  {MALLORCA_LOCATIONS.map(loc => {
-                    const isCore   = coverageAreas.includes(loc);
-                    const isExtra  = travelAreas.some(z => z.area === loc);
-                    const disabled = isCore;
-                    return (
-                      <button key={loc} type="button" onClick={()=>toggleTravelArea(loc)} disabled={disabled}
-                        style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${isExtra?"#B8925C":"rgba(195,200,188,0.5)"}`,background:isExtra?"#B8925C":"#fff",color:isExtra?"#fff":(disabled?"#A3B18A":"#1B1C19"),fontFamily:F2,fontSize:11,fontWeight:isExtra?600:400,cursor:disabled?"not-allowed":"pointer",transition:"all .12s",opacity:disabled?0.5:1}}>
-                        {isExtra?"✓ ":""}{loc}
-                      </button>
-                    );
-                  })}
-                </div>
-                {travelAreas.length > 0 && (
-                  <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:4}}>
-                    <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:0}}>Zone fees</p>
-                    {travelAreas.map(z => (
-                      <div key={z.area} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:"#F5F3EE",borderRadius:8}}>
-                        <span style={{fontFamily:F2,fontSize:12,color:"#1B1C19",fontWeight:600,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{z.area}</span>
-                        <div style={{position:"relative",width:96}}>
-                          <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
-                          <input type="number" min="0" step="1"
-                            value={z.fee_eur === '' || z.fee_eur == null ? '' : String(z.fee_eur)}
-                            onChange={e=>setTravelAreaFee(z.area, e.target.value)}
-                            placeholder="0"
-                            style={{...INP,paddingLeft:22,marginBottom:0,width:"100%",padding:"6px 6px 6px 22px"}}/>
-                        </div>
-                        <button type="button" onClick={()=>toggleTravelArea(z.area)}
-                          aria-label={`Remove ${z.area} from extended travel`}
-                          style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:16,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>
+              {travelAreas.length > 0 && (
+                <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:4}}>
+                  <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:0}}>Zone fees</p>
+                  {travelAreas.map(z => (
+                    <div key={z.area} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:"#F5F3EE",borderRadius:8}}>
+                      <span style={{fontFamily:F2,fontSize:12,color:"#1B1C19",fontWeight:600,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{z.area}</span>
+                      <div style={{position:"relative",width:96}}>
+                        <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
+                        <input type="number" min="0" step="1"
+                          value={z.fee_eur === '' || z.fee_eur == null ? '' : String(z.fee_eur)}
+                          onChange={e=>setTravelAreaFee(z.area, e.target.value)}
+                          placeholder="0"
+                          style={{...INP,paddingLeft:22,marginBottom:0,width:"100%",padding:"6px 6px 6px 22px"}}/>
                       </div>
-                    ))}
-                    <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:"2px 0 0",lineHeight:1.5}}>Set a €0 fee for a zone you cover but don't want to charge extra for. Blank saves as 0.</p>
-                  </div>
-                )}
-              </div>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginTop:18}}>
-                <p style={{fontFamily:F2,fontSize:11,color:coverageAreas.length>0?"#213C18":"#6F5B44",fontWeight:600,margin:0}}>
-                  {coverageAreas.length > 0
-                    ? `${coverageAreas.length} core area${coverageAreas.length===1?"":"s"}${travelAreas.length>0?` · ${travelAreas.length} extended`:""}`
-                    : "At least one area is required"}
-                </p>
-                <button onClick={saveCoverageAreas} disabled={saving||isPreview||coverageAreas.length===0}
-                  style={{padding:"10px 22px",background:(saving||isPreview||coverageAreas.length===0)?"#E4E2DD":"#213C18",color:(saving||isPreview||coverageAreas.length===0)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview||coverageAreas.length===0)?"not-allowed":"pointer"}}>
-                  {saving ? "Saving" : "Save coverage and travel"}
-                </button>
-              </div>
+                      <button type="button" onClick={()=>toggleTravelArea(z.area)}
+                        aria-label={`Remove ${z.area} from extended travel`}
+                        style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:16,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>
+                    </div>
+                  ))}
+                  <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:"2px 0 0",lineHeight:1.5}}>Set a €0 fee for a zone you cover but don't want to charge extra for. Blank saves as 0.</p>
+                </div>
+              )}
+            </div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginTop:18}}>
+              <p style={{fontFamily:F2,fontSize:11,color:coverageAreas.length>0?"#213C18":"#6F5B44",fontWeight:600,margin:0}}>
+                {coverageAreas.length > 0
+                  ? `${coverageAreas.length} core area${coverageAreas.length===1?"":"s"}${travelAreas.length>0?` · ${travelAreas.length} extended`:""}`
+                  : "Pick at least one area to appear in that location's marketplace filter"}
+              </p>
+              <button onClick={saveCoverageAreas} disabled={saving||isPreview||coverageAreas.length===0}
+                style={{padding:"10px 22px",background:(saving||isPreview||coverageAreas.length===0)?"#E4E2DD":"#213C18",color:(saving||isPreview||coverageAreas.length===0)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview||coverageAreas.length===0)?"not-allowed":"pointer"}}>
+                {saving ? "Saving" : "Save coverage and travel"}
+              </button>
             </div>
           </div>
         )}
@@ -7630,6 +7656,24 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     How many hours before the session a customer can cancel and get their credits back in full. Applies to every booking at this venue. Default 24 (48 for private instructors).
                   </p>
                 </div>
+                {/* At-customer opt-in — reveals the Coverage & travel-zone
+                    editor on the Schedule tab. Aimed at studios or spas that
+                    also send instructors to the customer's address. Private
+                    instructors get the editor implicitly and don't see this
+                    toggle. */}
+                {!dashIsPrivate && (
+                  <label style={{display:"flex",gap:12,alignItems:"flex-start",padding:"10px 12px",background:"#F5F3EE",border:`1px solid ${settingsForm.offers_at_customer ? "rgba(33,60,24,0.35)" : "rgba(195,200,188,0.5)"}`,borderRadius:10,cursor:isPreview?"not-allowed":"pointer"}}>
+                    <input type="checkbox"
+                      checked={!!settingsForm.offers_at_customer}
+                      onChange={e=>!isPreview && setSettingsForm(p=>({...p,offers_at_customer:e.target.checked}))}
+                      disabled={isPreview}
+                      style={{marginTop:3,width:16,height:16,accentColor:"#213C18",cursor:isPreview?"not-allowed":"pointer",flexShrink:0}}/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#1B1C19",margin:"0 0 3px",lineHeight:1.4}}>This business travels to customers</p>
+                      <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.55}}>Turn this on if some of your sessions happen at the customer's address. The Schedule tab reveals a coverage-area picker and a per-zone travel-fee editor. Existing at-your-venue slots aren't affected — customers still don't get asked for an address.</p>
+                    </div>
+                  </label>
+                )}
                 <button onClick={saveSettings} disabled={saving||isPreview}
                   style={{alignSelf:"flex-start",padding:"10px 20px",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer",marginTop:4}}>
                   {saving ? "Saving" : "Save changes"}
@@ -12517,22 +12561,23 @@ export default function App() {
       return;
     }
 
-    // Physical-service concerns (address, phone, group vs 1:1 pricing)
-    // stay tied to category=Private Instructor. The request-vs-instant
-    // switch is per-service (slot.booking_mode) — Transcend can have
-    // Fire & Ice as instant and massage as request without changing
-    // partner-level settings.
+    // Booking-mode is per-slot; routing is per-business. isPrivateBooking
+    // still decides which pending state we use (pending_instructor →
+    // SMS-to-instructor via notify-instructor-sms; pending_venue → email
+    // with HMAC accept/decline links via notify-venue-slot-request). A
+    // hybrid partner like Noor (category=Yoga, business_type=studio)
+    // routes through the venue path — which works fine because
+    // venue-booking-response is a generic email-accept flow.
     const isPrivateBooking = biz.cat === "Private Instructor";
     const isRequestMode    = String(slot?.booking_mode || 'instant') === 'request';
-    // Which pending status a request-mode booking gets. Instructor
-    // bookings still route through pending_instructor + SMS. Studio
-    // request bookings route through pending_venue with a slot_id set
-    // — venue-booking-response handles both.
     const pendingStatus    = isPrivateBooking ? 'pending_instructor' : 'pending_venue';
-    // Force request routing for private-instructor bookings whose address
-    // fell in no travel zone. Prevents auto-confirming an at-home session at
-    // €0 travel; the instructor sees the request and can decline or negotiate.
-    const forceRequestMode = isPrivateBooking && !!form?.outsideCoverage;
+    // Force request routing whenever the customer's address fell in no
+    // travel zone — regardless of category. Any partner offering an
+    // at-customer session needs to see the booking before we commit them
+    // to a free trip. outsideCoverage is only set in BookingModal when
+    // the slot is venue_side='customer', so this can't trigger for
+    // studio-only bookings.
+    const forceRequestMode = !!form?.outsideCoverage;
     const effectiveRequest = isRequestMode || forceRequestMode;
     const bookingStatus    = effectiveRequest ? pendingStatus : 'confirmed';
 
