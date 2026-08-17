@@ -1797,7 +1797,13 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
               <Stars n={biz.rating}/>
               <span style={{fontFamily:F2,fontSize:12,color:"rgba(255,255,255,0.6)"}}>({biz.reviews} reviews)</span>
               <span style={{fontFamily:F2,fontSize:12,color:"rgba(255,255,255,0.6)"}}>📍 {biz.loc}</span>
-              <span style={{background:"rgba(255,255,255,0.15)",backdropFilter:"blur(4px)",borderRadius:999,padding:"3px 10px",fontFamily:F2,fontSize:11,fontWeight:700,color:"#fff"}}>◈ {biz.cr} per person</span>
+              {(() => {
+                // Same tile-price rule as the marketplace grid: uniform slot
+                // credits render bare, mixed-price partners show "from ◈ N".
+                // Falls back to biz.cr for slotless listings.
+                const { prefix, value } = tilePriceLabel(biz);
+                return <span style={{background:"rgba(255,255,255,0.15)",backdropFilter:"blur(4px)",borderRadius:999,padding:"3px 10px",fontFamily:F2,fontSize:11,fontWeight:700,color:"#fff"}}>{prefix}◈ {value} per person</span>;
+              })()}
             </div>
           </div>
         </div>
