@@ -1,38 +1,62 @@
 // One-off: seed Noor Yoga's session slots.
 //
-// Runs against the LINKED Supabase project via the admin edge function
-// (op: insert_slots on admin-businesses), so it respects the same
-// column whitelist the admin UI does. Requires:
+// Goes through the admin-businesses edge function so the SLOT_COLS
+// whitelist + auth gates still apply. Auth uses the standard admin-CLI
+// pattern from admin_auth.ts:
 //
-//   SUPABASE_URL                = https://<ref>.supabase.co
-//   SUPABASE_SERVICE_ROLE_KEY   = service-role JWT (used for the lookup
-//                                 and as auth for the admin edge fn)
+//   - Authorization: Bearer <anon_key>  → satisfies Supabase gateway's
+//                                          JWT-format requirement (Kong).
+//   - X-Admin-Token: <cli_token>        → satisfies requireAdmin's
+//                                          ephemeral-bypass path.
 //
-// Optional:
-//   BUSINESS_ID                 = numeric id to skip the name-based
-//                                 lookup. Recommended for production
-//                                 runs so you're 100% sure which row
-//                                 gets slots.
+// No service-role key is ever passed to the function (Kong rejects
+// sb_secret_* keys as "non-user tokens"). No permanent config changes
+// — the ADMIN_CLI_TOKEN is set in Supabase secrets by the companion
+// bash wrapper before this runs, and unset immediately after.
+//
+// Required env:
+//   SUPABASE_URL              https://<ref>.supabase.co
+//   SUPABASE_ANON_KEY         public anon key (present in .env.local as
+//                             VITE_SUPABASE_PUBLISHABLE_KEY)
+//   ADMIN_CLI_TOKEN           ephemeral secret currently set on the
+//                             admin-businesses function
+//   BUSINESS_ID               numeric id of the business to seed (48
+//                             for Noor). Required — no name-based
+//                             lookup on this path to avoid ambiguity.
 //
 // Usage:
-//   node scripts/seed-noor-slots.mjs                # dry run, prints planned rows
-//   node scripts/seed-noor-slots.mjs --apply        # actually inserts
+//   ./scripts/seed-noor-slots.sh                 # dry run
+//   ./scripts/seed-noor-slots.sh --apply         # actually insert
 //
-// Idempotency: NOT idempotent. Re-running will insert duplicate slots
-// for overlapping dates. If you need to re-seed, delete Noor's slots
-// first with a targeted query.
+// (Or invoke node directly if the token is already set:
+//    ADMIN_CLI_TOKEN=... node scripts/seed-noor-slots.mjs)
 
-import { createClient } from '@supabase/supabase-js'
-
-const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = process.env
-for (const [k, v] of Object.entries({ SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY })) {
+const { SUPABASE_URL, SUPABASE_ANON_KEY, ADMIN_CLI_TOKEN, BUSINESS_ID } = process.env
+for (const [k, v] of Object.entries({ SUPABASE_URL, SUPABASE_ANON_KEY, ADMIN_CLI_TOKEN, BUSINESS_ID })) {
   if (!v) { console.error(`missing env: ${k}`); process.exit(1) }
 }
+const bizId = Number(BUSINESS_ID)
+if (!Number.isFinite(bizId) || bizId <= 0) { console.error(`BUSINESS_ID must be a positive integer, got: ${BUSINESS_ID}`); process.exit(1) }
 const APPLY = process.argv.includes('--apply')
 
-const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-  auth: { autoRefreshToken: false, persistSession: false },
-})
+const FN_URL = `${SUPABASE_URL.replace(/\/$/, '')}/functions/v1/admin-businesses`
+
+async function adminFn(body) {
+  const resp = await fetch(FN_URL, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'X-Admin-Token': ADMIN_CLI_TOKEN,
+      'Content-Type':  'application/json',
+    },
+    body: JSON.stringify(body),
+  })
+  const payload = await resp.json().catch(() => ({}))
+  if (!resp.ok || payload?.error) {
+    throw new Error(`admin-businesses ${body.op} failed (${resp.status}): ${payload?.error || JSON.stringify(payload).slice(0,200)}`)
+  }
+  return payload
+}
 
 // ── Noor's offerings ────────────────────────────────────────────────
 // name           what shows on the marketplace card + booking modal.
@@ -41,17 +65,21 @@ const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 // venue_side     'instructor' = at Noor's place / by the sea;
 //                'customer'   = at the customer's address.
 // booking_mode   'request' for 1-on-1s (Noor confirms each);
-//                'instant'  for group classes (auto-confirm, she checks
-//                dashboard). Flip in the partner portal later if wrong.
+//                'instant'  for group classes at her venue (auto-confirm,
+//                she checks dashboard).
+// Names are intentionally bare — location + duration are carried by
+// slot.venue_side and slot.dur. The client's filter chip and slot row
+// display a "· at venue" / "· at your home" suffix only when a name
+// appears at both venue sides (Private, Group), so short names stay
+// clean where unambiguous.
 const OFFERINGS = [
-  { name: "Private · at her place or by the sea · 60 min",       credits: 30, spots: 1,  venue_side: 'instructor', booking_mode: 'request' },
-  { name: "Small group (2-4) · at her place or by the sea · 60 min", credits: 20, spots: 4,  venue_side: 'instructor', booking_mode: 'instant' },
-  { name: "Large group · at her place or by the sea · 60 min",   credits: 15, spots: 30, venue_side: 'instructor', booking_mode: 'instant' },
-  { name: "Private · at your home · 60 min",                     credits: 60, spots: 1,  venue_side: 'customer',   booking_mode: 'request' },
-  { name: "Group · at your home · 60 min",                       credits: 30, spots: 30, venue_side: 'customer',   booking_mode: 'request' },
+  { name: "Private",     credits: 30, spots: 1,  venue_side: 'instructor', booking_mode: 'request' },
+  { name: "Small group", credits: 20, spots: 4,  venue_side: 'instructor', booking_mode: 'instant' },
+  { name: "Large group", credits: 15, spots: 30, venue_side: 'instructor', booking_mode: 'instant' },
+  { name: "Private",     credits: 60, spots: 1,  venue_side: 'customer',   booking_mode: 'request' },
+  { name: "Group",       credits: 30, spots: 30, venue_side: 'customer',   booking_mode: 'request' },
 ]
 
-// ── Weekly schedule ─────────────────────────────────────────────────
 // { weekdayJsIndex: [HH:MM, ...] }. Sunday = 0, Saturday = 6.
 const SCHEDULE = {
   1: ['10:00', '11:00'],                     // Mon
@@ -61,69 +89,27 @@ const SCHEDULE = {
   6: ['19:00', '20:00'],                     // Sat
   0: ['19:00', '20:00'],                     // Sun
 }
-const WEEKS = 4  // rolling horizon; matches the wizard's default expansion
+const WEEKS = 4
 
-// ── Locate Noor ─────────────────────────────────────────────────────
-// Prefer explicit BUSINESS_ID (safer for production). Fall back to a
-// name-ilike lookup, refuse if it's ambiguous.
-let biz
-const explicitId = process.env.BUSINESS_ID ? Number(process.env.BUSINESS_ID) : null
-if (explicitId && Number.isFinite(explicitId)) {
-  console.log(`— Loading business #${explicitId} (from BUSINESS_ID env)…`)
-  const { data, error } = await admin
-    .from('businesses')
-    .select('id, name, email, category, business_type, status')
-    .eq('id', explicitId)
-    .maybeSingle()
-  if (error) { console.error('lookup failed:', error.message); process.exit(1) }
-  if (!data)  { console.error(`no business found with id=${explicitId}.`); process.exit(1) }
-  biz = data
-} else {
-  console.log(`— Looking up Noor Yoga by name…`)
-  const { data: candidates, error: findErr } = await admin
-    .from('businesses')
-    .select('id, name, email, category, business_type, status')
-    .ilike('name', '%noor%')
-  if (findErr) { console.error('lookup failed:', findErr.message); process.exit(1) }
-  if (!candidates || candidates.length === 0) {
-    console.error(`no business found with name matching "noor". Set BUSINESS_ID=<id> or check the record exists.`)
-    process.exit(1)
-  }
-  if (candidates.length > 1) {
-    console.error(`multiple businesses match "noor":`); console.table(candidates)
-    console.error(`disambiguate: rerun with BUSINESS_ID=<id> pointing at the right one.`)
-    process.exit(1)
-  }
-  biz = candidates[0]
-}
-console.log(`  business #${biz.id}: ${biz.name} <${biz.email}> · category=${biz.category} · status=${biz.status}`)
-
-if (biz.category !== 'Private Instructor') {
-  console.error(`  refuse: category is "${biz.category}", not "Private Instructor". These offerings assume the private-instructor booking flow (pending_instructor for 1-on-1s, per-slot venue_side).`)
+// ── Fetch business + listing_id ─────────────────────────────────────
+console.log(`— Loading business #${bizId} via admin-businesses op=get…`)
+const { business: biz, listing_id: listingId } = await adminFn({ op: 'get', business_id: bizId })
+console.log(`  business #${biz.id}: ${biz.name} <${biz.email}> · category=${biz.category} · business_type=${biz.business_type} · status=${biz.status}`)
+if (!listingId) {
+  console.error(`  refuse: no listings row for business #${biz.id}. Approve the business (or save the wizard step) first so a listings row exists.`)
   process.exit(1)
 }
+console.log(`  linked listing #${listingId}`)
 
-// ── Find the linked listing ─────────────────────────────────────────
-const { data: listings, error: lErr } = await admin
-  .from('listings')
-  .select('id, name, status')
-  .eq('business_id', biz.id)
-if (lErr) { console.error('listing lookup failed:', lErr.message); process.exit(1) }
-if (!listings || listings.length === 0) {
-  console.error(`  refuse: no listings row for business #${biz.id}. Approve the business (or run the wizard's Save step) first so a listings row exists.`)
-  process.exit(1)
-}
-if (listings.length > 1) {
-  console.error(`  multiple listings for business #${biz.id}:`); console.table(listings)
-  console.error(`  ambiguous — resolve before seeding.`)
-  process.exit(1)
-}
-const listing = listings[0]
-console.log(`  linked listing #${listing.id} (status=${listing.status})`)
+// Category no longer gates the booking flow — the client keys off
+// slot.venue_side (address prompt + travel-zone matching) and
+// slot.booking_mode (request vs instant). The only category effect is
+// routing: request-mode bookings at Private Instructor businesses go to
+// pending_instructor + SMS via notify-instructor-sms; everywhere else
+// they go to pending_venue + email with accept/decline HMAC links via
+// notify-venue-slot-request. Noor (category=Yoga) → email flow.
 
 // ── Build slot rows ─────────────────────────────────────────────────
-// Horizon: today → today + 4 weeks. Skip any slot in the past (script
-// might be run mid-week and Mon 10:00 has already gone).
 const now = new Date()
 const start = new Date(now); start.setHours(0, 0, 0, 0)
 const end   = new Date(start); end.setDate(end.getDate() + WEEKS * 7)
@@ -135,7 +121,6 @@ for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
   if (!times) continue
   const dateStr = d.toISOString().slice(0, 10)
   for (const time of times) {
-    // Skip slots already in the past today.
     const slotAt = new Date(`${dateStr}T${time}:00`)
     if (slotAt < now) continue
     for (const off of OFFERINGS) {
@@ -154,9 +139,9 @@ for (let d = new Date(start); d < end; d.setDate(d.getDate() + 1)) {
   }
 }
 
-console.log(`\n— Plan: ${rows.length} slot rows for business #${biz.id} / listing #${listing.id}`)
+console.log(`\n— Plan: ${rows.length} slot rows for business #${biz.id} / listing #${listingId}`)
 const byOff = rows.reduce((acc, r) => { acc[r.name] = (acc[r.name] || 0) + 1; return acc }, {})
-for (const [name, n] of Object.entries(byOff)) console.log(`  ${n.toString().padStart(3)}  ${name}`)
+for (const [name, n] of Object.entries(byOff)) console.log(`  ${String(n).padStart(3)}  ${name}`)
 console.log(`  first: ${rows[0]?.date} ${rows[0]?.time}    last: ${rows[rows.length-1]?.date} ${rows[rows.length-1]?.time}`)
 
 if (!APPLY) {
@@ -165,22 +150,6 @@ if (!APPLY) {
 }
 
 // ── Insert via the admin edge function ──────────────────────────────
-// Uses the service-role JWT as auth, which requireAdmin honours the
-// same way it does for a real admin login.
 console.log(`\n— Inserting via admin-businesses op=insert_slots …`)
-const url = `${SUPABASE_URL.replace(/\/$/, '')}/functions/v1/admin-businesses`
-const resp = await fetch(url, {
-  method: 'POST',
-  headers: {
-    'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-    'apikey':        SUPABASE_SERVICE_ROLE_KEY,
-    'Content-Type':  'application/json',
-  },
-  body: JSON.stringify({ op: 'insert_slots', listing_id: listing.id, slot_rows: rows }),
-})
-const body = await resp.json().catch(() => ({}))
-if (!resp.ok || body?.error) {
-  console.error(`insert_slots failed (${resp.status}):`, body?.error || body)
-  process.exit(1)
-}
-console.log(`✓ inserted ${body.inserted} rows.`)
+const result = await adminFn({ op: 'insert_slots', listing_id: listingId, slot_rows: rows })
+console.log(`✓ inserted ${result.inserted} rows.`)

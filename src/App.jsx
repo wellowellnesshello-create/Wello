@@ -531,7 +531,26 @@ const FRIENDS = [
   { id:3, init:"LM", name:"Léa M.",    bio:"12 bookings this month",loc:"Deià" },
 ];
 
-const fd = d => new Date(d+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"});
+// Format a YYYY-MM-DD date string as "Wed 19 Aug". Parse as UTC noon and
+// format in en-GB with timeZone:'UTC' so the display matches the iso string
+// exactly — no TZ drift between the chip iso and the heading label. (The
+// previous implementation parsed as local midnight, which in TZs where the
+// stored date differed from local by a day boundary would render the wrong
+// weekday.)
+const fd = d => {
+  if (!d) return '';
+  const dt = new Date(d + 'T12:00:00Z');
+  return dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+};
+// Local YYYY-MM-DD from a Date object. Matches what fd() will parse back —
+// use this whenever we need to store or compare a "calendar day" that has
+// to agree with what the user sees in their local timezone.
+const localYMD = d => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
 
 // ─── Company details ─────────────────────────────────────────────────────────
 // Single source of truth for the footer legal line + any customer-facing
@@ -1545,20 +1564,57 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   const [segment, setSegment] = useState(hasClasses ? "classes" : "private");
 
   // ─── Classes segment: filter chips + 7-day chips ────────────────────────
-  const distinctSessionNames = Array.from(new Set(bookableSlots.map(s => s.name).filter(Boolean))).sort();
-  const [filterNames, setFilterNames] = useState(() => new Set());
-  function toggleFilter(name) {
-    setFilterNames(prev => {
+  // Chip key = name|venue_side so a hybrid partner (Noor: "Private" at
+  // her place + "Private" at the customer's home) gets separate chips
+  // for what look like the same session name. Without the compound key,
+  // clicking "Private" would surface both venue types with no way to
+  // disambiguate in the day list.
+  function slotKey(s) { return `${s.name || ''}|${s.venue_side || 'customer'}`; }
+  // How many distinct venue_sides does each name have? Drives whether
+  // the chip label needs a "· at venue" / "· at your home" qualifier
+  // or can stand on its own.
+  const venueSidesPerName = (() => {
+    const m = new Map();
+    for (const s of bookableSlots) {
+      if (!s.name) continue;
+      if (!m.has(s.name)) m.set(s.name, new Set());
+      m.get(s.name).add(s.venue_side || 'customer');
+    }
+    return m;
+  })();
+  function venueSideSuffix(vs) {
+    return vs === 'instructor' ? 'at venue' : 'at your home';
+  }
+  function chipLabelFor(name, vs) {
+    const sides = venueSidesPerName.get(name);
+    if (!sides || sides.size <= 1) return name;
+    return `${name} · ${venueSideSuffix(vs)}`;
+  }
+  // Unique (name, venue_side) pairs, sorted by chip label for stable
+  // strip ordering.
+  const distinctSessionKeys = (() => {
+    const seen = new Map();
+    for (const s of bookableSlots) {
+      const key = slotKey(s);
+      if (!seen.has(key)) seen.set(key, { key, name: s.name || '', venue_side: s.venue_side || 'customer' });
+    }
+    return Array.from(seen.values()).sort((a, b) =>
+      chipLabelFor(a.name, a.venue_side).localeCompare(chipLabelFor(b.name, b.venue_side))
+    );
+  })();
+  const [filterKeys, setFilterKeys] = useState(() => new Set());
+  function toggleFilter(key) {
+    setFilterKeys(prev => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name); else next.add(name);
+      if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
   }
   // After filters are applied — slots that survive both the availability
   // check and the session-name filter.
-  const filteredSlots = filterNames.size === 0
+  const filteredSlots = filterKeys.size === 0
     ? bookableSlots
-    : bookableSlots.filter(s => filterNames.has(s.name));
+    : bookableSlots.filter(s => filterKeys.has(slotKey(s)));
 
   // Build the 7-day chip array: Today, Tomorrow, then five more dated chips.
   // Labels: "Today", "Tomorrow", then dow + day-of-month (e.g. "Thu 16").
@@ -1567,7 +1623,12 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   const dayChips = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(today);
     d.setDate(today.getDate() + i);
-    const iso = d.toISOString().slice(0, 10);
+    // Local Y-M-D so the iso agrees with what the user sees. Using
+    // toISOString() would produce UTC dates that go off-by-one in
+    // positive-offset zones past midnight local. Slot rows also store
+    // date as YYYY-MM-DD in local terms (that's how the seed script
+    // and the wizard both emit), so this matcher lines up cleanly.
+    const iso = localYMD(d);
     let label;
     if (i === 0) label = "Today";
     else if (i === 1) label = "Tomorrow";
@@ -1590,7 +1651,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     // Intentionally not tracking dayChips in deps — it rebuilds every render.
     // We only care about the filter changing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterNames]);
+  }, [filterKeys]);
   const slotsForDate = filteredSlots
     .filter(s => s.date === selDate)
     .slice()
@@ -1848,16 +1909,19 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
           {(segment === "classes" || !showSegments) && hasClasses && (
             <>
               {/* Session-type filter chips. Only surface when there is more
-                  than one distinct class name, otherwise chips add clutter
-                  without helping the user narrow anything down. */}
-              {distinctSessionNames.length > 1 && (
+                  than one distinct (name, venue_side) tuple — a single
+                  session type doesn't need a filter, and a name that only
+                  ever appears at one venue side doesn't need the "· at
+                  venue" qualifier. */}
+              {distinctSessionKeys.length > 1 && (
                 <>
                   <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>Filter by class</p>
                   <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:6,marginBottom:16,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
-                    {distinctSessionNames.map(name => {
-                      const on = filterNames.has(name);
+                    {distinctSessionKeys.map(({ key, name, venue_side }) => {
+                      const on = filterKeys.has(key);
+                      const label = chipLabelFor(name, venue_side);
                       return (
-                        <button key={name} onClick={() => toggleFilter(name)}
+                        <button key={key} onClick={() => toggleFilter(key)}
                           style={{
                             flexShrink:0,padding:"7px 14px",borderRadius:999,
                             background:on ? "#213C18" : "#F5F3EE",
@@ -1865,12 +1929,12 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                             border:"1px solid " + (on ? "#213C18" : "rgba(195,200,188,0.5)"),
                             fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",transition:"all .15s",
                           }}>
-                          {name}
+                          {label}
                         </button>
                       );
                     })}
-                    {filterNames.size > 0 && (
-                      <button onClick={() => setFilterNames(new Set())}
+                    {filterKeys.size > 0 && (
+                      <button onClick={() => setFilterKeys(new Set())}
                         style={{flexShrink:0,padding:"7px 12px",borderRadius:999,background:"transparent",color:"#54584F",border:"none",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
                         Clear
                       </button>
@@ -1938,9 +2002,21 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                               <img src={classImg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
                             </div>
                           )}
-                          {/* Info */}
+                          {/* Info — name plus a venue_side suffix when the
+                              partner offers the same name at both venues
+                              (Noor: two "Private" rows, one at her place +
+                              one at your home). Suffix is silent when the
+                              name is unambiguous so single-venue partners
+                              don't get noise. */}
                           <div style={{flex:1,minWidth:120}}>
-                            <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#1B1C19",margin:"0 0 4px"}}>{sl.name}</p>
+                            <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#1B1C19",margin:"0 0 4px"}}>
+                              {sl.name}
+                              {(() => {
+                                const sides = venueSidesPerName.get(sl.name);
+                                if (!sides || sides.size <= 1) return null;
+                                return <span style={{fontWeight:400,color:"#54584F",marginLeft:6}}>· {venueSideSuffix(sl.venue_side || 'customer')}</span>;
+                              })()}
+                            </p>
                             <div style={{display:"flex",alignItems:"center",gap:8}}>
                               <div style={{width:80,height:4,background:"#E4E2DD",borderRadius:999}}>
                                 <div style={{width:`${pct}%`,height:"100%",background:pct>80?"#B8925C":"#213C18",borderRadius:999,transition:"width .3s"}}/>
@@ -1952,7 +2028,11 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                           </div>
                           {/* Book button */}
                           <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
-                            <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18"}}>◈ {biz.cr}</span>
+                            {/* Per-slot credits when set — matches what the
+                                BookingModal will actually charge. Falls back
+                                to biz.cr for legacy rows without an explicit
+                                credits value on the slot. */}
+                            <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18"}}>◈ {(Number.isFinite(Number(sl.credits)) && Number(sl.credits) > 0) ? Number(sl.credits) : biz.cr}</span>
                             <button onClick={()=>!full&&onBook(biz,sl)} disabled={full}
                               style={{padding:"10px 20px",background:full?"#E4E2DD":"#213C18",color:full?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:full?"not-allowed":"pointer",transition:"all .15s",whiteSpace:"nowrap"}}
                               onMouseEnter={e=>{if(!full)e.currentTarget.style.opacity="0.85"}}
