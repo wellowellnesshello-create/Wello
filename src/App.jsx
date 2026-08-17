@@ -1570,25 +1570,13 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   // clicking "Private" would surface both venue types with no way to
   // disambiguate in the day list.
   function slotKey(s) { return `${s.name || ''}|${s.venue_side || 'customer'}`; }
-  // How many distinct venue_sides does each name have? Drives whether
-  // the chip label needs a "· at venue" / "· at your home" qualifier
-  // or can stand on its own.
-  const venueSidesPerName = (() => {
-    const m = new Map();
-    for (const s of bookableSlots) {
-      if (!s.name) continue;
-      if (!m.has(s.name)) m.set(s.name, new Set());
-      m.get(s.name).add(s.venue_side || 'customer');
-    }
-    return m;
-  })();
-  function venueSideSuffix(vs) {
-    return vs === 'instructor' ? 'at venue' : 'at your home';
-  }
+  // Label convention: at-your-venue is the default and stays unlabelled;
+  // customer-side gets an "At your home" qualifier — both on the chip
+  // and on the slot row. Applied unconditionally so the venue side of a
+  // slot is always readable at a glance, even when a name only appears
+  // on one side.
   function chipLabelFor(name, vs) {
-    const sides = venueSidesPerName.get(name);
-    if (!sides || sides.size <= 1) return name;
-    return `${name} · ${venueSideSuffix(vs)}`;
+    return vs === 'customer' ? `${name} · At your home` : name;
   }
   // Unique (name, venue_side) pairs, sorted by chip label for stable
   // strip ordering.
@@ -2002,20 +1990,18 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                               <img src={classImg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
                             </div>
                           )}
-                          {/* Info — name plus a venue_side suffix when the
-                              partner offers the same name at both venues
-                              (Noor: two "Private" rows, one at her place +
-                              one at your home). Suffix is silent when the
-                              name is unambiguous so single-venue partners
-                              don't get noise. */}
+                          {/* Info — name plus an "At your home" badge on
+                              rows where the partner travels to the customer.
+                              At-your-venue rows carry no badge because that's
+                              the default and stating it would be noise. */}
                           <div style={{flex:1,minWidth:120}}>
                             <p style={{fontFamily:F2,fontSize:14,fontWeight:600,color:"#1B1C19",margin:"0 0 4px"}}>
                               {sl.name}
-                              {(() => {
-                                const sides = venueSidesPerName.get(sl.name);
-                                if (!sides || sides.size <= 1) return null;
-                                return <span style={{fontWeight:400,color:"#54584F",marginLeft:6}}>· {venueSideSuffix(sl.venue_side || 'customer')}</span>;
-                              })()}
+                              {sl.venue_side === 'customer' && (
+                                <span style={{display:"inline-block",marginLeft:6,padding:"2px 8px",borderRadius:999,background:"rgba(184,146,92,0.15)",border:"1px solid rgba(184,146,92,0.35)",fontFamily:F2,fontSize:10,fontWeight:600,color:"#766149",letterSpacing:"0.2px",verticalAlign:"middle"}}>
+                                  At your home
+                                </span>
+                              )}
                             </p>
                             <div style={{display:"flex",alignItems:"center",gap:8}}>
                               <div style={{width:80,height:4,background:"#E4E2DD",borderRadius:999}}>
@@ -2197,6 +2183,22 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
 }
 
 // ─── Listing Card ─────────────────────────────────────────────────────────────
+// Tile price label — headline number for a marketplace card.
+//   - No slot rows        → falls back to biz.cr (headline default).
+//   - All slots same price → shows that number bare.
+//   - Mixed prices        → shows "from ◈ min" (Noor: from ◈ 15).
+// Kept outside Card so the same rule can be used from the compact
+// carousel Card and any future tile variants without duplication.
+function tilePriceLabel(biz) {
+  const prices = (Array.isArray(biz?.slots) ? biz.slots : [])
+    .map(s => Number(s?.credits))
+    .filter(n => Number.isFinite(n) && n > 0);
+  if (prices.length === 0) return { prefix: '', value: Number(biz?.cr) || 0 };
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  return { prefix: min === max ? '' : 'from ', value: min };
+}
+
 function Card({ biz, onSelect, syncing, saved, onToggleSave, compact = false }) {
   // Defensive: a fresh listing with no slots yet would crash this find().
   const next = (biz.slots || []).find(s => s.booked < s.spots);
@@ -2227,7 +2229,10 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave, compact = false }) 
           onMouseEnter={e=>e.target.style.transform="scale(1.05)"}
           onMouseLeave={e=>e.target.style.transform="scale(1)"}/>
         <div style={{position:"absolute",top:s.badgeT,right:s.badgeR,background:"rgba(255,255,255,0.92)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",borderRadius:999,padding:s.badgePad}}>
-          <span style={{fontFamily:F2,fontSize:s.badgeFont,fontWeight:800,color:"#213C18"}}>◈ {biz.cr}</span>
+          {(() => {
+            const { prefix, value } = tilePriceLabel(biz);
+            return <span style={{fontFamily:F2,fontSize:s.badgeFont,fontWeight:800,color:"#213C18"}}>{prefix}◈ {value}</span>;
+          })()}
         </div>
         <button onClick={e=>{e.stopPropagation();onToggleSave(biz.id);}}
           style={{position:"absolute",top:s.saveT,left:s.saveL,width:s.saveSize,height:s.saveSize,borderRadius:"50%",background:"rgba(255,255,255,0.92)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",border:"none",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:s.saveFont,color:saved?"#e05c5c":"#54584F"}}>
