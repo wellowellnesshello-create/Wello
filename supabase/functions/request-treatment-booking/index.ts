@@ -52,6 +52,51 @@ function fmtDate(iso: string) {
   try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) } catch { return iso }
 }
 
+// ── Address / travel-zone helpers ──────────────────────────────────────
+// Mirror of the client-side normalizeForMatch + resolveTravelZone so the
+// server re-computes the travel fee independently rather than trusting
+// what the client sends. Keep the two implementations behaviourally
+// identical.
+function normalizeForMatch(s: string | null | undefined): string {
+  if (s == null) return ''
+  return String(s)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+type TravelZone = { area: string; fee_eur: number }
+function normalizeTravelAreas(raw: unknown): TravelZone[] {
+  if (!Array.isArray(raw)) return []
+  const out: TravelZone[] = []
+  for (const x of raw) {
+    if (typeof x === 'string') { out.push({ area: x, fee_eur: 0 }); continue }
+    if (x && typeof x === 'object' && typeof (x as { area?: unknown }).area === 'string') {
+      const n = Number((x as { fee_eur?: unknown }).fee_eur)
+      out.push({
+        area: (x as { area: string }).area,
+        fee_eur: Number.isFinite(n) && n >= 0 ? Math.round(n) : 0,
+      })
+    }
+  }
+  return out
+}
+// Longest-first substring match after normalising both sides. Returns
+// the matched zone or null. Empty address returns null.
+function resolveTravelZone(zones: TravelZone[], address: string): TravelZone | null {
+  if (zones.length === 0) return null
+  const addrN = normalizeForMatch(address)
+  if (!addrN) return null
+  const sorted = zones.slice().sort((a, b) => (b.area?.length || 0) - (a.area?.length || 0))
+  for (const z of sorted) {
+    const zoneN = normalizeForMatch(z.area)
+    if (zoneN && addrN.includes(zoneN)) return z
+  }
+  return null
+}
+
 // Time preference keys — must line up with the client picker options.
 const TIME_PREF_LABEL: Record<string, string> = {
   morning:   'Morning (before 12:00)',
@@ -86,6 +131,8 @@ serve(async (req) => {
     specific_time?: string    // HH:MM when time_pref === 'specific'
     note?: string
     health_ack_at?: string    // ISO timestamp — set by BizPanel when the customer ticks the health checkbox
+    location_label?: string   // For offerings with a locations array; picks which option
+    address?: string          // Customer address; required + used for travel-fee lookup when picked location is venue_side='customer'
   }
   try { body = await req.json() } catch { return json({ error: 'Invalid JSON body.' }, 400) }
 
@@ -140,19 +187,69 @@ serve(async (req) => {
 
   const { data: business, error: bizErr } = await supabase
     .from('businesses')
-    .select('id, name, email, category, session_offerings')
+    .select('id, name, email, category, session_offerings, travel_areas, coverage_areas')
     .eq('id', businessId)
     .maybeSingle()
   if (bizErr || !business) return json({ error: 'Venue not found.' }, 404)
   if (!business.email) return json({ error: 'Venue has no email on file, cannot deliver the request.' }, 400)
 
   const offerings = Array.isArray(business.session_offerings) ? business.session_offerings : []
-  const offering = offerings.find((o: { type?: string }) => String(o?.type || '') === offeringType)
+  type OfferingLoc = { label?: string; price_eur?: number; venue_side?: string }
+  type Offering = { type?: string; price_eur?: number; length_min?: number; locations?: OfferingLoc[] }
+  const offering = (offerings as Offering[]).find(o => String(o?.type || '') === offeringType)
   if (!offering) return json({ error: 'Offering not found on this venue.' }, 404)
-
-  const priceEur = Number(offering.price_eur) > 0 ? Math.round(Number(offering.price_eur)) : 0
-  if (priceEur <= 0) return json({ error: 'This offering has no price set, contact the venue.' }, 400)
   const durMin = Number(offering.length_min) > 0 ? Math.round(Number(offering.length_min)) : 60
+
+  // Resolve the base price. Two shapes:
+  //   - Multi-location offering: {type, length_min, locations: [{label, price_eur, venue_side}, ...]}.
+  //     Client must send location_label; we look it up on the offering.
+  //   - Legacy single-price offering: {type, length_min, price_eur}. No
+  //     location_label sent; price comes from offering.price_eur.
+  //
+  // Travel fee applies only when the picked location is venue_side='customer',
+  // and only when the address resolves to a configured travel_areas zone.
+  // Re-computed server-side so a manipulated client can't skip or reduce
+  // the fee.
+  const locations = Array.isArray(offering.locations) ? offering.locations : null
+  const locationLabel = typeof body.location_label === 'string' ? body.location_label.trim() : ''
+  let pickedLoc: OfferingLoc | null = null
+  if (locations && locations.length > 0) {
+    if (!locationLabel) {
+      return json({ error: 'location_label is required for this offering.' }, 400)
+    }
+    pickedLoc = locations.find(l => String(l?.label || '') === locationLabel) || null
+    if (!pickedLoc) {
+      return json({ error: `location_label "${locationLabel}" is not offered on this session.` }, 400)
+    }
+  }
+  const basePrice = pickedLoc
+    ? (Number(pickedLoc.price_eur) > 0 ? Math.round(Number(pickedLoc.price_eur)) : 0)
+    : (Number(offering.price_eur) > 0 ? Math.round(Number(offering.price_eur)) : 0)
+  if (basePrice <= 0) return json({ error: 'This offering has no price set, contact the venue.' }, 400)
+
+  // Address + travel-fee: only when the picked location is at the
+  // customer's address. Server re-resolves the zone from
+  // businesses.travel_areas so the credit total can't be spoofed by the
+  // client. Outside-zone addresses proceed at €0 travel (matching the
+  // slot-side "outside coverage" UX) — the venue still gets the address
+  // in the notes and can accept, decline, or negotiate.
+  let customerAddress: string | null = null
+  let matchedZoneArea: string | null = null
+  let travelFeeEur = 0
+  if (pickedLoc?.venue_side === 'customer') {
+    const addr = typeof body.address === 'string' ? body.address.trim() : ''
+    if (addr.length < 6) {
+      return json({ error: 'address is required for at-customer bookings (at least 6 characters).' }, 400)
+    }
+    customerAddress = addr
+    const zones = normalizeTravelAreas(business.travel_areas)
+    const matched = resolveTravelZone(zones, addr)
+    if (matched) {
+      matchedZoneArea = matched.area
+      travelFeeEur = matched.fee_eur
+    }
+  }
+  const priceEur = basePrice + travelFeeEur
 
   const { data: profile, error: profErr } = await supabase
     .from('profiles').select('id, credits, full_name, email')
@@ -195,9 +292,17 @@ serve(async (req) => {
   // ── Insert the pending booking ────────────────────────────────────────
   // Notes field is human-readable so notify-instructor-sms parsing has an
   // analogue if we ever want to consolidate — but the fields we care about
-  // for pending_venue are the explicit columns.
+  // for pending_venue are the explicit columns. For multi-location
+  // offerings we also record the picked location + address + travel fee
+  // so the venue's email + partner dashboard both surface where the
+  // session happens and what the customer paid on top for travel.
+  const outsideZone = pickedLoc?.venue_side === 'customer' && !matchedZoneArea
   const notesBlob = [
     `Offering: ${offeringType} · ${durMin} min`,
+    pickedLoc?.label ? `Location: ${pickedLoc.label}` : '',
+    customerAddress ? `Customer address: ${customerAddress}` : '',
+    travelFeeEur > 0 ? `Travel fee: €${travelFeeEur}${matchedZoneArea ? ` (${matchedZoneArea})` : ''}` : '',
+    outsideZone ? `Travel: outside listed zones — please review` : '',
     `Time preference: ${TIME_PREF_LABEL[timePref]}${timePref === 'specific' ? ` (${specificTime})` : ''}`,
     note ? `Notes: ${note}` : '',
   ].filter(Boolean).join('\n')
@@ -297,6 +402,13 @@ serve(async (req) => {
   const timeLabel    = TIME_PREF_LABEL[timePref] + (timePref === 'specific' ? ` (${specificTime})` : '')
 
   if (RESEND_API_KEY) {
+    const locationRow = pickedLoc?.label
+      ? `<tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Location</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">${pickedLoc.label}</td></tr>` : ''
+    const addressRow = customerAddress
+      ? `<tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Address</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;">${customerAddress.replace(/</g, '&lt;')}</td></tr>` : ''
+    const travelRow = travelFeeEur > 0
+      ? `<tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Travel fee</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">€${travelFeeEur}${matchedZoneArea ? ` (${matchedZoneArea})` : ''}</td></tr>`
+      : (outsideZone ? `<tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Travel</td><td style="padding:6px 12px;font-size:13px;color:#6F5B44;font-style:italic;">Outside listed zones — please review</td></tr>` : '')
     const html = `
       <div style="font-family:Manrope,Arial,sans-serif;max-width:540px;margin:0 auto;padding:24px;color:#1B1C19;background:#FBF9F4;">
         <h2 style="color:#213C18;font-size:18px;margin:0 0 14px;">New booking request</h2>
@@ -304,6 +416,9 @@ serve(async (req) => {
         <table style="width:100%;border-collapse:collapse;background:#F5F3EE;border-radius:8px;padding:14px;margin:0 0 18px;">
           <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;width:120px;">Session</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">${offeringType}</td></tr>
           <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Duration</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;">${durMin} min</td></tr>
+          ${locationRow}
+          ${addressRow}
+          ${travelRow}
           <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Requested date</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">${dateHuman}</td></tr>
           <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Time preference</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;">${timeLabel}</td></tr>
           <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Member</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;">${firstName}</td></tr>
@@ -313,7 +428,7 @@ serve(async (req) => {
           <a href="${acceptUrl}" style="display:inline-block;padding:12px 22px;background:#213C18;color:#FBF9F4;text-decoration:none;border-radius:999px;font-weight:700;font-size:13px;margin-right:8px;">Accept booking</a>
           <a href="${declineUrl}" style="display:inline-block;padding:12px 22px;background:#fff;color:#213C18;text-decoration:none;border-radius:999px;font-weight:700;font-size:13px;border:1px solid rgba(33,60,24,0.2);">Decline</a>
         </div>
-        <p style="margin:0;font-size:11px;color:#54584F;line-height:1.55;">Each link works once. Accepting deducts ${priceEur} credits from the member and confirms the booking. Declining returns their credits in full and offers alternatives.</p>
+        <p style="margin:0;font-size:11px;color:#54584F;line-height:1.55;">Each link works once. Accepting deducts ${priceEur} credits (${basePrice} session${travelFeeEur > 0 ? ` + ${travelFeeEur} travel` : ''}) from the member and confirms the booking. Declining returns their credits in full and offers alternatives.</p>
       </div>`
     const emailRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',

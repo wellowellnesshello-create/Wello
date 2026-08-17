@@ -1665,12 +1665,20 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   const [reqSubmitting, setReqSubmitting] = useState(false);
   const [reqError, setReqError]         = useState("");
   const [reqSuccessFor, setReqSuccessFor] = useState(null); // offering index of last successful submit
+  // Location + address state for multi-location offerings (Noor: "Private"
+  // has {At studio, At your home}; picking a customer-side location
+  // reveals the address input for travel-zone matching). Both reset when
+  // the operator opens a different offering row.
+  const [reqLocationIdx, setReqLocationIdx] = useState(0);
+  const [reqAddress, setReqAddress]     = useState("");
   function resetRequestForm() {
     setReqDate(_minReqDate);
     setReqTimePref("morning");
     setReqSpecificTime("18:00");
     setReqNote("");
     setReqHealthAck(false);
+    setReqLocationIdx(0);
+    setReqAddress("");
     setReqError("");
     setReqSubmitting(false);
   }
@@ -1680,12 +1688,38 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     setReqSuccessFor(null);
     setOpenOfferingIdx(idx);
   }
+  // Extract the array of location options from an offering, or null if
+  // the offering uses the legacy single-price shape. Locations look like:
+  //   [{ label: 'At studio', price_eur: 30, venue_side: 'instructor' },
+  //    { label: 'At your home', price_eur: 60, venue_side: 'customer' }]
+  // Kept small — the render + submit paths both need it, and both must
+  // agree on when locations exist vs when they don't.
+  function offeringLocations(o) {
+    return Array.isArray(o?.locations) && o.locations.length > 0 ? o.locations : null;
+  }
+
   async function submitOfferingRequest(offering) {
     setReqError("");
     if (!authSession) { onOpenSignIn?.(); return; }
-    const priceEur = Number.isFinite(Number(offering?.price_eur)) ? Number(offering.price_eur) : 0;
-    if (priceEur <= 0) { setReqError("This offering has no price set. Contact the venue directly."); return; }
-    if (Number(credits) < priceEur) {
+    const locs = offeringLocations(offering);
+    const pickedLoc = locs ? (locs[reqLocationIdx] || locs[0]) : null;
+    // Base price: from the picked location when the offering has one,
+    // otherwise the offering's own price_eur (legacy shape).
+    const basePrice = pickedLoc
+      ? (Number.isFinite(Number(pickedLoc.price_eur)) ? Number(pickedLoc.price_eur) : 0)
+      : (Number.isFinite(Number(offering?.price_eur)) ? Number(offering.price_eur) : 0);
+    if (basePrice <= 0) { setReqError("This offering has no price set. Contact the venue directly."); return; }
+    // For at-customer locations, resolve the travel zone client-side too
+    // — display + affordability preview. The edge fn re-computes server-
+    // side (single source of truth so a manipulated client can't skip
+    // the fee).
+    const needsAddress = pickedLoc?.venue_side === 'customer';
+    const rawAddr = (reqAddress || '').trim();
+    if (needsAddress && rawAddr.length < 6) { setReqError("Add the session address to continue."); return; }
+    const matchedZone = needsAddress ? resolveTravelZone(biz.travel_areas, rawAddr) : null;
+    const clientTravelFee = matchedZone ? Number(matchedZone.fee_eur) || 0 : 0;
+    const totalPreview = basePrice + clientTravelFee;
+    if (Number(credits) < totalPreview) {
       onGotoCredits?.();
       return;
     }
@@ -1700,6 +1734,12 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
           specific_time: reqTimePref === 'specific' ? reqSpecificTime : undefined,
           note: reqNote || undefined,
           health_ack_at: new Date().toISOString(),
+          // New optional fields for multi-location offerings. Server
+          // ignores them for legacy single-price offerings; when
+          // present it looks up the location by label on the offering
+          // and validates against biz.travel_areas server-side.
+          location_label: pickedLoc?.label || undefined,
+          address: needsAddress ? rawAddr : undefined,
         },
       });
       if (error) { setReqError(error.message || 'Could not send request.'); return; }
@@ -2089,7 +2129,34 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
               </p>
               <div style={{display:"flex",flexDirection:"column",gap:10,paddingBottom:8}}>
                 {offerings.map((o, i) => {
-                  const price = Number.isFinite(Number(o?.price_eur)) ? Number(o.price_eur) : biz.cr;
+                  const locs = offeringLocations(o);
+                  const pickedLoc = locs ? (locs[reqLocationIdx] || locs[0]) : null;
+                  // Display price on the offering header row: single price
+                  // when the offering has one location (or the legacy
+                  // single-price shape); "from ◈ min" when it has
+                  // multiple locations at different prices.
+                  const priceLabel = (() => {
+                    if (!locs) {
+                      const p = Number.isFinite(Number(o?.price_eur)) ? Number(o.price_eur) : (Number(biz.cr) || 0);
+                      return `◈ ${p}`;
+                    }
+                    const ps = locs.map(l => Number(l?.price_eur)).filter(n => Number.isFinite(n) && n >= 0);
+                    if (ps.length === 0) return `◈ 0`;
+                    const min = Math.min(...ps); const max = Math.max(...ps);
+                    return min === max ? `◈ ${min}` : `from ◈ ${min}`;
+                  })();
+                  const basePrice = pickedLoc
+                    ? (Number.isFinite(Number(pickedLoc.price_eur)) ? Number(pickedLoc.price_eur) : 0)
+                    : (Number.isFinite(Number(o?.price_eur)) ? Number(o.price_eur) : (Number(biz.cr) || 0));
+                  const needsAddress = pickedLoc?.venue_side === 'customer';
+                  const rawAddr = (reqAddress || '').trim();
+                  const addrN = normalizeForMatch(rawAddr);
+                  const matchedZone = needsAddress && addrN.length > 0
+                    ? resolveTravelZone(biz.travel_areas, rawAddr) : null;
+                  const outsideCov = needsAddress && addrN.length >= 6 && !matchedZone;
+                  const travelFee = matchedZone ? Number(matchedZone.fee_eur) || 0 : 0;
+                  const totalPrice = basePrice + travelFee;
+                  const addressOk = !needsAddress || (rawAddr.length >= 6);
                   const durLabel = humanDuration(o?.length_min);
                   const open = openOfferingIdx === i;
                   // Per-offering photo drives the small thumbnail on the
@@ -2109,7 +2176,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                           <p style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#1B1C19",margin:"0 0 4px",letterSpacing:"-0.2px"}}>{o?.type || "Session"}</p>
                           <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
                             {durLabel && <span style={{fontFamily:F2,fontSize:12,color:"#54584F"}}>{durLabel}</span>}
-                            <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18"}}>◈ {price}</span>
+                            <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18"}}>{priceLabel}</span>
                           </div>
                           {o?.description && (
                             <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"6px 0 0",lineHeight:1.55}}>{o.description}</p>
@@ -2141,6 +2208,55 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                           </p>
 
                           <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                            {/* Location picker — only when the offering
+                                has multiple location options. Pill row so
+                                the choice is one tap; customer-side picks
+                                reveal the address input below. */}
+                            {locs && locs.length > 1 && (
+                              <div>
+                                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase",margin:"0 0 4px"}}>Session location</p>
+                                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                                  {locs.map((l, li) => {
+                                    const on = li === reqLocationIdx;
+                                    const feeSuffix = l?.venue_side === 'customer' ? " + travel" : "";
+                                    return (
+                                      <button key={l.label || li} type="button" onClick={() => setReqLocationIdx(li)}
+                                        style={{padding:"7px 12px",borderRadius:999,border:"1px solid " + (on ? "#213C18" : "rgba(195,200,188,0.6)"),background:on ? "#213C18" : "#fff",color:on ? "#fff" : "#213C18",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
+                                        {l.label || `Option ${li + 1}`} · ◈ {Number(l?.price_eur) || 0}{feeSuffix}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Customer-address input — only when the
+                                picked location is at the customer's
+                                address. Live zone lookup shows the
+                                surcharge and warns on out-of-coverage. */}
+                            {needsAddress && (
+                              <div>
+                                <label style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                                  Session address <span style={{color:"#C46A4D"}}>*</span>
+                                  <input type="text" placeholder="Street, number, town · e.g. Carrer del Born 14, Palma"
+                                    value={reqAddress} onChange={e => setReqAddress(e.target.value)}
+                                    style={{display:"block",marginTop:4,padding:"9px 12px",border:"1px solid rgba(195,200,188,0.6)",borderRadius:8,fontFamily:F2,fontSize:13,background:"#fff",color:"#1B1C19",width:"100%",boxSizing:"border-box"}}/>
+                                </label>
+                                {matchedZone && (
+                                  <p style={{fontFamily:F2,fontSize:11,color:"#766149",margin:"6px 0 0",lineHeight:1.55}}>
+                                    {matchedZone.area} · +◈ {Number(matchedZone.fee_eur) || 0} travel
+                                  </p>
+                                )}
+                                {outsideCov && (
+                                  <div style={{marginTop:6,padding:"8px 12px",background:"#FFE6D9",border:"1px solid #DCC2A6",borderRadius:8}}>
+                                    <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:0,lineHeight:1.55}}>
+                                      Your address may be outside the instructor's usual coverage. They'll review the request and let you know.
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
                             <label style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase"}}>
                               Preferred date
                               <input type="date" value={reqDate} min={_minReqDate} max={_maxReqDate}
@@ -2198,9 +2314,12 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                             </label>
 
                             <div style={{display:"flex",justifyContent:"flex-end"}}>
-                              <button type="button" onClick={() => submitOfferingRequest(o)} disabled={reqSubmitting || !reqHealthAck}
-                                style={{padding:"10px 20px",background:reqHealthAck?"#213C18":"#E4E2DD",color:reqHealthAck?"#fff":"#54584F",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:(reqSubmitting||!reqHealthAck)?"not-allowed":"pointer",opacity:reqSubmitting?0.6:1}}>
-                                {reqSubmitting ? "Sending..." : !reqHealthAck ? "Tick the acknowledgement to continue" : `Send request · ◈ ${price} held`}
+                              <button type="button" onClick={() => submitOfferingRequest(o)} disabled={reqSubmitting || !reqHealthAck || !addressOk}
+                                style={{padding:"10px 20px",background:(reqHealthAck&&addressOk)?"#213C18":"#E4E2DD",color:(reqHealthAck&&addressOk)?"#fff":"#54584F",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:(reqSubmitting||!reqHealthAck||!addressOk)?"not-allowed":"pointer",opacity:reqSubmitting?0.6:1}}>
+                                {reqSubmitting ? "Sending..."
+                                  : !addressOk    ? "Add the session address to continue"
+                                  : !reqHealthAck ? "Tick the acknowledgement to continue"
+                                  : `Send request · ◈ ${totalPrice} held`}
                               </button>
                             </div>
                           </div>
