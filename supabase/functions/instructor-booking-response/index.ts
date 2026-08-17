@@ -17,6 +17,11 @@ const RESEND_API_KEY            = Deno.env.get('RESEND_API_KEY')!
 // invoking the auto_decline action. Same value used across the cron
 // chain; mirrored into vault.secrets for the pg_cron caller.
 const CRON_INVOKE_SECRET        = Deno.env.get('CRON_INVOKE_SECRET') || ''
+// Signs the safety-window cancel token minted on confirm. Verified by
+// studio-cancel-booking. Must match booking-safety-alert / studio-cancel.
+const SAFETY_CANCEL_SECRET      = Deno.env.get('SAFETY_CANCEL_SECRET') || ''
+// Public site origin used for the branded /cancel/:token SPA proxy URL.
+const APP_ORIGIN                = Deno.env.get('APP_ORIGIN') || 'https://wello-wellness.com'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -28,6 +33,22 @@ const json = (body: unknown, status = 200) =>
 
 function fmtDate(iso: string) {
   try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) } catch { return iso }
+}
+
+// HMAC-SHA256 → base64url. Mirrors booking-safety-alert / studio-cancel-booking
+// so the tokens minted here validate against the same verifier.
+async function hmacSign(msg: string, key: string): Promise<string> {
+  const enc = new TextEncoder()
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw', enc.encode(key),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false, ['sign'],
+  )
+  const sig = await crypto.subtle.sign('HMAC', cryptoKey, enc.encode(msg))
+  const bytes = new Uint8Array(sig)
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
 async function sendEmail(to: string, subject: string, html: string, from = 'Wello <hello@wello-wellness.com>') {
@@ -89,10 +110,18 @@ serve(async (req) => {
 
     const { data: business, error: bizErr } = await supabase
       .from('businesses')
-      .select('id, name, user_id, email, category, location, address')
+      .select('id, name, user_id, email, category, location, address, cancellation_window_hours')
       .eq('id', booking.business_id)
       .single()
     if (bizErr || !business) return json({ error: 'Business not found' }, 404)
+
+    // Cancellation window shown in the confirmation email. Prefer the
+    // per-partner column; fall back to 48h private / 24h everything else
+    // (mirrors cancelWindowHoursFor in the client).
+    const cwhRaw = Number(business.cancellation_window_hours)
+    const cancelWindowHours = (Number.isFinite(cwhRaw) && cwhRaw >= 1 && cwhRaw <= 168)
+      ? cwhRaw
+      : (business.category === 'Private Instructor' ? 48 : 24)
 
     if (action !== 'auto_decline' && actingUserId && business.user_id && business.user_id !== actingUserId) {
       return json({ error: 'You can only respond to bookings for your own venues.' }, 403)
@@ -122,6 +151,35 @@ serve(async (req) => {
       if (updErr) return json({ error: 'Could not update booking status. ' + updErr.message }, 500)
       if (!updated)  return json({ error: 'Booking was already actioned in another tab.' }, 409)
 
+      // Mint the safety-window cancel token — same shape as booking-safety-alert
+      // (payload = `${bookingId}.${expiryIso}`, HMAC-SHA256, base64url). Cleared
+      // on first use inside studio-cancel-booking. Expiry = session start time,
+      // with a 1h floor so a same-hour confirm still has a usable window.
+      let cancelUrl:       string | null = null
+      let cancelUrlDirect: string | null = null
+      let cancelExpiryIso: string | null = null
+      if (SAFETY_CANCEL_SECRET) {
+        const sessionStartMs = new Date(`${booking.booking_date}T${(booking.start_time || '00:00').slice(0,5)}:00Z`).getTime()
+        const minExpiryMs    = Date.now() + 60 * 60 * 1000
+        const expiryMs       = Math.max(sessionStartMs || 0, minExpiryMs)
+        cancelExpiryIso      = new Date(expiryMs).toISOString()
+        const payload = `${booking.id}.${cancelExpiryIso}`
+        const sig     = await hmacSign(payload, SAFETY_CANCEL_SECRET)
+        const token   = `${encodeURIComponent(payload)}.${sig}`
+        const { error: tokErr } = await supabase
+          .from('bookings')
+          .update({ safety_cancel_token: sig, safety_cancel_expires_at: cancelExpiryIso })
+          .eq('id', booking.id)
+        if (tokErr) {
+          console.error('instructor-booking-response: could not persist cancel token', tokErr.message)
+        } else {
+          cancelUrl       = `${APP_ORIGIN}/cancel/${token}`
+          cancelUrlDirect = `${SUPABASE_URL}/functions/v1/studio-cancel-booking?t=${token}`
+        }
+      } else {
+        console.warn('instructor-booking-response: SAFETY_CANCEL_SECRET not set, skipping cancel-token mint')
+      }
+
       // Confirmation emails — instructor + customer.
       const dateStr = fmtDate(booking.booking_date)
       const timeStr = (booking.start_time || '').slice(0,5)
@@ -146,6 +204,8 @@ serve(async (req) => {
               <p style="color:#54584F;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 4px;">Session address</p>
               <p style="color:#213C18;font-weight:600;margin:0;line-height:1.5;">${customerLoc}</p>
             </div>
+            <p style="color:#54584F;line-height:1.6;font-size:12px;">This session is provided by <strong style="color:#1B1C19;">${business.name}</strong>. Wello handles the booking and payment.</p>
+            <p style="color:#54584F;line-height:1.6;font-size:12px;">Free cancellation up to <strong style="color:#1B1C19;">${cancelWindowHours} hours</strong> before the session — credits are returned in full.</p>
             <p style="color:#54584F;line-height:1.7;">The ${booking.credits_used} credits you held for this booking are now settled with the instructor.</p>
             <p style="color:#54584F;line-height:1.7;">Have a great session,<br>Wello</p>
           </div>`)
@@ -161,6 +221,11 @@ serve(async (req) => {
           ? `<p style="color:#54584F;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;margin:10px 0 4px;">Arrival notes</p>
              <p style="color:#213C18;font-style:italic;margin:0;line-height:1.5;">${customerNote}</p>`
           : ''
+        const cancelBlock = cancelUrl
+          ? `<p style="color:#54584F;line-height:1.7;margin:18px 0 8px;font-size:13px;">If something changes and you can no longer take this booking, you can cancel it here:</p>
+             <a href="${cancelUrl}" style="display:inline-block;padding:10px 18px;background:#213C18;color:#FBF9F4;text-decoration:none;border-radius:999px;font-weight:700;font-size:13px;">Cancel this booking</a>
+             <p style="color:#A3B18A;font-size:11px;margin:10px 0 0;">The customer's credits will be returned in full and they'll be offered alternatives.</p>`
+          : ''
         await sendEmail(business.email, `Booking confirmed — ${customerName} on ${dateStr}`,
           `<div style="font-family:Arial,sans-serif;max-width:520px;padding:24px;background:#FBF9F4;">
             <h2 style="color:#213C18;">Booking confirmed</h2>
@@ -171,10 +236,17 @@ serve(async (req) => {
               ${phoneLine}
               ${noteBlock}
             </div>
+            ${cancelBlock}
           </div>`)
       }
 
-      return json({ success: true, status: 'confirmed' })
+      return json({
+        success: true,
+        status:  'confirmed',
+        cancel_url:        cancelUrl,        // branded /cancel/:token proxy
+        cancel_url_direct: cancelUrlDirect,  // edge function ?t=<token>
+        cancel_expires_at: cancelExpiryIso,
+      })
     }
 
     // ─── DECLINE / AUTO_DECLINE ───────────────────────────────────────────

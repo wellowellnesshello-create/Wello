@@ -130,7 +130,7 @@ async function loadContext(supabase: ReturnType<typeof createClient>, bookingId:
     .maybeSingle()
   if (bookErr || !booking) return { ok: false as const, error: 'Booking not found' }
   const { data: business } = await supabase
-    .from('businesses').select('id, name, category, location, email').eq('id', booking.business_id).maybeSingle()
+    .from('businesses').select('id, name, category, location, email, cancellation_window_hours').eq('id', booking.business_id).maybeSingle()
   const { data: customer } = await supabase
     .from('profiles').select('id, full_name, email, credits').eq('id', booking.user_id).maybeSingle()
   return { ok: true as const, booking, business, customer }
@@ -507,10 +507,18 @@ serve(async (req) => {
 
     // Confirmation email — brief, matches the rest of the pattern.
     if (customer.email) {
+      // Cancellation window shown in the email. Prefer per-partner value;
+      // fall back to 48h private / 24h everything else.
+      const cwhRaw = Number(business?.cancellation_window_hours)
+      const cancelWindowHours = (Number.isFinite(cwhRaw) && cwhRaw >= 1 && cwhRaw <= 168)
+        ? cwhRaw
+        : (business?.category === 'Private Instructor' ? 48 : 24)
       await sendEmail(customer.email, `Your ${sessionName} at ${venueName} is confirmed`,
         `<div style="font-family:Manrope,Arial,sans-serif;max-width:520px;padding:24px;background:#FBF9F4;">
           <h2 style="color:#213C18;">You are booked in</h2>
           <p style="color:#54584F;line-height:1.7;">${venueName} has confirmed your <strong>${sessionName}</strong> on <strong>${dateHuman}</strong>. The ${credits} credits you held for this booking are now settled with the venue.</p>
+          <p style="color:#54584F;line-height:1.6;font-size:12px;">This session is provided by <strong style="color:#1B1C19;">${venueName}</strong>. Wello handles the booking and payment.</p>
+          <p style="color:#54584F;line-height:1.6;font-size:12px;">Free cancellation up to <strong style="color:#1B1C19;">${cancelWindowHours} hours</strong> before the session — credits are returned in full.</p>
           <p style="color:#54584F;line-height:1.7;">If you need to make changes, contact ${venueName} directly or open your <a href="${PUBLIC_ORIGIN}" style="color:#213C18;font-weight:600;">Wello bookings</a>.</p>
           <p style="color:#54584F;line-height:1.7;margin-top:18px;">Wello</p>
         </div>`)

@@ -254,8 +254,11 @@ serve(async (req) => {
 
     // Whitelist the columns the client can send per row. Everything else
     // is stripped so the caller can't insert e.g. a booking count or
-    // spoofed listing_id.
-    const SLOT_COLS = new Set(['name', 'date', 'time', 'dur', 'spots', 'credits', 'acuity_type_id', 'category'])
+    // spoofed listing_id. venue_side (instructor vs customer address) and
+    // booking_mode (instant vs request) are here so the admin tool can
+    // seed slots for private instructors like Noor Yoga whose offerings
+    // mix at-her-place with at-customer's-home and 1-on-1 with groups.
+    const SLOT_COLS = new Set(['name', 'date', 'time', 'dur', 'spots', 'credits', 'acuity_type_id', 'category', 'venue_side', 'booking_mode'])
     const rows = body.slot_rows.map(r => {
       const clean: Record<string, unknown> = { listing_id: listingId, booked: 0 }
       for (const [k, v] of Object.entries(r)) if (SLOT_COLS.has(k)) clean[k] = v

@@ -1,17 +1,21 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-// Studio-side cancellation safety window — inbound cancellation.
+// Partner-side cancellation safety window — inbound cancellation. Handles
+// both studios (booking-safety-alert path) and private instructors
+// (instructor-booking-response path). Kept under the studio-cancel-booking
+// name because existing HMAC tokens already in flight point here.
 //
 // Flow:
-//   1. Studio taps the cancel link in the WhatsApp/SMS alert.
-//   2. GET /studio-cancel?t=<token> serves an HTML confirmation page. This
-//      avoids WhatsApp link previewers accidentally triggering the cancel.
-//   3. Studio clicks the confirm button, which POSTs the same token.
+//   1. Partner taps the cancel link in the WhatsApp/SMS alert (or clicks
+//      through the SPA proxy at /cancel/:token).
+//   2. GET /studio-cancel-booking?t=<token> serves an HTML confirmation page.
+//      This avoids WhatsApp link previewers accidentally triggering cancels.
+//   3. Partner clicks confirm, which POSTs the same token.
 //   4. This function verifies the HMAC signature, checks the expiry hasn't
 //      passed, checks the token hasn't already been used, then cancels the
 //      booking, refunds the credits, decrements slots.booked, and emails
-//      the customer with 2-3 alternative venues.
+//      the customer with 2-3 alternative venues/instructors.
 //
 // The token itself is: base64url(urlencode(bookingId.expiryIso).hmacSig).
 // A signature match plus safety_cancel_token still populated on the row is
@@ -154,7 +158,8 @@ serve(async (req) => {
   const dateStr = fmtDate(booking.booking_date)
   const timeStr = (booking.start_time || '').slice(0,5)
   const sessionName = slot?.name || 'a session'
-  const studioName  = business?.name || 'the studio'
+  const isInstructor = (business?.category || '') === 'Private Instructor'
+  const partnerName  = business?.name || (isInstructor ? 'the instructor' : 'the studio')
 
   // Reject cases that would leave us in an inconsistent state.
   const now = Date.now()
@@ -279,13 +284,13 @@ serve(async (req) => {
           const t = (a.next_slot.time || '').slice(0,5)
           return `<div style="display:block;padding:12px 14px;border:1px solid #E4E2DD;border-radius:8px;margin-bottom:8px;background:#fff;"><div style="font-weight:700;color:#1B1C19;">${a.name}</div><div style="color:#54584F;font-size:13px;">${a.loc || 'Mallorca'} · Next slot ${d} ${t} · ◈ ${a.cr}</div></div>`
         }).join('') +
-        `<p style="color:#54584F;line-height:1.7;margin-top:16px;"><a href="https://wello-wellness.com" style="color:#213C18;font-weight:600;">Browse all venues</a></p>`
-      : `<p style="color:#54584F;line-height:1.7;margin-top:16px;">We do not have another venue available for that slot right now. <a href="https://wello-wellness.com" style="color:#213C18;font-weight:600;">Browse the marketplace</a> for other options.</p>`
+        `<p style="color:#54584F;line-height:1.7;margin-top:16px;"><a href="https://wello-wellness.com" style="color:#213C18;font-weight:600;">Browse the marketplace</a></p>`
+      : `<p style="color:#54584F;line-height:1.7;margin-top:16px;">We do not have another ${isInstructor ? 'instructor' : 'venue'} available for that slot right now. <a href="https://wello-wellness.com" style="color:#213C18;font-weight:600;">Browse the marketplace</a> for other options.</p>`
 
-    await sendEmail(customer.email, `${studioName} can no longer host your ${sessionName}`,
+    await sendEmail(customer.email, `${partnerName} can no longer host your ${sessionName}`,
       `<div style="font-family:Manrope,Arial,sans-serif;max-width:520px;padding:24px;background:#FBF9F4;">
         <h2 style="color:#213C18;">A quick change of plan</h2>
-        <p style="color:#54584F;line-height:1.7;">Unfortunately ${studioName} can no longer host your <strong>${sessionName}</strong> on <strong>${dateStr}</strong> at <strong>${timeStr}</strong>. Your ${refund} credits have been returned to your account in full.</p>
+        <p style="color:#54584F;line-height:1.7;">Unfortunately ${partnerName} can no longer host your <strong>${sessionName}</strong> on <strong>${dateStr}</strong> at <strong>${timeStr}</strong>. Your ${refund} credits have been returned to your account in full.</p>
         ${altsHtml}
         <p style="color:#54584F;line-height:1.7;margin-top:18px;">Wello</p>
       </div>`)

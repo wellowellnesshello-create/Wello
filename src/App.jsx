@@ -184,9 +184,72 @@ function businessTypeFor(typeId) { return BUSINESS_TYPES.find(t=>t.id===typeId) 
 // Windows apply to confirmed bookings only. Private-instructor sessions get
 // a longer 48-hour window because the instructor's slot is exclusively held
 // for one member. Group / venue sessions use the standard 24-hour window.
+// These are fallback defaults only — the authoritative value is per-partner
+// on businesses.cancellation_window_hours, editable from Settings.
 const CANCEL_WINDOW_STANDARD_HOURS = 24;
 const CANCEL_WINDOW_PRIVATE_HOURS  = 48;
-function cancelWindowHoursFor(cat) {
+
+// ── Address normalisation for travel-zone matching ──────────────────────
+// Lowercase, strip diacritics (Sóller → soller), drop punctuation, collapse
+// whitespace. Used on both sides of the substring compare so "cala d'or" and
+// "cala dor" match, "soller" matches "Sóller", and stray postcodes don't
+// break the match. Kept small and predictable — no synonym tables, no fuzzy
+// distance; if it doesn't substring-match after normalisation, the customer
+// is quoted €0 travel with an "outside coverage" warning.
+function normalizeForMatch(s) {
+  if (s == null) return '';
+  return String(s)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+// Coerces a stored travel-areas value into the current [{area,fee_eur}] shape.
+// Defensive: mid-flight the DB might briefly return legacy strings for a
+// partner who saved before the migration ran, so we upgrade in place with a
+// zero fee rather than dropping the row (which would silently understate the
+// instructor's coverage on their listing).
+function normalizeTravelAreas(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map(x => {
+      if (typeof x === 'string') return { area: x, fee_eur: 0 };
+      if (x && typeof x === 'object' && typeof x.area === 'string') {
+        const n = Number(x.fee_eur);
+        return { area: x.area, fee_eur: Number.isFinite(n) && n >= 0 ? Math.round(n) : 0 };
+      }
+      return null;
+    })
+    .filter(Boolean);
+}
+// Resolves the customer's typed address against a set of {area,fee_eur} zones,
+// returning the matched zone (with .fee_eur) or null. Sorts zones by area
+// length descending so "Palma de Mallorca" (specific) wins over "Palma"
+// (prefix) when both are configured. First substring hit after sorting wins.
+function resolveTravelZone(zones, address) {
+  const areas = normalizeTravelAreas(zones);
+  if (areas.length === 0) return null;
+  const addrN = normalizeForMatch(address);
+  if (!addrN) return null;
+  const sorted = areas.slice().sort((a, b) => (b.area?.length || 0) - (a.area?.length || 0));
+  for (const z of sorted) {
+    const zoneN = normalizeForMatch(z.area);
+    if (zoneN && addrN.includes(zoneN)) return z;
+  }
+  return null;
+}
+// Returns the cancellation window in hours for a business. Prefers the
+// per-partner column when present and in-range; otherwise falls back to
+// the category default. Accepts either a full biz object (from listings) or
+// a plain string category for the handful of legacy call sites that only
+// have the category on hand.
+function cancelWindowHoursFor(bizOrCat) {
+  const biz = typeof bizOrCat === 'object' && bizOrCat !== null ? bizOrCat : null;
+  const raw = Number(biz?.cancellation_window_hours);
+  if (Number.isFinite(raw) && raw >= 1 && raw <= 168) return raw;
+  const cat = biz ? (biz.cat || biz.category) : bizOrCat;
   return cat === 'Private Instructor' ? CANCEL_WINDOW_PRIVATE_HOURS : CANCEL_WINDOW_STANDARD_HOURS;
 }
 // Combines booking_date (YYYY-MM-DD) + start_time (HH:MM) into a Date.
@@ -197,8 +260,9 @@ function sessionDateTime(dateStr, timeStr) {
 }
 // Whether the member can still cancel this booking under the cancellation
 // policy. Returns { canCancel: bool, hoursLeft: number, windowHours: number }.
-function cancelStatusFor(booking, cat) {
-  const windowHours = cancelWindowHoursFor(cat);
+// Pass the biz object so the per-partner window is honoured.
+function cancelStatusFor(booking, bizOrCat) {
+  const windowHours = cancelWindowHoursFor(bizOrCat);
   const sessionStart = sessionDateTime(booking?.booking_date, booking?.start_time);
   if (!sessionStart) return { canCancel: false, hoursLeft: 0, windowHours };
   const msLeft = sessionStart.getTime() - Date.now();
@@ -951,6 +1015,21 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
   // back to 'instant' when the column is absent — safe default for
   // any listing cached from before the migration.
   const isRequestMode = String(slot?.booking_mode || 'instant') === 'request';
+  // Per-slot venue side. 'instructor' means the session happens at a
+  // location the partner controls (their studio, an outdoor spot), so we
+  // skip the customer-address prompt and the whole travel-fee path.
+  // 'customer' (default) keeps the mobile-instructor behaviour.
+  const isAtInstructorVenue = isPrivateBooking && (slot?.venue_side || 'customer') === 'instructor';
+  const needsCustomerAddress = isPrivateBooking && !isAtInstructorVenue;
+  // Group-class path for private-instructor slots with real capacity. When
+  // spots > 1 we run the same flow as a studio group class: each attendee
+  // credits individually, the extras-for-a-friend UI is hidden, and the
+  // slot fills over time. Cap == 1 keeps the classic 1-on-1 flow with the
+  // extras stepper.
+  const isGroupPrivateSlot = isPrivateBooking && Number(slot?.spots || 1) > 1;
+  // effectiveRequestMode below is recomputed once outsideCoverage is known,
+  // so a private-instructor instant slot with an out-of-coverage address
+  // still goes into pending_instructor instead of confirming at €0.
   // Extra guests requested for a private session (separate from the studio
   // guest chip list). Only visible when the matched offering allows it.
   const [privateExtras, setPrivateExtras] = useState(0);
@@ -971,31 +1050,62 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
     ? matchedOffering.extra_person_eur : 0;
   const offeringMax = matchedOffering && Number.isFinite(matchedOffering.max_people) && matchedOffering.max_people > 1
     ? matchedOffering.max_people : (extraPersonPrice > 0 ? 8 : 1);
-  // Extended travel surcharge — case-insensitive substring match of the
-  // customer's typed address against the instructor's travel_areas list.
-  // Core-coverage matches skip the fee. Falls through to no fee (and a
-  // "may be outside coverage" warning) if nothing matches.
-  const travelFee = Number(biz.travel_fee_eur) || 0;
-  const travelAreas = Array.isArray(biz.travel_areas) ? biz.travel_areas : [];
+  // Extended travel surcharge — per-zone. Normalises both sides (lowercase,
+  // strip diacritics, drop punctuation) before substring matching, then picks
+  // the longest matching area so "Palma de Mallorca" wins over "Palma" when
+  // both are listed. Core-coverage matches always skip the fee. Falls through
+  // to no fee + "may be outside coverage" warning if nothing matches. Skipped
+  // entirely when the session is at the instructor's own venue.
+  const travelZones       = normalizeTravelAreas(biz.travel_areas);
   const coverageAreasList = Array.isArray(biz.coverage_areas) ? biz.coverage_areas : [];
-  const addr = (myLocation || "").toLowerCase().trim();
-  const inCore     = isPrivateBooking && addr.length > 0 && coverageAreasList.some(a => a && addr.includes(String(a).toLowerCase()));
-  const inExtended = isPrivateBooking && !inCore && addr.length > 0 && travelAreas.some(a => a && addr.includes(String(a).toLowerCase())) && travelFee > 0;
-  const outsideCoverage = isPrivateBooking && addr.length >= 6 && !inCore && !inExtended;
-  const appliedTravelFee = inExtended ? travelFee : 0;
-  const avail = isPrivateBooking ? 1 : slot.spots - slot.booked;
-  const totalPeople = isPrivateBooking ? (1 + privateExtras) : (1 + guests.length);
-  const cost = isPrivateBooking
-    ? (biz.cr + privateExtras * extraPersonPrice + appliedTravelFee)
-    : biz.cr * totalPeople;
+  const rawAddr           = (myLocation || '').trim();
+  const addrN             = normalizeForMatch(rawAddr);
+  const inCore            = needsCustomerAddress && addrN.length > 0
+    && coverageAreasList.some(a => a && addrN.includes(normalizeForMatch(a)));
+  const matchedZone       = needsCustomerAddress && !inCore && addrN.length > 0
+    ? resolveTravelZone(travelZones, rawAddr) : null;
+  const inExtended        = !!matchedZone;
+  const outsideCoverage   = needsCustomerAddress && addrN.length >= 6 && !inCore && !inExtended;
+  const appliedTravelFee  = matchedZone ? Number(matchedZone.fee_eur) || 0 : 0;
+  // Force request routing when the address doesn't fall in any zone — the
+  // instructor should get the chance to accept, decline, or negotiate a
+  // travel fee rather than being locked into a free trip. Only relevant
+  // for at-customer sessions.
+  const effectiveRequestMode = isRequestMode || outsideCoverage;
+  // Base price. Per-slot slots.credits wins so a private instructor with
+  // several differently-priced offerings (Noor Yoga: 15 / 20 / 30 / 60)
+  // renders each slot at its true price. Falls back to biz.cr when the
+  // slot didn't stamp one (legacy rows).
+  const basePrice = Number.isFinite(Number(slot?.credits)) && Number(slot.credits) > 0
+    ? Number(slot.credits)
+    : Number(biz.cr) || 0;
+  // Capacity path:
+  //   - Group private slot (spots > 1): behave like a studio group class.
+  //   - 1-on-1 private slot: force avail=1 and use the extras stepper.
+  //   - Studio group: unchanged.
+  const avail = (isPrivateBooking && !isGroupPrivateSlot)
+    ? 1
+    : slot.spots - slot.booked;
+  const totalPeople = (isPrivateBooking && !isGroupPrivateSlot)
+    ? (1 + privateExtras)
+    : (1 + guests.length);
+  const cost = (isPrivateBooking && !isGroupPrivateSlot)
+    ? (basePrice + privateExtras * extraPersonPrice + appliedTravelFee)
+    : basePrice * totalPeople + appliedTravelFee;
   const canAfford = credits >= cost;
-  const canAddMore = !isPrivateBooking && totalPeople < avail;
-  // Require a usable address for private bookings — at least 6 chars so
-  // a typo like 'p' doesn't pass. Notes are optional.
-  const locationOk = !isPrivateBooking || myLocation.trim().length >= 6;
-  // Required for private bookings (instructor needs to be able to call
-  // the customer). Loose pattern — just enough digits to be plausible.
-  const phoneOk = !isPrivateBooking || myPhone.replace(/[^\d]/g, '').length >= 7;
+  const canAddMore = !(isPrivateBooking && !isGroupPrivateSlot) && totalPeople < avail;
+  // Require a usable address for at-customer private bookings only.
+  // Instructor-venue slots have no useful address to collect.
+  const locationOk = !needsCustomerAddress || myLocation.trim().length >= 6;
+  // Required for at-customer private bookings (instructor needs to be able
+  // to call the customer). Loose pattern — just enough digits to be plausible.
+  // For instructor-venue and group slots the phone is optional (studio-style).
+  const phoneOk = !needsCustomerAddress || myPhone.replace(/[^\d]/g, '').length >= 7;
+
+  // Health suitability acknowledgement — must be ticked before confirm. The
+  // timestamp is captured client-side and passed through to onConfirm so it
+  // can be persisted onto bookings.health_ack_at.
+  const [healthAck, setHealthAck] = useState(false);
 
   // If the profile loads after the modal opens (rare race), pull the prefilled
   // values in. Won't clobber user edits because anon flow doesn't have a profile.
@@ -1033,7 +1143,7 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
               <h2 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.5px"}}>{slot.name}</h2>
               <p style={{fontFamily:F2,fontSize:13,color:"rgba(255,255,255,0.65)",margin:"0 0 14px"}}>{biz.name} · {fd(slot.date)} · {slot.time} · {slot.dur}</p>
               <div style={{display:"flex",gap:16}}>
-                {[["Pass",`◈ ${biz.cr} per person`],["Available",`${avail} spots`]].map(([k,v])=>(
+                {[["Pass",`◈ ${basePrice} per person`],["Available",`${avail} spots`]].map(([k,v])=>(
                   <div key={k}>
                     <p style={{fontFamily:F2,fontSize:9,color:"rgba(255,255,255,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>{k}</p>
                     <p style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{v}</p>
@@ -1087,10 +1197,11 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                 </>
               )}
 
-              {/* Private-instructor only: phone number — so the instructor
-                  can reach the customer with logistics questions. Required
-                  for private; optional for venue group classes. */}
-              {isPrivateBooking && (
+              {/* At-customer private bookings only: phone number — so the
+                  instructor can reach the customer with logistics questions.
+                  Skipped for instructor-venue sessions (customer just shows
+                  up, contact via email is enough) and for studio group classes. */}
+              {needsCustomerAddress && (
                 <>
                   <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>
                     Your mobile <span style={{color:"#C46A4D"}}>*</span>
@@ -1106,10 +1217,12 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                 </>
               )}
 
-              {/* Private-instructor only: exact session address + optional
-                  arrival notes. Both fields composed into bookings.notes so
-                  the instructor sees everything in one place. */}
-              {isPrivateBooking && (
+              {/* At-customer private bookings only: exact session address +
+                  optional arrival notes. Skipped for instructor-venue sessions
+                  where the location is set by the partner. Both fields
+                  composed into bookings.notes so the instructor sees
+                  everything in one place. */}
+              {needsCustomerAddress && (
                 <>
                   <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>
                     Exact session address <span style={{color:"#C46A4D"}}>*</span>
@@ -1141,8 +1254,10 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
               )}
 
               {/* Private group pricing — shown only when the instructor's
-                  offering allows more than 1 person (extra_person_eur > 0). */}
-              {isPrivateBooking && extraPersonPrice > 0 && (
+                  offering allows more than 1 person (extra_person_eur > 0)
+                  AND the slot is a solo 1-on-1 (not a real group class,
+                  which uses the "bring friends" invite path instead). */}
+              {isPrivateBooking && !isGroupPrivateSlot && extraPersonPrice > 0 && (
                 <div style={{marginBottom:16}}>
                   <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Number of people</p>
                   <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
@@ -1162,8 +1277,10 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                 </div>
               )}
 
-              {/* Bring friends — group classes only; private sessions are 1-to-1 */}
-              {!isPrivateBooking && (
+              {/* Bring friends — group classes (studio OR private-instructor
+                  group slots). Solo private sessions use the extras stepper
+                  above instead. */}
+              {(!isPrivateBooking || isGroupPrivateSlot) && (
                 <>
                   <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Bring friends <span style={{fontFamily:F2,fontSize:10,color:"#54584F",fontWeight:400,letterSpacing:0,textTransform:"none"}}>— optional</span></p>
                   <div style={{display:"flex",gap:8,marginBottom:20}}>
@@ -1196,11 +1313,11 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
               <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 14px",marginBottom:16}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
                   <span style={{fontFamily:F2,fontSize:13,color:"#54584F"}}>
-                    {isPrivateBooking && privateExtras > 0
-                      ? `◈ ${biz.cr} + ${privateExtras} × ◈ ${extraPersonPrice}`
-                      : `${totalPeople} × ◈ ${biz.cr} credits`}
+                    {isPrivateBooking && !isGroupPrivateSlot && privateExtras > 0
+                      ? `◈ ${basePrice} + ${privateExtras} × ◈ ${extraPersonPrice}`
+                      : `${totalPeople} × ◈ ${basePrice} credits`}
                   </span>
-                  <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>◈ {isPrivateBooking ? (biz.cr + privateExtras * extraPersonPrice) : cost}</span>
+                  <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>◈ {(isPrivateBooking && !isGroupPrivateSlot) ? (basePrice + privateExtras * extraPersonPrice) : (basePrice * totalPeople)}</span>
                 </div>
                 {appliedTravelFee > 0 && (
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
@@ -1226,13 +1343,14 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
               )}
 
               {(() => {
-                const ok = myName && myEmail && canAfford && locationOk && phoneOk;
+                const ok = myName && myEmail && canAfford && locationOk && phoneOk && healthAck;
                 const cta = !canAfford ? "Insufficient Credits"
                   : !phoneOk           ? "Add your mobile number to continue"
                   : !locationOk        ? "Add the session address to continue"
-                  : isRequestMode      ? `Request booking · ◈ ${cost} held`
+                  : !healthAck             ? "Tick the health acknowledgement to continue"
+                  : effectiveRequestMode   ? `Request booking · ◈ ${cost} held`
                   : `Confirm · ◈ ${cost} credits`;
-                const cancelWindow = cancelWindowHoursFor(biz.cat);
+                const cancelWindow = cancelWindowHoursFor(biz);
                 // Detect "late booking" — slot start is within 24h of now.
                 // Copy mirrors clause 6.1 of the consumer terms so customers
                 // see it before confirming a booking that can't be
@@ -1247,6 +1365,25 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                       Cancel up to <strong>{cancelWindow} hours before</strong> the session and your credits come back in full. Cancellations after that aren't refundable.
                     </p>
                   </div>
+
+                  {/* Provider notice — non-dismissable visible text so it's
+                      obvious the session is delivered by the partner, not
+                      Wello, before the customer commits. Mirrored in the
+                      confirmation email. */}
+                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.55}}>
+                    This session is provided by <strong style={{color:"#1B1C19"}}>{biz.name}</strong>. Wello handles the booking and payment.
+                  </p>
+
+                  {/* Health acknowledgement — required tick. Timestamp
+                      passed through to onConfirm and persisted on the
+                      bookings row so we have a record for each booking. */}
+                  <label style={{display:"flex",gap:10,alignItems:"flex-start",padding:"10px 12px",background:"#F5F3EE",border:`1px solid ${healthAck ? "rgba(33,60,24,0.35)" : "rgba(195,200,188,0.5)"}`,borderRadius:10,marginBottom:14,cursor:"pointer"}}>
+                    <input type="checkbox" checked={healthAck} onChange={e=>setHealthAck(e.target.checked)}
+                      style={{marginTop:3,width:16,height:16,accentColor:"#213C18",cursor:"pointer",flexShrink:0}}/>
+                    <span style={{fontFamily:F2,fontSize:12,color:"#1B1C19",lineHeight:1.55}}>
+                      I'm responsible for judging whether this session is suitable for me, and I'll tell the provider about any injuries or conditions.
+                    </span>
+                  </label>
                   {isLateBooking && !isPrivateBooking && (
                     <p style={{fontFamily:F2,fontSize:12,color:"#54584F",lineHeight:1.55,margin:"0 0 12px",fontStyle:"italic"}}>
                       This session starts in under 24 hours, so this booking is final once confirmed.
@@ -1264,6 +1401,11 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                             location: isPrivateBooking ? myLocation.trim() : undefined,
                             locationNote: isPrivateBooking ? myLocationNote.trim() : undefined,
                             travelFee: appliedTravelFee || 0,
+                            // Signal to onConfirm that no travel zone matched
+                            // — forces pending_instructor even on instant
+                            // slots so the instructor decides on the trip.
+                            outsideCoverage: !!outsideCoverage,
+                            healthAckAt: new Date().toISOString(),
                           },
                         });
                         setSt(2);
@@ -1282,14 +1424,19 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
 
         {step===2&&(
           <div style={{padding:"48px 32px",textAlign:"center"}}>
-            <div style={{width:64,height:64,background:isRequestMode?"#FFE6C7":"#CAECBA",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>{isRequestMode?"⏳":"✓"}</div>
-            <h2 style={{fontFamily:F2,fontSize:22,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.5px"}}>{isRequestMode?"Booking requested":"Booking confirmed!"}</h2>
+            <div style={{width:64,height:64,background:effectiveRequestMode?"#FFE6C7":"#CAECBA",borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",fontSize:28}}>{effectiveRequestMode?"⏳":"✓"}</div>
+            <h2 style={{fontFamily:F2,fontSize:22,fontWeight:700,color:"#213C18",margin:"0 0 8px",letterSpacing:"-0.5px"}}>{effectiveRequestMode?"Booking requested":"Booking confirmed!"}</h2>
             <p style={{fontFamily:F2,fontSize:14,color:"#54584F",margin:"0 0 4px"}}>{slot.name} · {biz.name}</p>
-            <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 20px"}}>{fd(slot.date)} · {slot.time}</p>
-            {isRequestMode && (
+            <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 12px"}}>{fd(slot.date)} · {slot.time}</p>
+            <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 20px",lineHeight:1.55,padding:"0 8px"}}>
+              This session is provided by <strong style={{color:"#1B1C19"}}>{biz.name}</strong>. Wello handles the booking and payment.
+            </p>
+            {effectiveRequestMode && (
               <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 20px",lineHeight:1.6}}>
                 {isPrivateBooking
-                  ? "Your instructor has been notified by SMS. They have 48 hours to confirm. We'll email you the moment they do — credits stay on your account until then."
+                  ? (outsideCoverage
+                      ? "Your address is outside the instructor's listed zones, so we've sent this as a request. They have 48 hours to confirm — credits stay on your account until then. If they can't travel there, your credits are returned in full."
+                      : "Your instructor has been notified by SMS. They have 48 hours to confirm. We'll email you the moment they do — credits stay on your account until then.")
                   : "The venue has been emailed. They have 48 hours to confirm. We'll email you the moment they do — credits stay on your account until then."}
               </p>
             )}
@@ -1463,6 +1610,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   const [reqTimePref, setReqTimePref]   = useState("morning");
   const [reqSpecificTime, setReqSpecificTime] = useState("18:00");
   const [reqNote, setReqNote]           = useState("");
+  const [reqHealthAck, setReqHealthAck] = useState(false);
   const [reqSubmitting, setReqSubmitting] = useState(false);
   const [reqError, setReqError]         = useState("");
   const [reqSuccessFor, setReqSuccessFor] = useState(null); // offering index of last successful submit
@@ -1471,6 +1619,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     setReqTimePref("morning");
     setReqSpecificTime("18:00");
     setReqNote("");
+    setReqHealthAck(false);
     setReqError("");
     setReqSubmitting(false);
   }
@@ -1499,6 +1648,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
           time_pref: reqTimePref,
           specific_time: reqTimePref === 'specific' ? reqSpecificTime : undefined,
           note: reqNote || undefined,
+          health_ack_at: new Date().toISOString(),
         },
       });
       if (error) { setReqError(error.message || 'Could not send request.'); return; }
@@ -1630,16 +1780,26 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                   <span key={loc} style={{fontFamily:F2,fontSize:11,fontWeight:500,color:"#54584F",background:"rgba(228,226,221,0.6)",padding:"4px 10px",borderRadius:999}}>{loc}</span>
                 ))}
               </div>
-              {Array.isArray(biz.travel_areas) && biz.travel_areas.length > 0 && Number(biz.travel_fee_eur) > 0 && (
-                <>
-                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#B8925C",letterSpacing:"1.5px",textTransform:"uppercase",margin:"14px 0 8px"}}>Also travels for +◈ {Number(biz.travel_fee_eur)}</p>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-                    {biz.travel_areas.map(loc => (
-                      <span key={loc} style={{fontFamily:F2,fontSize:11,fontWeight:500,color:"#766149",background:"rgba(214,180,124,0.2)",border:"1px solid rgba(184,146,92,0.4)",padding:"4px 10px",borderRadius:999}}>{loc}</span>
-                    ))}
-                  </div>
-                </>
-              )}
+              {(() => {
+                const zones = normalizeTravelAreas(biz.travel_areas);
+                if (zones.length === 0) return null;
+                // Sort by fee ascending so cheaper zones read first — the
+                // "how far can I stretch this?" scan then goes low→high.
+                const sorted = zones.slice().sort((a, b) => (a.fee_eur || 0) - (b.fee_eur || 0));
+                return (
+                  <>
+                    <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#B8925C",letterSpacing:"1.5px",textTransform:"uppercase",margin:"14px 0 8px"}}>Also travels — surcharge applies</p>
+                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                      {sorted.map(z => (
+                        <div key={z.area} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"6px 10px",background:"rgba(214,180,124,0.15)",border:"1px solid rgba(184,146,92,0.35)",borderRadius:8}}>
+                          <span style={{fontFamily:F2,fontSize:12,color:"#766149"}}>{z.area}</span>
+                          <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#766149"}}>+◈ {Number(z.fee_eur) || 0}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -1648,7 +1808,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
           <div style={{background:"#F5F3EE",border:"1px solid rgba(195,200,188,0.4)",borderRadius:10,padding:"10px 14px",marginBottom:20,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
             <span style={{fontSize:15,lineHeight:1}}>↻</span>
             <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.55,flex:"1 1 200px"}}>
-              Free cancellation up to <strong style={{color:"#213C18"}}>{cancelWindowHoursFor(biz.cat)} hours</strong> before the session. Credits are returned in full.
+              Free cancellation up to <strong style={{color:"#213C18"}}>{cancelWindowHoursFor(biz)} hours</strong> before the session. Credits are returned in full.
             </p>
           </div>
 
@@ -1910,10 +2070,22 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                               <div style={{padding:"8px 12px",background:"#F8E4D9",border:"1px solid rgba(139,47,0,0.2)",borderRadius:8,fontFamily:F2,fontSize:12,color:"#8B2F00"}}>{reqError}</div>
                             )}
 
+                            {/* Provider notice + health ack — mirrors BookingModal. */}
+                            <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"4px 0 0",lineHeight:1.55}}>
+                              This session is provided by <strong style={{color:"#1B1C19"}}>{biz.name}</strong>. Wello handles the booking and payment.
+                            </p>
+                            <label style={{display:"flex",gap:10,alignItems:"flex-start",padding:"10px 12px",background:"#F5F3EE",border:`1px solid ${reqHealthAck ? "rgba(33,60,24,0.35)" : "rgba(195,200,188,0.5)"}`,borderRadius:8,cursor:"pointer"}}>
+                              <input type="checkbox" checked={reqHealthAck} onChange={e=>setReqHealthAck(e.target.checked)}
+                                style={{marginTop:3,width:16,height:16,accentColor:"#213C18",cursor:"pointer",flexShrink:0}}/>
+                              <span style={{fontFamily:F2,fontSize:12,color:"#1B1C19",lineHeight:1.55}}>
+                                I'm responsible for judging whether this session is suitable for me, and I'll tell the provider about any injuries or conditions.
+                              </span>
+                            </label>
+
                             <div style={{display:"flex",justifyContent:"flex-end"}}>
-                              <button type="button" onClick={() => submitOfferingRequest(o)} disabled={reqSubmitting}
-                                style={{padding:"10px 20px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:reqSubmitting?"not-allowed":"pointer",opacity:reqSubmitting?0.6:1}}>
-                                {reqSubmitting ? "Sending..." : `Send request · ◈ ${price} held`}
+                              <button type="button" onClick={() => submitOfferingRequest(o)} disabled={reqSubmitting || !reqHealthAck}
+                                style={{padding:"10px 20px",background:reqHealthAck?"#213C18":"#E4E2DD",color:reqHealthAck?"#fff":"#54584F",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:(reqSubmitting||!reqHealthAck)?"not-allowed":"pointer",opacity:reqSubmitting?0.6:1}}>
+                                {reqSubmitting ? "Sending..." : !reqHealthAck ? "Tick the acknowledgement to continue" : `Send request · ◈ ${price} held`}
                               </button>
                             </div>
                           </div>
@@ -3371,7 +3543,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, creditSplit = { pu
               {subTabNav}
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 {items.map(bk=>{
-                  const cancelState = cancelStatusFor({ booking_date: bk.date, start_time: bk.time }, bk.biz?.cat);
+                  const cancelState = cancelStatusFor({ booking_date: bk.date, start_time: bk.time }, bk.biz);
                   // Pending requests (instructor or venue) can be cancelled
                   // by the customer at any time for a full credit return —
                   // no window enforcement here, credits were never
@@ -4822,6 +4994,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     phone:             bizData.phone || "",
     email:             bizData.email || "",
     bookings_whatsapp: bizData.bookings_whatsapp || "",
+    // Stored as a string here so the input can be cleared mid-edit; parsed
+    // and validated in saveSettings before we write to the businesses row.
+    cancellation_window_hours: bizData.cancellation_window_hours != null ? String(bizData.cancellation_window_hours) : "24",
   });
   const [saving, setSaving]       = useState(false);
   const [saveMsg, setSaveMsg]     = useState({ kind:"", text:"" }); // { kind:"settings"|"listing"|"golive"|"err", text }
@@ -4848,12 +5023,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     Array.isArray(bizData?.coverage_areas) ? bizData.coverage_areas : []
   );
   // Extended travel — places the instructor will also travel to for an
-  // additional surcharge on top of the base session price.
+  // additional surcharge on top of the base session price. Stored as
+  // [{area, fee_eur}]. Legacy string rows are upgraded to zero-fee objects
+  // by normalizeTravelAreas so a mid-flight partner never sees an area
+  // silently disappear from their picker.
   const [travelAreas, setTravelAreas] = useState(
-    Array.isArray(bizData?.travel_areas) ? bizData.travel_areas : []
-  );
-  const [travelFeeEur, setTravelFeeEur] = useState(
-    bizData?.travel_fee_eur != null && bizData.travel_fee_eur !== "" ? String(bizData.travel_fee_eur) : ""
+    normalizeTravelAreas(bizData?.travel_areas)
   );
   const [availabilityWindows, setAvailabilityWindows] = useState(
     Array.isArray(bizData?.availability_windows) ? bizData.availability_windows : []
@@ -4954,12 +5129,20 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   function toggleCoverageArea(loc) {
     setCoverageAreas(prev => prev.includes(loc) ? prev.filter(x => x !== loc) : [...prev, loc]);
     // If they add a place to core coverage, drop it from extended-travel so
-    // the two lists never overlap.
-    setTravelAreas(prev => prev.filter(x => x !== loc));
+    // the two lists never overlap. Match on the object's area name.
+    setTravelAreas(prev => prev.filter(z => z.area !== loc));
   }
   function toggleTravelArea(loc) {
     if (coverageAreas.includes(loc)) return;
-    setTravelAreas(prev => prev.includes(loc) ? prev.filter(x => x !== loc) : [...prev, loc]);
+    setTravelAreas(prev => prev.some(z => z.area === loc)
+      ? prev.filter(z => z.area !== loc)
+      : [...prev, { area: loc, fee_eur: 0 }]
+    );
+  }
+  // Update a single zone's fee. Kept in local state as a raw string during
+  // typing (so the user can clear the field mid-edit) and coerced on save.
+  function setTravelAreaFee(loc, feeRaw) {
+    setTravelAreas(prev => prev.map(z => z.area === loc ? { ...z, fee_eur: feeRaw } : z));
   }
   function addAvailabilityWindow(day) {
     setAvailabilityWindows(prev => [...prev, { day, start: '09:00', end: '12:00' }]);
@@ -5136,6 +5319,15 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
 
   async function saveSettings() {
     if (isPreview || !bizData?.id) return;
+    // Validate the cancellation window locally so the DB check constraint
+    // doesn't fire back as an opaque error. 1..168 hours matches the SQL
+    // check on businesses.cancellation_window_hours.
+    const cwhRaw = String(settingsForm.cancellation_window_hours || '').trim();
+    const cwhNum = cwhRaw === '' ? NaN : Number(cwhRaw);
+    if (!Number.isFinite(cwhNum) || !Number.isInteger(cwhNum) || cwhNum < 1 || cwhNum > 168) {
+      flashSaveMsg("err", "Cancellation window must be a whole number between 1 and 168 hours.");
+      return;
+    }
     setSaving(true);
     const payload = {
       name:              settingsForm.name.trim() || null,
@@ -5146,6 +5338,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       phone:             settingsForm.phone || null,
       email:             settingsForm.email.trim() || bizData.email, // keep email if cleared
       bookings_whatsapp: settingsForm.bookings_whatsapp.trim() || null,
+      cancellation_window_hours: cwhNum,
     };
     const { error } = await supabase.from('businesses').update(payload).eq('id', bizData.id);
     if (!error) {
@@ -5326,13 +5519,17 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       : (coverageAreas.length <= 3
           ? coverageAreas.join(', ')
           : `${coverageAreas.slice(0,3).join(', ')} +${coverageAreas.length - 3}`);
-    const feeParsed = parseInt(travelFeeEur, 10);
-    const feePayload = Number.isFinite(feeParsed) && feeParsed > 0 ? feeParsed : null;
+    // Coerce every zone's fee to a non-negative integer. Blank / typo values
+    // save as 0 rather than blocking the save — the partner can spot the €0
+    // row in the settings screen and correct it.
+    const travelPayload = travelAreas.map(z => {
+      const n = Math.round(Number(z.fee_eur));
+      return { area: z.area, fee_eur: Number.isFinite(n) && n >= 0 ? n : 0 };
+    });
     const { error: bizErr } = await supabase.from('businesses')
       .update({
         coverage_areas: coverageAreas,
-        travel_areas:   travelAreas,
-        travel_fee_eur: feePayload,
+        travel_areas:   travelPayload,
       })
       .eq('id', bizData.id);
     if (!bizErr) {
@@ -5342,11 +5539,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         .update({
           coverage_areas: coverageAreas,
           loc: displayLoc,
-          travel_areas:   travelAreas,
-          travel_fee_eur: feePayload,
+          travel_areas:   travelPayload,
         })
         .eq('business_id', bizData.id);
-      setBizData(prev => ({ ...prev, coverage_areas: coverageAreas, travel_areas: travelAreas, travel_fee_eur: feePayload }));
+      setBizData(prev => ({ ...prev, coverage_areas: coverageAreas, travel_areas: travelPayload }));
+      setTravelAreas(travelPayload);
     }
     setSaving(false);
     if (bizErr) flashSaveMsg("err", "Couldn't save coverage areas. " + bizErr.message);
@@ -6692,15 +6889,16 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               </div>
               {/* Extended travel — optional. Places the instructor will also
                   travel to for an additional surcharge on top of the session
-                  price. The surcharge is added automatically to the customer's
-                  booking when their address matches one of these areas. */}
+                  price. Each zone carries its own fee (Palma might be free,
+                  Sóller €20), added to the booking when the customer's typed
+                  address matches. */}
               <div style={{marginTop:20,paddingTop:18,borderTop:"1px solid #E4E2DD"}}>
                 <h4 style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Extended travel (optional)</h4>
-                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Add places outside your usual coverage that you'll travel to for a fee. Guests booking to one of these areas pay the surcharge automatically on top of the session price.</p>
+                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Add places outside your usual coverage that you'll travel to. Set a per-zone fee — guests booking to that area pay it automatically on top of the session price.</p>
                 <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
                   {MALLORCA_LOCATIONS.map(loc => {
                     const isCore   = coverageAreas.includes(loc);
-                    const isExtra  = travelAreas.includes(loc);
+                    const isExtra  = travelAreas.some(z => z.area === loc);
                     const disabled = isCore;
                     return (
                       <button key={loc} type="button" onClick={()=>toggleTravelArea(loc)} disabled={disabled}
@@ -6710,17 +6908,28 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     );
                   })}
                 </div>
-                <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                  <label style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F"}}>Travel surcharge</label>
-                  <div style={{position:"relative",width:120}}>
-                    <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
-                    <input type="number" min="0" step="1" value={travelFeeEur}
-                      onChange={e=>setTravelFeeEur(e.target.value)}
-                      placeholder="0"
-                      style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
+                {travelAreas.length > 0 && (
+                  <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:4}}>
+                    <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:0}}>Zone fees</p>
+                    {travelAreas.map(z => (
+                      <div key={z.area} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:"#F5F3EE",borderRadius:8}}>
+                        <span style={{fontFamily:F2,fontSize:12,color:"#1B1C19",fontWeight:600,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{z.area}</span>
+                        <div style={{position:"relative",width:96}}>
+                          <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
+                          <input type="number" min="0" step="1"
+                            value={z.fee_eur === '' || z.fee_eur == null ? '' : String(z.fee_eur)}
+                            onChange={e=>setTravelAreaFee(z.area, e.target.value)}
+                            placeholder="0"
+                            style={{...INP,paddingLeft:22,marginBottom:0,width:"100%",padding:"6px 6px 6px 22px"}}/>
+                        </div>
+                        <button type="button" onClick={()=>toggleTravelArea(z.area)}
+                          aria-label={`Remove ${z.area} from extended travel`}
+                          style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:16,cursor:"pointer",padding:"0 4px",lineHeight:1}}>×</button>
+                      </div>
+                    ))}
+                    <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:"2px 0 0",lineHeight:1.5}}>Set a €0 fee for a zone you cover but don't want to charge extra for. Blank saves as 0.</p>
                   </div>
-                  <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:0,flex:"1 1 200px"}}>Applied per booking. Leave blank if you don't charge extra.</p>
-                </div>
+                )}
               </div>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginTop:18}}>
                 <p style={{fontFamily:F2,fontSize:11,color:coverageAreas.length>0?"#213C18":"#6F5B44",fontWeight:600,margin:0}}>
@@ -7406,6 +7615,20 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     placeholder="What makes your venue special. Two or three sentences."
                     style={{...INP,resize:"vertical"}}
                     onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                </div>
+                {/* Cancellation window — customer-facing refund cutoff. Shown
+                    on the session card and in the booking confirmation email. */}
+                <div>
+                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Cancellation window (hours)</label>
+                  <input type="number" min="1" max="168" step="1"
+                    value={isPreview ? "24" : (settingsForm.cancellation_window_hours ?? "")}
+                    onChange={e=>!isPreview && setSettingsForm(p=>({...p,cancellation_window_hours:e.target.value}))}
+                    placeholder="24"
+                    style={{...INP,maxWidth:120}}
+                    onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"6px 0 0",lineHeight:1.5}}>
+                    How many hours before the session a customer can cancel and get their credits back in full. Applies to every booking at this venue. Default 24 (48 for private instructors).
+                  </p>
                 </div>
                 <button onClick={saveSettings} disabled={saving||isPreview}
                   style={{alignSelf:"flex-start",padding:"10px 20px",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer",marginTop:4}}>
@@ -12036,7 +12259,7 @@ export default function App() {
     // (real partners never have a demo- prefixed email).
     const { data: listingRows, error } = await supabase
       .from("listings")
-      .select("*, slots(*), businesses(address, phone, website, instagram, email, gallery, session_offerings, travel_areas, travel_fee_eur, cancellation_safety_window)")
+      .select("*, slots(*), businesses(address, phone, website, instagram, email, gallery, session_offerings, travel_areas, cancellation_safety_window, cancellation_window_hours)")
       .eq("status","active")
       .order("id");
     if (error) {
@@ -12080,11 +12303,11 @@ export default function App() {
         // Private-instructor session offerings — used by BookingModal to
         // look up group-pricing (extra_person_eur, max_people) from the slot.
         session_offerings: Array.isArray(row.businesses?.session_offerings) ? row.businesses.session_offerings : [],
-        // Extended travel: areas the instructor will travel to for an extra
-        // fee. BookingModal applies the surcharge when the customer's typed
-        // address matches one of these areas.
-        travel_areas:   Array.isArray(row.businesses?.travel_areas) ? row.businesses.travel_areas : (Array.isArray(row.travel_areas) ? row.travel_areas : []),
-        travel_fee_eur: row.businesses?.travel_fee_eur != null ? Number(row.businesses.travel_fee_eur) : (row.travel_fee_eur != null ? Number(row.travel_fee_eur) : 0),
+        // Extended travel: per-zone [{area, fee_eur}] on the parent business.
+        // BookingModal picks the matching zone and adds its fee to the total.
+        // normalizeTravelAreas upgrades any legacy string rows that slip
+        // through mid-migration so old data doesn't disappear from listings.
+        travel_areas:   normalizeTravelAreas(row.businesses?.travel_areas ?? row.travel_areas),
         _isDemo:   /^demo-/i.test(row.businesses?.email || ""),
         desc: row.description || "",
         img: row.img || "https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=600&q=80",
@@ -12102,6 +12325,12 @@ export default function App() {
         // new booking before it starts. The Postgres BEFORE INSERT trigger
         // on bookings is the authoritative check; this is the UX layer.
         cancellation_safety_window: !!row.businesses?.cancellation_safety_window,
+        // Per-partner refund window (hours before session start). Nullable
+        // in the DB; cancelWindowHoursFor() falls back to the category
+        // default if this is missing or out of range.
+        cancellation_window_hours: Number.isFinite(Number(row.businesses?.cancellation_window_hours))
+          ? Number(row.businesses.cancellation_window_hours)
+          : null,
         slots: (row.slots || [])
           .filter(s => !blockedSlotIds.has(String(s.id)))
           .filter(s => {
@@ -12120,6 +12349,10 @@ export default function App() {
             credits: s.credits,
             acuity_type_id: s.acuity_type_id ?? null,
             booking_mode: s.booking_mode || 'instant',
+            // Where the session physically happens. Defaults to 'customer'
+            // to preserve pre-migration behaviour for private-instructor
+            // slots that predate the venue_side column.
+            venue_side: s.venue_side || 'customer',
           }))
       }));
       // Ordering: real partners first, demo seeds last. Real partners are
@@ -12296,7 +12529,12 @@ export default function App() {
     // request bookings route through pending_venue with a slot_id set
     // — venue-booking-response handles both.
     const pendingStatus    = isPrivateBooking ? 'pending_instructor' : 'pending_venue';
-    const bookingStatus    = isRequestMode ? pendingStatus : 'confirmed';
+    // Force request routing for private-instructor bookings whose address
+    // fell in no travel zone. Prevents auto-confirming an at-home session at
+    // €0 travel; the instructor sees the request and can decline or negotiate.
+    const forceRequestMode = isPrivateBooking && !!form?.outsideCoverage;
+    const effectiveRequest = isRequestMode || forceRequestMode;
+    const bookingStatus    = effectiveRequest ? pendingStatus : 'confirmed';
 
     // Persist the phone the customer typed into the booking modal onto their
     // profile so a returning customer won't have to retype it next time, and
@@ -12325,9 +12563,11 @@ export default function App() {
     }
     setBookings(p=>[{id:Date.now(),biz,slot,form,cost,status:bookingStatus},...p]);
     showToast(
-      isRequestMode
+      effectiveRequest
         ? (isPrivateBooking
-            ? "Request sent. Instructor has 48 hours to confirm."
+            ? (form?.outsideCoverage
+                ? "Request sent — your address is outside listed zones, so the instructor will review."
+                : "Request sent. Instructor has 48 hours to confirm.")
             : "Request sent. The venue has 48 hours to confirm.")
         : `Booked! ◈ ${cost} credits used.`,
       "success"
@@ -12351,6 +12591,10 @@ export default function App() {
             form?.location ? `Customer location: ${form.location}` : null,
             peopleCount > 1 ? `People: ${peopleCount}` : null,
             travelFeeApplied > 0 ? `Travel fee: €${travelFeeApplied}` : null,
+            // Flag outside-coverage on the row itself so the instructor's
+            // SMS/email carries the same signal the modal showed the
+            // customer — no travel zone matched, they need to decide.
+            form?.outsideCoverage ? `Travel: outside listed zones — please review` : null,
             form?.locationNote ? `Notes: ${form.locationNote}` : null,
           ].filter(Boolean).join('\n') || null
         : (form?.note || null);
@@ -12367,6 +12611,10 @@ export default function App() {
         peak_flag,
         status: bookingStatus,
         notes,
+        // Client-supplied timestamp of when the customer ticked the health
+        // acknowledgement in BookingModal. Column is nullable to avoid
+        // breaking legacy rows; every insert from this flow ships with one.
+        health_ack_at: form?.healthAckAt || null,
       };
       console.log('[onConfirm] inserting bookings row', payload);
 
@@ -12410,7 +12658,7 @@ export default function App() {
       // the spend-booking-credits edge fn because spend_credits is
       // service_role only.
       const spendRes = await supabase.functions.invoke('spend-booking-credits', {
-        body: { booking_id: inserted.id, source: isRequestMode ? 'booking_hold' : 'booking' },
+        body: { booking_id: inserted.id, source: effectiveRequest ? 'booking_hold' : 'booking' },
       });
       if (spendRes.error || spendRes.data?.error) {
         const err = spendRes.error?.message || spendRes.data?.error || 'spend failed';
@@ -12449,17 +12697,19 @@ export default function App() {
 
       // 3. Fire-and-forget downstream signals — three modes:
       //   - request + private instructor → SMS the instructor.
+      //     (Also covers outside-coverage instant slots, which forceRequestMode
+      //     rerouted to pending_instructor above.)
       //   - request + studio venue     → email the venue with
       //     accept/decline HMAC links (via notify-venue-slot-request).
       //   - instant                    → Acuity sync + safety alert.
-      if (isRequestMode && isPrivateBooking) {
+      if (effectiveRequest && isPrivateBooking) {
         supabase.functions.invoke('notify-instructor-sms', {
           body: { booking_id: inserted.id },
         }).then(({ data, error }) => {
           if (error) console.warn('[notify-instructor-sms] invoke failed:', error.message);
           else console.log('[notify-instructor-sms] result:', data);
         });
-      } else if (isRequestMode && !isPrivateBooking) {
+      } else if (effectiveRequest && !isPrivateBooking) {
         supabase.functions.invoke('notify-venue-slot-request', {
           body: { booking_id: inserted.id },
         }).then(({ data, error }) => {

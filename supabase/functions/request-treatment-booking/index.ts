@@ -85,8 +85,22 @@ serve(async (req) => {
     time_pref?: string        // morning | afternoon | evening | specific
     specific_time?: string    // HH:MM when time_pref === 'specific'
     note?: string
+    health_ack_at?: string    // ISO timestamp — set by BizPanel when the customer ticks the health checkbox
   }
   try { body = await req.json() } catch { return json({ error: 'Invalid JSON body.' }, 400) }
+
+  // Health acknowledgement — client passes an ISO string when the customer
+  // ticks the checkbox. Parsed defensively and clamped to now if the client's
+  // clock is off; nulled if missing so it's obvious in the DB that the ack
+  // wasn't recorded (older client, direct API call, etc).
+  let healthAckAt: string | null = null
+  if (typeof body.health_ack_at === 'string' && body.health_ack_at) {
+    const parsed = new Date(body.health_ack_at)
+    if (!Number.isNaN(parsed.getTime())) {
+      const nowMs = Date.now()
+      healthAckAt = new Date(Math.min(parsed.getTime(), nowMs)).toISOString()
+    }
+  }
 
   const businessId = Number(body.business_id)
   if (!Number.isFinite(businessId) || businessId <= 0) return json({ error: 'business_id is required.' }, 400)
@@ -202,6 +216,7 @@ serve(async (req) => {
       status: 'pending_venue',
       notes: notesBlob,
       offering_type: offeringType,
+      health_ack_at: healthAckAt,
     })
     .select('id, created_at')
     .single()
