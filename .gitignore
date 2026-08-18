@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Env files (Supabase edge fn secrets and any other .env)
+.env
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -22,3 +25,14 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.vercel
+.env*
+
+# Claude Code + agent state (local; per-machine)
+.claude/
+.agents/
+skills-lock.json
+
+# Supabase CLI local state (per-machine)
+supabase/.branches/
+supabase/.temp/
