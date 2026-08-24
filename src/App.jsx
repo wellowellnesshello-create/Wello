@@ -7927,10 +7927,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                         </div>
                       );
                     }
-                    // Read-only chip. Surfaces price (single, or "from ◈ min"
-                    // when locations vary), extras, max_people, and a location
-                    // count so partners can see their config without opening
-                    // the editor.
+                    // Read-only card. Two lines: the class definition
+                    // (name / length / price) on top, the schedule + flags
+                    // below. Everything the partner needs to see about a
+                    // class is here — the collapsed panel avoided
+                    // clutter but forced clicking Edit just to remind
+                    // yourself when a class runs. For a partner with 2-3
+                    // classes this is the whole picture at a glance.
                     const locMinMax = (() => {
                       const ps = Array.isArray(off.locations)
                         ? off.locations.map(l => Number(l?.price_eur)).filter(n => Number.isFinite(n) && n >= 0)
@@ -7941,57 +7944,84 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     const priceText = locMinMax
                       ? (locMinMax.min === locMinMax.max ? `€${locMinMax.min}` : `from €${locMinMax.min}`)
                       : `€${off.price_eur}`;
+                    // Windows summary — group by start/end time so
+                    // "Mon Wed Fri 07:00-08:00" collapses instead of
+                    // rendering three separate lines. If mixed times,
+                    // fall back to one line per group.
+                    const winSummary = (() => {
+                      const wins = Array.isArray(off.availability_windows) ? off.availability_windows : [];
+                      if (wins.length === 0) return null;
+                      const byTime = new Map();
+                      for (const w of wins) {
+                        const key = `${w.start || '09:00'}-${w.end || '18:00'}`;
+                        if (!byTime.has(key)) byTime.set(key, []);
+                        byTime.get(key).push(w.day);
+                      }
+                      const dayOrder = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
+                      const lines = [];
+                      for (const [time, days] of byTime.entries()) {
+                        const sorted = days.slice().sort((a, b) => (dayOrder[a] || 99) - (dayOrder[b] || 99));
+                        lines.push(`${sorted.join(' ')} · ${time.replace('-', ' → ')}`);
+                      }
+                      return lines;
+                    })();
+                    const rangeText = (() => {
+                      const f = off.availability_from, t = off.availability_to;
+                      if (!f && !t) return null;
+                      const fmt = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+                      if (f && t) return `Live ${fmt(f)} → ${fmt(t)}`;
+                      if (f)      return `Live from ${fmt(f)}`;
+                      return `Live until ${fmt(t)}`;
+                    })();
+                    const flagPills = [];
+                    if (off.booking_mode === 'request')             flagPills.push({ label: 'Request · 48h to confirm', color: '#7A5C32', bg: '#FFF3E6' });
+                    if (!locMinMax && off.venue_side === 'customer') flagPills.push({ label: "At customer's address",       color: '#7A5C32', bg: '#FFF3E6' });
+                    if (locMinMax && locMinMax.count > 0)           flagPills.push({ label: `${locMinMax.count} location${locMinMax.count===1?'':'s'}`, color: '#213C18', bg: '#F5F3EE' });
+                    if (off.capacity > 1)                            flagPills.push({ label: `${off.capacity} seats per slot`, color: '#213C18', bg: '#F5F3EE' });
+                    if (off.extra_person_eur > 0)                    flagPills.push({ label: `+€${off.extra_person_eur} per extra person${off.max_people > 1 ? ` · up to ${off.max_people}` : ''}`, color: '#213C18', bg: '#F5F3EE' });
                     return (
-                      <div key={idx} style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:10,padding:"9px 6px 9px 14px",borderRadius:10,background:"rgba(33,60,24,0.06)",border:"1px solid rgba(33,60,24,0.18)",fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600}}>
-                        <span>{off.type || <em style={{color:"#54584F"}}>Unnamed</em>}</span>
-                        <span style={{color:"#54584F",fontWeight:400}}>·</span>
-                        <span style={{color:"#54584F",fontWeight:400}}>{off.length_min} min</span>
-                        <span style={{color:"#54584F",fontWeight:400}}>·</span>
-                        <span style={{color:"#766149"}}>{priceText}</span>
-                        {off.extra_person_eur > 0 && (<>
-                          <span style={{color:"#54584F",fontWeight:400}}>·</span>
-                          <span style={{color:"#54584F",fontWeight:500}}>+€{off.extra_person_eur}/extra</span>
-                        </>)}
-                        {off.max_people > 1 && (<>
-                          <span style={{color:"#54584F",fontWeight:400}}>·</span>
-                          <span style={{color:"#54584F",fontWeight:500}}>up to {off.max_people} people</span>
-                        </>)}
-                        {off.capacity > 1 && (<>
-                          <span style={{color:"#54584F",fontWeight:400}}>·</span>
-                          <span style={{color:"#54584F",fontWeight:500}}>{off.capacity} seats/slot</span>
-                        </>)}
-                        {!locMinMax && off.venue_side === 'customer' && (<>
-                          <span style={{color:"#54584F",fontWeight:400}}>·</span>
-                          <span style={{color:"#54584F",fontWeight:500}}>at customer's address</span>
-                        </>)}
-                        {off.booking_mode === 'request' && (<>
-                          <span style={{color:"#54584F",fontWeight:400}}>·</span>
-                          <span style={{color:"#7A5C32",fontWeight:600}}>request (48h)</span>
-                        </>)}
-                        {(() => {
-                          const wc = Array.isArray(off.availability_windows) ? off.availability_windows.length : 0;
-                          if (wc === 0) return (<>
-                            <span style={{color:"#54584F",fontWeight:400}}>·</span>
-                            <span style={{color:"#C46A4D",fontWeight:600}}>no schedule</span>
-                          </>);
-                          return (<>
-                            <span style={{color:"#54584F",fontWeight:400}}>·</span>
-                            <span style={{color:"#54584F",fontWeight:500}}>{wc} window{wc===1?"":"s"}</span>
-                          </>);
-                        })()}
-                        {locMinMax && locMinMax.count > 0 && (<>
-                          <span style={{color:"#54584F",fontWeight:400}}>·</span>
-                          <span style={{color:"#54584F",fontWeight:500}}>{locMinMax.count} location{locMinMax.count===1?"":"s"}</span>
-                        </>)}
-                        <span style={{flex:1}}/>
-                        <button type="button" onClick={()=>openOfferingEdit(idx)} aria-label={`Edit ${off.type}`}
-                          style={{background:"#fff",border:"1px solid rgba(33,60,24,0.3)",color:"#213C18",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 10px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
-                          Edit
-                        </button>
-                        <button type="button" onClick={()=>dashRemoveOffering(idx)} aria-label={`Remove ${off.type}`}
-                          style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 9px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase",marginRight:4}}>
-                          Remove
-                        </button>
+                      <div key={idx} style={{padding:"12px 14px",borderRadius:10,background:"#fff",border:"1px solid rgba(33,60,24,0.18)",fontFamily:F2}}>
+                        {/* Row 1 — headline. Name, length, price, actions. */}
+                        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                          <span style={{fontSize:14,fontWeight:700,color:"#1B1C19"}}>{off.type || <em style={{color:"#54584F"}}>Unnamed class</em>}</span>
+                          <span style={{fontSize:12,color:"#54584F"}}>·</span>
+                          <span style={{fontSize:12,color:"#54584F"}}>{off.length_min} min</span>
+                          <span style={{fontSize:12,color:"#54584F"}}>·</span>
+                          <span style={{fontSize:13,fontWeight:700,color:"#766149"}}>{priceText}</span>
+                          <span style={{flex:1}}/>
+                          <button type="button" onClick={()=>openOfferingEdit(idx)} aria-label={`Edit ${off.type}`}
+                            style={{background:"#213C18",border:"none",color:"#fff",fontSize:10,fontWeight:700,padding:"4px 12px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                            Edit
+                          </button>
+                          <button type="button" onClick={()=>dashRemoveOffering(idx)} aria-label={`Remove ${off.type}`}
+                            style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                            Remove
+                          </button>
+                        </div>
+
+                        {/* Row 2 — schedule. Each grouped-time-window on
+                            its own line. Warns in ochre when no schedule
+                            is set (offering won't generate any slots). */}
+                        <div style={{marginTop:8,paddingLeft:2}}>
+                          {winSummary === null && (
+                            <p style={{fontSize:12,color:"#C46A4D",fontWeight:600,margin:0}}>No schedule set — click Edit to add days and times.</p>
+                          )}
+                          {winSummary && winSummary.map((line, i) => (
+                            <p key={i} style={{fontSize:12,color:"#1B1C19",fontWeight:500,margin:i===0?0:"3px 0 0"}}>{line}</p>
+                          ))}
+                          {rangeText && (
+                            <p style={{fontSize:11,color:"#7A5C32",fontWeight:500,margin:"4px 0 0"}}>{rangeText}</p>
+                          )}
+                        </div>
+
+                        {/* Row 3 — flag pills, only when any are set. */}
+                        {flagPills.length > 0 && (
+                          <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:8}}>
+                            {flagPills.map((p, i) => (
+                              <span key={i} style={{fontSize:10,fontWeight:600,color:p.color,background:p.bg,padding:"3px 9px",borderRadius:999,border:`1px solid ${p.color}22`}}>{p.label}</span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
