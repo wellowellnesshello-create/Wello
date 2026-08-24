@@ -5655,6 +5655,16 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           // instant + Massage request). Falls back to instant to preserve
           // existing behaviour for legacy offerings.
           booking_mode:     o?.booking_mode === 'request' ? 'request' : 'instant',
+          // Per-offering recurrence rule (previously a business-scoped
+          // field). Each entry: { day: 'Mon', start: '07:00', end: '08:00' }.
+          // Falls back to the business-level windows for legacy offerings
+          // that haven't been through the copy-down migration yet, so
+          // saveAvailability keeps generating something for them.
+          availability_windows: Array.isArray(o?.availability_windows)
+            ? o.availability_windows
+            : (Array.isArray(bizData?.availability_windows) ? bizData.availability_windows : []),
+          availability_from:    (o && 'availability_from' in o) ? (o.availability_from || null) : (bizData?.availability_from || null),
+          availability_to:      (o && 'availability_to'   in o) ? (o.availability_to   || null) : (bizData?.availability_to   || null),
           // Preserve the multi-location shape when present so hybrid
           // partners (Noor: Private + Group private with studio/at-home
           // options) don't lose their per-location prices on the next
@@ -5743,6 +5753,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   function openOfferingEdit(idx) {
     const src = dashSessionOfferings[idx];
     if (!src) return;
+    // Reset the in-progress add-window sub-form so it doesn't leak state
+    // from a previously-open offering.
+    setNewOffWindow({ days: [], start: '09:00', end: '12:00' });
     setEditBuffer({
       type: src.type || "",
       length_min: src.length_min || 60,
@@ -5752,6 +5765,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       capacity: Number.isFinite(Number(src.capacity)) && src.capacity > 0 ? src.capacity : 1,
       venue_side: src.venue_side === 'customer' ? 'customer' : 'instructor',
       booking_mode: src.booking_mode === 'request' ? 'request' : 'instant',
+      availability_windows: Array.isArray(src.availability_windows) ? src.availability_windows.slice() : [],
+      availability_from: src.availability_from || '',
+      availability_to:   src.availability_to   || '',
       locations: Array.isArray(src.locations) ? src.locations.map(l => ({
         label: String(l?.label || ""),
         price_eur: Number.isFinite(Number(l?.price_eur)) ? Number(l.price_eur) : 0,
@@ -5780,6 +5796,16 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     const capacity         = Number.isFinite(capRaw) && capRaw > 0 ? capRaw : 1;
     const venue_side       = editBuffer.venue_side === 'customer' ? 'customer' : 'instructor';
     const booking_mode     = editBuffer.booking_mode === 'request' ? 'request' : 'instant';
+    // Sanitise the availability windows: keep valid {day, start, end}
+    // rows only; drop anything with an invalid time range or unknown day.
+    const availability_windows = (editBuffer.availability_windows || [])
+      .filter(w => WEEK_DAYS.includes(w?.day)
+                && /^\d{2}:\d{2}$/.test(String(w?.start || ''))
+                && /^\d{2}:\d{2}$/.test(String(w?.end   || ''))
+                && String(w.end) > String(w.start))
+      .map(w => ({ day: w.day, start: w.start, end: w.end }));
+    const availability_from = /^\d{4}-\d{2}-\d{2}$/.test(String(editBuffer.availability_from || '')) ? editBuffer.availability_from : null;
+    const availability_to   = /^\d{4}-\d{2}-\d{2}$/.test(String(editBuffer.availability_to   || '')) ? editBuffer.availability_to   : null;
     const locations = (editBuffer.locations || [])
       .filter(l => String(l.label || '').trim().length > 0)
       .map(l => ({
@@ -5790,6 +5816,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     const patched = {
       type, length_min, price_eur, extra_person_eur, max_people, capacity, venue_side, booking_mode,
       locations: locations.length > 0 ? locations : undefined,
+      availability_windows,
+      availability_from,
+      availability_to,
       img: editBuffer.img || null,
       category: editBuffer.category || '',
     };
@@ -5813,6 +5842,25 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   function bufferAddLocation()               { setEditBuffer(p => p ? { ...p, locations: [...(p.locations || []), { label: '', price_eur: 0, venue_side: 'instructor' }] } : p); }
   function bufferRemoveLocation(i)           { setEditBuffer(p => p ? { ...p, locations: (p.locations || []).filter((_, j) => j !== i) } : p); }
   function bufferUpdateLocation(i, locPatch) { setEditBuffer(p => p ? { ...p, locations: (p.locations || []).map((l, j) => j === i ? { ...l, ...locPatch } : l) } : p); }
+  function bufferAddWindow(w)                { setEditBuffer(p => p ? { ...p, availability_windows: [...(p.availability_windows || []), w] } : p); }
+  function bufferRemoveWindow(i)             { setEditBuffer(p => p ? { ...p, availability_windows: (p.availability_windows || []).filter((_, j) => j !== i) } : p); }
+  // Local buffer for the "add window" sub-form inside the offering edit
+  // panel. Kept at component scope so it survives re-renders during edit;
+  // resets when a different offering is opened via openOfferingEdit.
+  const [newOffWindow, setNewOffWindow] = useState({ days: [], start: '09:00', end: '12:00' });
+  function toggleNewOffWindowDay(day) {
+    setNewOffWindow(prev => ({
+      ...prev,
+      days: prev.days.includes(day) ? prev.days.filter(d => d !== day) : [...prev.days, day],
+    }));
+  }
+  function commitNewOffWindow() {
+    if (newOffWindow.days.length === 0 || newOffWindow.end <= newOffWindow.start) return;
+    for (const day of newOffWindow.days) {
+      bufferAddWindow({ day, start: newOffWindow.start, end: newOffWindow.end });
+    }
+    setNewOffWindow({ days: [], start: '09:00', end: '12:00' });
+  }
 
   function toggleCoverageArea(loc) {
     setCoverageAreas(prev => prev.includes(loc) ? prev.filter(x => x !== loc) : [...prev, loc]);
@@ -6331,93 +6379,88 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       const today = new Date();
       const LEAD_MS = 4 * 24 * 60 * 60 * 1000;
       const minBookable = new Date(Date.now() + LEAD_MS);
-      // Resolve the expansion horizon. No range = rolling 4 weeks (today's
-      // behaviour). Range set = honour it, capped at 26 weeks (6 months) to
-      // keep slot counts sane.
+      // Resolve the expansion horizon. Falls back to a rolling 4 weeks
+      // when the offering hasn't set its own from/to; capped at 26 weeks.
       const HARD_CAP_MS = 26 * 7 * 24 * 60 * 60 * 1000;
-      const rangeFrom = availabilityFrom ? new Date(availabilityFrom + "T00:00:00") : null;
-      const rangeTo   = availabilityTo   ? new Date(availabilityTo   + "T23:59:59") : null;
-      const horizonStart = rangeFrom && rangeFrom > minBookable ? rangeFrom : minBookable;
-      const defaultEnd   = new Date(Date.now() + 4 * 7 * 24 * 60 * 60 * 1000);
-      const hardCap      = new Date(Date.now() + HARD_CAP_MS);
-      const horizonEnd   = rangeTo ? (rangeTo < hardCap ? rangeTo : hardCap) : defaultEnd;
-      const fallbackCr = listingForm.cr ? (parseInt(listingForm.cr) || (bizData.cr ?? 60)) : (bizData.cr ?? 60);
-      // If the partner hasn't filled in any offerings yet, fall back to a
-      // single offering built from the legacy duration + price pair so we
-      // still generate something they can preview.
+      const hardCap     = new Date(Date.now() + HARD_CAP_MS);
+      const defaultEnd  = new Date(Date.now() + 4 * 7 * 24 * 60 * 60 * 1000);
+      const fallbackCr  = listingForm.cr ? (parseInt(listingForm.cr) || (bizData.cr ?? 60)) : (bizData.cr ?? 60);
+      // Offering iteration. Each offering brings its OWN availability
+      // windows (per-offering after the 20260824 migration; falls back to
+      // the business-level windows for legacy rows that haven't been
+      // saved through the new editor yet). This makes it possible to have
+      // Noor's Yoga on Mon/Wed/Fri 08:00 alongside her Private with no
+      // fixed schedule — the old code multiplied every offering by every
+      // window, which was structurally wrong.
       const offerings = (dashSessionOfferings && dashSessionOfferings.length > 0)
         ? dashSessionOfferings
-        : [{ type: bizData?.category || 'Private session', length_min: sessionDurationMin, price_eur: fallbackCr }];
+        : [{ type: bizData?.category || 'Private session', length_min: sessionDurationMin, price_eur: fallbackCr, availability_windows: availabilityWindows }];
       const slotRows = [];
-      // Walk every day from horizonStart through horizonEnd. For each day,
-      // check every availability window whose weekday matches and emit slots.
-      // This is O(days × windows × offerings) rather than the old fixed
-      // 4-week-rolling loop so a partner-defined range "just works".
-      const dayCursor = new Date(horizonStart);
-      dayCursor.setHours(0, 0, 0, 0);
-      const horizonEndDay = new Date(horizonEnd);
-      horizonEndDay.setHours(0, 0, 0, 0);
-      while (dayCursor <= horizonEndDay) {
-        const dow = dayCursor.getDay();
-        for (const w of availabilityWindows) {
-          const dayIdx = DAY_IDX[w.day];
-          if (dayIdx === undefined || dayIdx !== dow) continue;
-          const [sH, sM] = String(w.start || '09:00').split(':').map(x => parseInt(x, 10));
-          const [eH, eM] = String(w.end   || '18:00').split(':').map(x => parseInt(x, 10));
-          const startMin = sH * 60 + sM;
-          const endMin   = eH * 60 + eM;
-          if (endMin <= startMin) continue;
-          const d = new Date(dayCursor);
-          for (const off of offerings) {
-            const dur = off.length_min;
-            // Multi-location offerings stamp the min price as slots.credits so
-            // the marketplace tile shows "from ◈ 30"; BookingModal then picks
-            // up matchedOffering.locations and overrides the base price from
-            // whichever location the customer taps.
-            const stampedCredits = offeringLocationsMinPrice(off) ?? off.price_eur;
+      for (const off of offerings) {
+        const offWindows = Array.isArray(off.availability_windows) && off.availability_windows.length > 0
+          ? off.availability_windows
+          : (Array.isArray(availabilityWindows) ? availabilityWindows : []);
+        if (offWindows.length === 0) continue; // offering with no schedule → no slots
+        const offFrom = /^\d{4}-\d{2}-\d{2}$/.test(String(off.availability_from || '')) ? off.availability_from : (availabilityFrom || null);
+        const offTo   = /^\d{4}-\d{2}-\d{2}$/.test(String(off.availability_to   || '')) ? off.availability_to   : (availabilityTo   || null);
+        const rangeFrom = offFrom ? new Date(offFrom + "T00:00:00") : null;
+        const rangeTo   = offTo   ? new Date(offTo   + "T23:59:59") : null;
+        const horizonStart = rangeFrom && rangeFrom > minBookable ? rangeFrom : minBookable;
+        const horizonEnd   = rangeTo ? (rangeTo < hardCap ? rangeTo : hardCap) : defaultEnd;
+        const dayCursor = new Date(horizonStart);
+        dayCursor.setHours(0, 0, 0, 0);
+        const horizonEndDay = new Date(horizonEnd);
+        horizonEndDay.setHours(0, 0, 0, 0);
+        const dur = off.length_min;
+        // Multi-location offerings stamp the min price as slots.credits so
+        // the marketplace tile shows "from ◈ 30"; BookingModal picks up
+        // matchedOffering.locations and overrides base price per pick.
+        const stampedCredits = offeringLocationsMinPrice(off) ?? off.price_eur;
+        // venue_side stamp — mixed multi-location offerings stamp
+        // 'instructor' so the "At your home" badge doesn't fire on rows
+        // that could just as well be at-studio. Pure at-customer offerings
+        // stamp 'customer'. Single-location honours off.venue_side.
+        const locList = Array.isArray(off.locations) ? off.locations : [];
+        const stampedVenueSide = locList.length > 0
+          ? (locList.every(l => l?.venue_side === 'customer') ? 'customer' : 'instructor')
+          : (off.venue_side === 'customer' ? 'customer' : 'instructor');
+        const stampedBookingMode = off.booking_mode === 'request' ? 'request' : 'instant';
+        const stampedSpots = Number.isFinite(Number(off.capacity)) && off.capacity > 0 ? Number(off.capacity) : 1;
+        while (dayCursor <= horizonEndDay) {
+          const dow = dayCursor.getDay();
+          for (const w of offWindows) {
+            const dayIdx = DAY_IDX[w.day];
+            if (dayIdx === undefined || dayIdx !== dow) continue;
+            const [sH, sM] = String(w.start || '09:00').split(':').map(x => parseInt(x, 10));
+            const [eH, eM] = String(w.end   || '18:00').split(':').map(x => parseInt(x, 10));
+            const startMin = sH * 60 + sM;
+            const endMin   = eH * 60 + eM;
+            if (endMin <= startMin) continue;
+            const d = new Date(dayCursor);
             for (let mins = startMin; mins + dur <= endMin; mins += dur) {
               const slotDateTime = new Date(d);
               slotDateTime.setHours(Math.floor(mins / 60), mins % 60, 0, 0);
               if (slotDateTime < minBookable) continue;
               const hh = String(Math.floor(mins / 60)).padStart(2, '0');
               const mm = String(mins % 60).padStart(2, '0');
-              // venue_side stamp. For multi-location offerings the customer
-              // picks the venue at booking time, so the slot's stamp is
-              // advisory. Only stamp 'customer' when EVERY location is
-              // customer-side (unambiguous at-home offering). Mixed
-              // locations (Noor's Private: studio + home) stamp
-              // 'instructor' — otherwise the "At your home" badge fires
-              // on rows that could just as well be at-studio. BookingModal
-              // still routes correctly via pickedLoc.venue_side.
-              const locList = Array.isArray(off.locations) ? off.locations : [];
-              const stampedVenueSide = locList.length > 0
-                ? (locList.every(l => l?.venue_side === 'customer') ? 'customer' : 'instructor')
-                : (off.venue_side === 'customer' ? 'customer' : 'instructor');
               slotRows.push({
                 listing_id: linkedListingId,
                 name: `${off.type} · ${dur} min`,
                 date: d.toISOString().slice(0, 10),
                 time: `${hh}:${mm}`,
                 dur: `${dur} min`,
-                // Per-offering capacity — a group class with capacity 10
-                // stamps spots=10 on every generated slot, so 10 customers
-                // can book independently before the slot fills. Falls back
-                // to 1 for legacy offerings without the field.
-                spots: Number.isFinite(Number(off.capacity)) && off.capacity > 0 ? Number(off.capacity) : 1,
+                spots: stampedSpots,
                 booked: 0,
                 credits: stampedCredits,
                 venue_side: stampedVenueSide,
-                booking_mode: off.booking_mode === 'request' ? 'request' : 'instant',
-                // Marks this row as offering-generated so the next
-                // saveAvailability run can wipe just these and leave any
-                // manually-added rows alone.
+                booking_mode: stampedBookingMode,
                 source: 'offering_gen',
                 acuity_type_id: null,
               });
             }
           }
+          dayCursor.setDate(dayCursor.getDate() + 1);
         }
-        dayCursor.setDate(dayCursor.getDate() + 1);
       }
       if (slotRows.length > 0) {
         // .select() returns the inserted rows so we can detect the
@@ -7389,6 +7432,62 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                             })}
                           </div>
 
+                          {/* Per-offering availability windows. Migrated
+                              down from businesses.availability_windows so
+                              existing partners inherit their old schedule
+                              on this offering; edits from here are what
+                              saveAvailability now generates from. */}
+                          <div style={{marginBottom:14}}>
+                            <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 4px"}}>When it runs</p>
+                            <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 10px",lineHeight:1.5}}>Weekly recurrence for this offering. Slot rows are generated for every time the rule matches.</p>
+                            {(editBuffer?.availability_windows || []).length > 0 && (
+                              <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+                                {(editBuffer.availability_windows || []).map((w, wi) => (
+                                  <div key={wi} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 10px",background:"#fff",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8}}>
+                                    <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",minWidth:36}}>{w.day}</span>
+                                    <span style={{flex:1,fontFamily:F2,fontSize:12,color:"#1B1C19",fontWeight:500}}>{w.start} → {w.end}</span>
+                                    <button type="button" onClick={()=>bufferRemoveWindow(wi)} aria-label="Remove window"
+                                      style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 9px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                                      Remove
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {/* Compact add-window row: day chips + time pickers.
+                                No presets — the offering editor is dense
+                                enough already. Clear day chips to cancel. */}
+                            <div style={{padding:"10px 12px",background:"#fff",border:"1px dashed rgba(33,60,24,0.35)",borderRadius:8}}>
+                              <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"0 0 6px"}}>Add a window</p>
+                              <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:8}}>
+                                {WEEK_DAYS.map(day => {
+                                  const on = newOffWindow.days.includes(day);
+                                  return (
+                                    <button key={day} type="button" onClick={()=>toggleNewOffWindowDay(day)}
+                                      style={{padding:"5px 10px",borderRadius:999,border:`1px solid ${on?"#213C18":"rgba(195,200,188,0.6)"}`,background:on?"#213C18":"#fff",color:on?"#fff":"#1B1C19",fontFamily:F2,fontSize:11,fontWeight:on?700:500,cursor:"pointer"}}>
+                                      {day}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                                <span style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>From</span>
+                                <input type="time" value={newOffWindow.start}
+                                  onChange={e=>setNewOffWindow(p=>({...p,start:e.target.value}))}
+                                  style={{...INP,flex:"0 0 100px",marginBottom:0}}/>
+                                <span style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>to</span>
+                                <input type="time" value={newOffWindow.end}
+                                  onChange={e=>setNewOffWindow(p=>({...p,end:e.target.value}))}
+                                  style={{...INP,flex:"0 0 100px",marginBottom:0}}/>
+                                <button type="button" onClick={commitNewOffWindow}
+                                  disabled={newOffWindow.days.length===0 || newOffWindow.end<=newOffWindow.start}
+                                  style={{padding:"7px 14px",background:(newOffWindow.days.length===0||newOffWindow.end<=newOffWindow.start)?"#E4E2DD":"#213C18",color:(newOffWindow.days.length===0||newOffWindow.end<=newOffWindow.start)?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:(newOffWindow.days.length===0||newOffWindow.end<=newOffWindow.start)?"not-allowed":"pointer"}}>
+                                  Add
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
                           {/* Per-location prices — for multi-venue offerings
                               (e.g. Noor's Private: at studio 30, at home 60).
                               When empty, the offering uses the base price
@@ -7501,6 +7600,17 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                           <span style={{color:"#54584F",fontWeight:400}}>·</span>
                           <span style={{color:"#7A5C32",fontWeight:600}}>request (48h)</span>
                         </>)}
+                        {(() => {
+                          const wc = Array.isArray(off.availability_windows) ? off.availability_windows.length : 0;
+                          if (wc === 0) return (<>
+                            <span style={{color:"#54584F",fontWeight:400}}>·</span>
+                            <span style={{color:"#C46A4D",fontWeight:600}}>no schedule</span>
+                          </>);
+                          return (<>
+                            <span style={{color:"#54584F",fontWeight:400}}>·</span>
+                            <span style={{color:"#54584F",fontWeight:500}}>{wc} window{wc===1?"":"s"}</span>
+                          </>);
+                        })()}
                         {locMinMax && locMinMax.count > 0 && (<>
                           <span style={{color:"#54584F",fontWeight:400}}>·</span>
                           <span style={{color:"#54584F",fontWeight:500}}>{locMinMax.count} location{locMinMax.count===1?"":"s"}</span>
