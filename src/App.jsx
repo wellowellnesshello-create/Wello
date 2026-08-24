@@ -550,10 +550,11 @@ const MALLORCA_CENTROIDS_NORM = (() => {
   }
   return m;
 })();
-// Resolve a biz.loc string to a [lat, lng] centroid. Tries exact-key
-// first, then normalised match, then substring — so real partner
-// rows with "Palma de Mallorca", "Sóller centre", etc. still find the
-// right town.
+// Resolve a location string to a [lat, lng] centroid. Tries exact-key
+// first, then normalised match, then longest-substring match. Used by
+// bizMapCentroid below on both biz.loc (structured) and biz.address
+// (free-form) so a partner whose loc is blank but whose address contains
+// "Palma" still gets pinned at the Palma centroid.
 function centroidForLoc(loc) {
   if (!loc) return null;
   const raw = String(loc);
@@ -568,6 +569,14 @@ function centroidForLoc(loc) {
     if (norm.includes(key) && key.length > bestLen) { best = coords; bestLen = key.length; }
   }
   return best;
+}
+// Two-stage centroid resolution: try biz.loc first (structured field),
+// then scan biz.address (free text) for a town match. Address-based
+// fallback rescues partners whose `location` column is empty or set to
+// something the centroid map doesn't recognise (e.g. "Es Portitxol"),
+// but whose address unambiguously contains a known Mallorca town.
+function bizMapCentroid(biz) {
+  return centroidForLoc(biz?.loc) || centroidForLoc(biz?.address);
 }
 // Coerce a stored numeric field to a real number or null. Guards against
 // the classic Number(null) === 0 trap: without the null-check, a business
@@ -586,7 +595,7 @@ function bizMapPosition(biz) {
   let lat = coerceNumOrNull(biz?.lat);
   let lng = coerceNumOrNull(biz?.lng);
   if (lat == null || lng == null) {
-    const centroid = centroidForLoc(biz?.loc);
+    const centroid = bizMapCentroid(biz);
     if (!centroid) return null;
     lat = centroid[0]; lng = centroid[1];
   }
@@ -2829,11 +2838,12 @@ function ExploreMap({ listings, onSelect }) {
       // Prefer real lat/lng; fall back to the fuzzy-matched centroid so
       // "Palma de Mallorca" and "palma" still land at the Palma point.
       // coerceNumOrNull avoids Number(null)===0 pinning ungeocoded rows
-      // at (0,0) = Null Island.
+      // at (0,0) = Null Island. Centroid fallback tries biz.loc first,
+      // then scans biz.address for a Mallorca town name.
       let lat = coerceNumOrNull(b?.lat);
       let lng = coerceNumOrNull(b?.lng);
       if (lat == null || lng == null) {
-        const centroid = centroidForLoc(b?.loc);
+        const centroid = bizMapCentroid(b);
         if (!centroid) continue;
         lat = centroid[0]; lng = centroid[1];
       }
@@ -2872,7 +2882,7 @@ function ExploreMap({ listings, onSelect }) {
     let lat = coerceNumOrNull(b?.lat);
     let lng = coerceNumOrNull(b?.lng);
     if (lat == null || lng == null) {
-      const centroid = centroidForLoc(b?.loc);
+      const centroid = bizMapCentroid(b);
       if (!centroid) return null;
       lat = centroid[0]; lng = centroid[1];
     }
