@@ -6366,15 +6366,19 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       flashSaveMsg("err", "Your availability couldn't be saved — an RLS policy on the businesses table is blocking the update. Contact hello@wello-wellness.com.");
       return;
     }
-    // Regenerate slot rows: delete previously-generated ones, expand new
-    // windows × offerings. Additive for studios — rows with source='manual'
-    // (from addSlotDb, the wizard, or extract-sessions) are left untouched
-    // so a studio's hand-managed timetable survives an offering-editor
-    // Save. Only offering_gen rows get wiped-and-regenerated.
+    // Regenerate slot rows via upsert-if-missing — NEVER destructive.
+    // For each (name, date, time) triple the rule produces:
+    //   - Missing row → INSERT (source='offering_gen').
+    //   - Existing offering_gen + unbooked row → UPDATE stamped fields
+    //     (credits/spots/venue_side/booking_mode/dur) so rule tweaks
+    //     propagate to unbooked future slots.
+    //   - Existing offering_gen + booked row → LEAVE (customer paid).
+    //   - Existing source='manual' row → LEAVE (partner edited it).
+    // Stale offering_gen rows (rule narrowed, so no matching triple)
+    // are LEFT ALONE. The orphan-cancel nudge in the schedule list is
+    // how partners clear those. A "Regenerate from scratch" button is
+    // the explicit escape hatch when they want the old wipe behaviour.
     if (linkedListingId) {
-      await supabase.from('slots').delete()
-        .eq('listing_id', linkedListingId)
-        .eq('source', 'offering_gen');
       const DAY_IDX = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
       const today = new Date();
       const LEAD_MS = 4 * 24 * 60 * 60 * 1000;
@@ -6463,22 +6467,71 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         }
       }
       if (slotRows.length > 0) {
-        // .select() returns the inserted rows so we can detect the
-        // RLS-silent-zero-rows case (insert succeeds but blocked → 0 rows).
-        const { data: insertedRows, error: insErr } = await supabase
-          .from('slots').insert(slotRows).select('id');
-        if (insErr) {
-          console.error('saveAvailability: slot insert failed', insErr.message);
+        // Pull existing rows fresh so the map isn't stale (dbSlots might
+        // lag if the partner's had the panel open a while).
+        const { data: existingRows, error: exErr } = await supabase
+          .from('slots')
+          .select('id, name, date, time, source, booked')
+          .eq('listing_id', linkedListingId);
+        if (exErr) {
+          console.error('saveAvailability: read existing slots failed', exErr.message);
           setSaving(false);
-          flashSaveMsg("err", "Couldn't insert slots — " + insErr.message);
+          flashSaveMsg("err", "Couldn't read existing slots — " + exErr.message);
           return;
         }
-        if (!insertedRows || insertedRows.length === 0) {
-          console.warn('saveAvailability: 0 slot rows inserted — likely RLS blocking. Check the "Partners can insert own slots" policy on slots.');
-          setSaving(false);
-          flashSaveMsg("err", "Slots couldn't be saved — your DB needs the slots INSERT policy keyed to user_id.");
-          return;
+        const existingMap = new Map();
+        for (const r of (existingRows || [])) {
+          existingMap.set(`${r.name}|${r.date}|${r.time}`, r);
         }
+        const toInsert = [];
+        const toUpdate = [];
+        for (const row of slotRows) {
+          const ex = existingMap.get(`${row.name}|${row.date}|${row.time}`);
+          if (!ex) { toInsert.push(row); continue; }
+          // Row exists. Refresh stamped fields only when it's still
+          // offering-generated and unbooked. Manual edits and booked
+          // rows are protected — the partner (or their customers) own
+          // those values.
+          if (ex.source === 'offering_gen' && (ex.booked || 0) === 0) {
+            toUpdate.push({
+              id: ex.id,
+              patch: {
+                spots:        row.spots,
+                credits:      row.credits,
+                venue_side:   row.venue_side,
+                booking_mode: row.booking_mode,
+                dur:          row.dur,
+              },
+            });
+          }
+        }
+        let insertedCount = 0;
+        if (toInsert.length > 0) {
+          const { data: insertedRows, error: insErr } = await supabase
+            .from('slots').insert(toInsert).select('id');
+          if (insErr) {
+            console.error('saveAvailability: slot insert failed', insErr.message);
+            setSaving(false);
+            flashSaveMsg("err", "Couldn't insert slots — " + insErr.message);
+            return;
+          }
+          if (!insertedRows || insertedRows.length === 0) {
+            console.warn('saveAvailability: 0 slot rows inserted — likely RLS blocking. Check the "Partners can insert own slots" policy on slots.');
+            setSaving(false);
+            flashSaveMsg("err", "Slots couldn't be saved — your DB needs the slots INSERT policy keyed to user_id.");
+            return;
+          }
+          insertedCount = insertedRows.length;
+        }
+        let updatedCount = 0;
+        for (const u of toUpdate) {
+          const { error: updErr } = await supabase.from('slots').update(u.patch).eq('id', u.id);
+          if (updErr) console.warn('slot refresh failed', u.id, updErr.message);
+          else updatedCount += 1;
+        }
+        // Stash the counts on the msg for the flash below (falls through
+        // the setSaving/flash at the bottom of saveAvailability).
+        window.__lastRegenSummary = { insertedCount, updatedCount };
         // Re-pull dbSlots so the UI reflects the new state without a refresh.
         const { data: rows } = await supabase
           .from('slots').select('*').eq('listing_id', linkedListingId).order('date').order('time');
@@ -6488,8 +6541,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       }
     }
     setSaving(false);
-    const slotCount = (dbSlots && dbSlots.length) || 0;
-    flashSaveMsg("settings", `Availability saved. ${availabilityWindows.length} window${availabilityWindows.length === 1 ? '' : 's'} live · ${slotCount} bookable slot${slotCount === 1 ? '' : 's'} generated.`);
+    const summary = window.__lastRegenSummary || { insertedCount: 0, updatedCount: 0 };
+    window.__lastRegenSummary = null;
+    const parts = [];
+    if (summary.insertedCount > 0) parts.push(`${summary.insertedCount} new slot${summary.insertedCount === 1 ? '' : 's'}`);
+    if (summary.updatedCount  > 0) parts.push(`${summary.updatedCount} refreshed`);
+    const detail = parts.length > 0 ? parts.join(' · ') : 'no changes';
+    flashSaveMsg("settings", `Availability saved. ${detail}. Existing bookings and hand-edited slots untouched.`);
   }
 
   async function goLive() {
