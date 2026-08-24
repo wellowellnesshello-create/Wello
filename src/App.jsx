@@ -134,7 +134,7 @@ const T = {
 
 // ─── Credit system ────────────────────────────────────────────────────────────
 // 1 credit = €1 face value. Service fee: 10% at credit purchase, max €5.
-// Credits are 1:1 with £/€. Venues set their own price.
+// Venues set their own euro price; credits track it 1:1.
 // Your pass is valid for 6 months from top-up.
 const BUNDLES = [
   { id:"wellolife", name:"Wello Life", cr:250, price:237.50, fullPrice:250, desc:"For those who make wellness part of island life.", badge:"5% off", popular:true },
@@ -142,7 +142,7 @@ const BUNDLES = [
 const BOOKING_FEE_PCT = 0.10; // 10% of credit purchase value, max €5, charged at purchase not per booking
 
 // Credit pricing — 1 credit = €1 face value.
-// Venues set their own £ price. Credits = price in £ (1:1).
+// Venues set their own euro price. Credits = price in € (1:1).
 // Market reference: Yoga €20 = 20cr · Gym day pass €15 = 15cr · Spa 60min €60 = 60cr
 const CREDIT_PRICING = [
   { cat:"Yoga class",        offPeak:"20 credits (€20)", peak:"25 credits (€25)", example:"Drop-in classes, studios" },
