@@ -12090,21 +12090,45 @@ function AdminSetupPage() {
   const [backfillMsg,  setBackfillMsg]  = useState('');
   async function runGeocodeBackfill() {
     if (backfillBusy) return;
-    setBackfillBusy(true); setBackfillMsg('');
+    setBackfillBusy(true); setBackfillMsg('Starting…');
+    let totalProcessed = 0, totalOk = 0, totalFail = 0, safety = 20;
     try {
-      const { data, error } = await supabase.functions.invoke('backfill-geocodes', { body: { force: true } });
-      if (error) { setBackfillMsg(`Error: ${error.message}`); return; }
-      if (data?.error) { setBackfillMsg(`Error: ${data.error}`); return; }
-      const p = data?.processed ?? 0;
-      const s = data?.succeeded ?? 0;
-      const f = data?.failed ?? 0;
-      setBackfillMsg(`Processed ${p} · succeeded ${s} · failed ${f}. Refresh to see updated pins.`);
-      // Also refresh the local businesses list so the ⚠︎ flags update
-      // without a full page reload.
+      // Loop small batches until the server reports remaining === 0.
+      // Safety cap of 20 iterations (up to 160 rows) so a bug doesn't
+      // cause a runaway.
+      while (safety-- > 0) {
+        const { data, error } = await supabase.functions.invoke('backfill-geocodes', { body: { force: true, limit: 8 } });
+        if (error) {
+          // Surface the real edge-fn response body — Supabase JS's
+          // FunctionsHttpError just carries a generic message otherwise.
+          let detail = error.message || 'invoke failed';
+          try {
+            const ctx = error.context;
+            if (ctx && typeof ctx.text === 'function') {
+              const body = await ctx.text();
+              if (body) detail = `${detail} — ${body}`;
+            }
+          } catch { /* fall through */ }
+          setBackfillMsg(`Error after ${totalProcessed} processed: ${detail}`);
+          console.error('backfill-geocodes error', error);
+          return;
+        }
+        if (data?.error) { setBackfillMsg(`Error after ${totalProcessed} processed: ${data.error}`); return; }
+        const p = data?.processed ?? 0;
+        const s = data?.succeeded ?? 0;
+        const f = data?.failed ?? 0;
+        const remaining = data?.remaining ?? 0;
+        totalProcessed += p; totalOk += s; totalFail += f;
+        setBackfillMsg(`Processed ${totalProcessed} · succeeded ${totalOk} · failed ${totalFail}${remaining > 0 ? ` · ${remaining} still to go…` : ''}`);
+        if (p === 0 || remaining === 0) break;
+      }
+      setBackfillMsg(`Done. Processed ${totalProcessed} · succeeded ${totalOk} · failed ${totalFail}. Refresh the map to see updated pins.`);
+      // Refresh the local business list so ⚠︎ flags update in place.
       const { data: refreshed } = await supabase.functions.invoke('admin-businesses', { body: { op: 'list' } });
       if (Array.isArray(refreshed?.businesses)) setBusinesses(refreshed.businesses);
     } catch (e) {
-      setBackfillMsg(`Error: ${e?.message || 'invoke failed'}`);
+      setBackfillMsg(`Error after ${totalProcessed} processed: ${e?.message || 'invoke failed'}`);
+      console.error('backfill-geocodes exception', e);
     } finally {
       setBackfillBusy(false);
     }

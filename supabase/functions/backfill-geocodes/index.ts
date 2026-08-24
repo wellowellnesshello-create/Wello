@@ -101,23 +101,32 @@ serve(async (req) => {
   const gate = await requireAdmin(req)
   if (!gate.ok) return gate.response
 
-  let body: { force?: boolean } = {}
+  let body: { force?: boolean; limit?: number } = {}
   try { body = await req.json() } catch { /* empty body is fine */ }
   const force = !!body.force
+  // Cap the batch so we don't run into Supabase edge-fn wall-time
+  // limits. 8 × 4 variants × 1.1s per call ≈ 35s, comfortably under
+  // even the tightest cap. Client loops the invocation until
+  // `remaining === 0`.
+  const limitRaw = Number(body.limit)
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0 && limitRaw <= 50 ? Math.floor(limitRaw) : 8
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
 
-  // Pull the work queue up front — we don't want the row set to shift
-  // under us as saveSettings calls in parallel add/remove candidates.
-  let q = supabase.from('businesses').select('id, address, geocoded_from, geocode_failed').not('address', 'is', null)
+  // Pull the queue with an oversized limit so we can compute a
+  // remaining count for the client without a second query.
+  let q = supabase.from('businesses').select('id, address, geocoded_from, geocode_failed').not('address', 'is', null).order('id')
   if (!force) q = q.is('geocoded_from', null)
-  const { data: rows, error } = await q
+  const { data: rows, error } = await q.limit(limit + 100)
   if (error) return json({ error: error.message }, 500)
 
+  const batch = (rows || []).slice(0, limit)
+  const remaining = Math.max(0, (rows || []).length - batch.length)
+
   const results: Array<{ id: number; ok: boolean; reason?: string }> = []
-  for (const row of (rows || [])) {
+  for (const row of batch) {
     const address = String(row.address || '').trim()
     if (address.length < 4) {
       results.push({ id: row.id, ok: false, reason: 'address_too_short' })
@@ -138,6 +147,8 @@ serve(async (req) => {
     processed: results.length,
     succeeded: results.filter(r => r.ok).length,
     failed:    results.filter(r => !r.ok).length,
+    remaining,
+    batch_size: limit,
     results,
   })
 })
