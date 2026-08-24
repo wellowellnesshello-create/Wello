@@ -526,15 +526,57 @@ const MALLORCA_CENTROIDS = {
 // centroid map so the map+overlay stay consistent — if we change one,
 // change both. left=lngMin, bottom=latMin, right=lngMax, top=latMax.
 const MAP_BBOX = { lngMin: 2.3, latMin: 39.2, lngMax: 3.4, latMax: 40.1 };
+// Normalise a location string for centroid lookup: lowercase, strip
+// diacritics, drop punctuation, and remove the common suffixes real
+// partner rows carry ("de Mallorca", "Illes Balears", trailing country
+// suffixes). Prevents "Palma de Mallorca" and "palma" and "Palma"
+// from all resolving to different keys.
+function normalizeLocKey(s) {
+  if (!s) return '';
+  return String(s)
+    .toLowerCase()
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .replace(/,?\s*(de\s+mallorca|illes?\s+balears?|balearic\s+islands?|mallorca|spain|espana)\b/g, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+// Precompute a normalized-key centroid map so lookup is O(1). Includes
+// each MALLORCA_LOCATIONS entry under its normalized form.
+const MALLORCA_CENTROIDS_NORM = (() => {
+  const m = {};
+  for (const [area, coords] of Object.entries(MALLORCA_CENTROIDS)) {
+    m[normalizeLocKey(area)] = coords;
+  }
+  return m;
+})();
+// Resolve a biz.loc string to a [lat, lng] centroid. Tries exact-key
+// first, then normalised match, then substring — so real partner
+// rows with "Palma de Mallorca", "Sóller centre", etc. still find the
+// right town.
+function centroidForLoc(loc) {
+  if (!loc) return null;
+  const raw = String(loc);
+  if (MALLORCA_CENTROIDS[raw]) return MALLORCA_CENTROIDS[raw];
+  const norm = normalizeLocKey(raw);
+  if (!norm) return null;
+  if (MALLORCA_CENTROIDS_NORM[norm]) return MALLORCA_CENTROIDS_NORM[norm];
+  // Substring pass — pick the longest match so "port de pollenca" wins
+  // over "pollenca" when both appear in a compound loc string.
+  let best = null; let bestLen = 0;
+  for (const [key, coords] of Object.entries(MALLORCA_CENTROIDS_NORM)) {
+    if (norm.includes(key) && key.length > bestLen) { best = coords; bestLen = key.length; }
+  }
+  return best;
+}
 // Return {leftPct, topPct} for a biz on the map, or null if we can't
 // place it. Prefers biz.lat/biz.lng when set (future-geocoded rows),
-// falls back to MALLORCA_CENTROIDS[biz.loc]. Returns null when the loc
-// is unknown so the pin is silently omitted rather than pinned to (0,0).
+// falls back to the centroid resolver on biz.loc.
 function bizMapPosition(biz) {
   let lat = Number.isFinite(Number(biz?.lat)) ? Number(biz.lat) : null;
   let lng = Number.isFinite(Number(biz?.lng)) ? Number(biz.lng) : null;
   if (lat == null || lng == null) {
-    const centroid = MALLORCA_CENTROIDS[biz?.loc];
+    const centroid = centroidForLoc(biz?.loc);
     if (!centroid) return null;
     lat = centroid[0]; lng = centroid[1];
   }
@@ -2774,15 +2816,12 @@ function ExploreMap({ listings, onSelect }) {
     layer.clearLayers();
     const bounds = [];
     for (const b of (listings || [])) {
-      const pos = bizMapPosition(b);
-      if (!pos) continue;
-      // bizMapPosition returns leftPct/topPct for the old iframe overlay,
-      // but its inputs are the real lat/lng. Re-derive them here so the
-      // Leaflet marker sits at the right geo coordinate.
+      // Prefer real lat/lng; fall back to the fuzzy-matched centroid so
+      // "Palma de Mallorca" and "palma" still land at the Palma point.
       let lat = Number.isFinite(Number(b?.lat)) ? Number(b.lat) : null;
       let lng = Number.isFinite(Number(b?.lng)) ? Number(b.lng) : null;
       if (lat == null || lng == null) {
-        const centroid = MALLORCA_CENTROIDS[b?.loc];
+        const centroid = centroidForLoc(b?.loc);
         if (!centroid) continue;
         lat = centroid[0]; lng = centroid[1];
       }
@@ -2818,7 +2857,7 @@ function ExploreMap({ listings, onSelect }) {
         let lat = Number.isFinite(Number(b?.lat)) ? Number(b.lat) : null;
         let lng = Number.isFinite(Number(b?.lng)) ? Number(b.lng) : null;
         if (lat == null || lng == null) {
-          const centroid = MALLORCA_CENTROIDS[b?.loc];
+          const centroid = centroidForLoc(b?.loc);
           if (!centroid) return false;
           lat = centroid[0]; lng = centroid[1];
         }
@@ -2836,10 +2875,12 @@ function ExploreMap({ listings, onSelect }) {
           <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:0}}>Map failed to load. Try refreshing.</p>
         </div>
       )}
-      {/* Venue sidebar — same list as before, now purely as a scroll-to
-          companion. Sits above the tiles via zIndex; won't block map
-          panning because it's a small pinned panel. */}
-      <div style={{position:"absolute",top:12,left:12,background:"rgba(255,255,255,0.95)",backdropFilter:"blur(8px)",borderRadius:12,padding:"12px 16px",maxHeight:480,overflowY:"auto",width:220,boxShadow:"0 4px 20px rgba(0,0,0,0.1)",zIndex:500}}>
+      {/* Venue sidebar — top-right so it doesn't overlap Leaflet's
+          zoom controls (which sit top-left by default at zIndex ~1000).
+          zIndex above the Leaflet control pane guarantees the sidebar
+          isn't hidden by any additional controls a future refactor
+          might add on the right. */}
+      <div style={{position:"absolute",top:12,right:12,background:"rgba(255,255,255,0.95)",backdropFilter:"blur(8px)",borderRadius:12,padding:"12px 16px",maxHeight:480,overflowY:"auto",width:220,boxShadow:"0 4px 20px rgba(0,0,0,0.1)",zIndex:1100}}>
         <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 4px"}}>{visibleListings.length} venue{visibleListings.length===1?"":"s"} in view</p>
         {visibleListings.length !== listings.length && (
           <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:"0 0 10px",fontStyle:"italic"}}>{listings.length - visibleListings.length} more outside — pan or zoom out to see them.</p>
