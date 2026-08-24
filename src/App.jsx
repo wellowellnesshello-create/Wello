@@ -569,12 +569,22 @@ function centroidForLoc(loc) {
   }
   return best;
 }
+// Coerce a stored numeric field to a real number or null. Guards against
+// the classic Number(null) === 0 trap: without the null-check, a business
+// with lat=null / lng=null would map to (0, 0) — Null Island in the Gulf
+// of Guinea, i.e. "west of Africa" on the map. Also rejects empty strings
+// and non-finite values.
+function coerceNumOrNull(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
 // Return {leftPct, topPct} for a biz on the map, or null if we can't
 // place it. Prefers biz.lat/biz.lng when set (future-geocoded rows),
 // falls back to the centroid resolver on biz.loc.
 function bizMapPosition(biz) {
-  let lat = Number.isFinite(Number(biz?.lat)) ? Number(biz.lat) : null;
-  let lng = Number.isFinite(Number(biz?.lng)) ? Number(biz.lng) : null;
+  let lat = coerceNumOrNull(biz?.lat);
+  let lng = coerceNumOrNull(biz?.lng);
   if (lat == null || lng == null) {
     const centroid = centroidForLoc(biz?.loc);
     if (!centroid) return null;
@@ -2818,8 +2828,10 @@ function ExploreMap({ listings, onSelect }) {
     for (const b of (listings || [])) {
       // Prefer real lat/lng; fall back to the fuzzy-matched centroid so
       // "Palma de Mallorca" and "palma" still land at the Palma point.
-      let lat = Number.isFinite(Number(b?.lat)) ? Number(b.lat) : null;
-      let lng = Number.isFinite(Number(b?.lng)) ? Number(b.lng) : null;
+      // coerceNumOrNull avoids Number(null)===0 pinning ungeocoded rows
+      // at (0,0) = Null Island.
+      let lat = coerceNumOrNull(b?.lat);
+      let lng = coerceNumOrNull(b?.lng);
       if (lat == null || lng == null) {
         const centroid = centroidForLoc(b?.loc);
         if (!centroid) continue;
@@ -2854,8 +2866,8 @@ function ExploreMap({ listings, onSelect }) {
   // one-frame flash of "0 venues" before bounds land).
   const visibleListings = mapBounds
     ? listings.filter(b => {
-        let lat = Number.isFinite(Number(b?.lat)) ? Number(b.lat) : null;
-        let lng = Number.isFinite(Number(b?.lng)) ? Number(b.lng) : null;
+        let lat = coerceNumOrNull(b?.lat);
+        let lng = coerceNumOrNull(b?.lng);
         if (lat == null || lng == null) {
           const centroid = centroidForLoc(b?.loc);
           if (!centroid) return false;
@@ -13745,9 +13757,10 @@ export default function App() {
         address:   row.businesses?.address   || row.address   || "",
         // Optional lat/lng from the businesses row for map pin positioning.
         // Nullable — the map pin falls back to the town centroid keyed on
-        // `loc` when unset. Written once we wire geocoding on address save.
-        lat:       Number.isFinite(Number(row.businesses?.lat)) ? Number(row.businesses.lat) : null,
-        lng:       Number.isFinite(Number(row.businesses?.lng)) ? Number(row.businesses.lng) : null,
+        // `loc` when unset. Explicit null guard: Number(null) === 0 would
+        // otherwise pin every ungeocoded row at (0, 0) = Gulf of Guinea.
+        lat:       (row.businesses?.lat != null && row.businesses.lat !== '' && Number.isFinite(Number(row.businesses.lat))) ? Number(row.businesses.lat) : null,
+        lng:       (row.businesses?.lng != null && row.businesses.lng !== '' && Number.isFinite(Number(row.businesses.lng))) ? Number(row.businesses.lng) : null,
         phone:     row.businesses?.phone     || row.phone     || "",
         website:   row.businesses?.website   || row.website   || "",
         instagram: row.businesses?.instagram || row.instagram || "",
