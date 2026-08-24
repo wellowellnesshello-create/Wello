@@ -5887,6 +5887,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     setAvailabilityWindows(prev => prev.map((w, i) => i === idx ? { ...w, ...patch } : w));
   }
   function removeAvailabilityWindow(idx) {
+    const w = availabilityWindows[idx];
+    if (!w) return;
+    if (!window.confirm(`Remove the ${w.day} ${w.start} → ${w.end} window? The removal isn't persisted until you click Save availability below.`)) return;
     setAvailabilityWindows(prev => prev.filter((_, i) => i !== idx));
   }
 
