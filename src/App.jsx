@@ -6201,25 +6201,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     setBizData(prev => ({ ...prev, gallery: next }));
   }
   // Per-offering photo upload. `idx` addresses into dashSessionOfferings.
-  // Persists the full array back to businesses.session_offerings so the
-  // per-offering img is picked up by BizPanel + any downstream consumers
-  // on the next fetch. Small local busy-index so a partner uploading one
-  // offering photo doesn't blank the whole panel.
+  // Two-phase (Edit → Save): pickOfferingPhoto stages the file in local
+  // state; saveOfferingPhoto uploads + persists on explicit Save. Cancel
+  // discards. Small busy-index so a save doesn't blank the whole panel.
   const [offeringPhotoBusy, setOfferingPhotoBusy] = useState(null); // idx | null
-  async function handleOfferingPhotoUpload(idx, e) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setPhotoErr(""); setOfferingPhotoBusy(idx);
-    const { url, error } = await uploadPhotoFile(file, `offering-${idx}`);
-    if (error) { setOfferingPhotoBusy(null); setPhotoErr("Couldn't upload class photo. " + error); return; }
-    const next = dashSessionOfferings.map((o, i) => i === idx ? { ...o, img: url } : o);
-    setDashSessionOfferings(next);
-    await supabase.from('businesses').update({ session_offerings: next }).eq('id', bizData.id);
-    setBizData(prev => ({ ...prev, session_offerings: next }));
-    setOfferingPhotoBusy(null);
-  }
   async function removeOfferingPhoto(idx) {
+    const off = dashSessionOfferings[idx];
+    if (!window.confirm(`Remove the photo for "${off?.type || 'this offering'}"? The offering row will fall back to your primary venue photo.`)) return;
     const next = dashSessionOfferings.map((o, i) => i === idx ? { ...o, img: null } : o);
     setDashSessionOfferings(next);
     await supabase.from('businesses').update({ session_offerings: next }).eq('id', bizData.id);
@@ -6232,10 +6220,52 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // stays the raw class name so BizPanel lookup is a direct
   // class_photos[slot.name] without any name normalisation.
   const [classPhotoBusy, setClassPhotoBusy] = useState(null); // className | null
-  async function handleClassPhotoUpload(className, e) {
+  // Pending photo pick — file lives in local state until Save. Preview
+  // uses a temporary blob URL (revoked when the pending clears).
+  // Cancel discards the pick without touching Supabase or Storage.
+  const [pendingOfferingPhoto, setPendingOfferingPhoto] = useState(null); // { idx, file, previewUrl } | null
+  const [pendingClassPhoto,    setPendingClassPhoto]    = useState(null); // { className, file, previewUrl } | null
+  function pickOfferingPhoto(idx, e) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    if (pendingOfferingPhoto?.previewUrl) URL.revokeObjectURL(pendingOfferingPhoto.previewUrl);
+    setPendingOfferingPhoto({ idx, file, previewUrl: URL.createObjectURL(file) });
+    setPhotoErr("");
+  }
+  function pickClassPhoto(className, e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (pendingClassPhoto?.previewUrl) URL.revokeObjectURL(pendingClassPhoto.previewUrl);
+    setPendingClassPhoto({ className, file, previewUrl: URL.createObjectURL(file) });
+    setPhotoErr("");
+  }
+  function cancelOfferingPhoto() {
+    if (pendingOfferingPhoto?.previewUrl) URL.revokeObjectURL(pendingOfferingPhoto.previewUrl);
+    setPendingOfferingPhoto(null);
+  }
+  function cancelClassPhoto() {
+    if (pendingClassPhoto?.previewUrl) URL.revokeObjectURL(pendingClassPhoto.previewUrl);
+    setPendingClassPhoto(null);
+  }
+  async function saveOfferingPhoto() {
+    if (!pendingOfferingPhoto) return;
+    const { idx, file, previewUrl } = pendingOfferingPhoto;
+    setPhotoErr(""); setOfferingPhotoBusy(idx);
+    const { url, error } = await uploadPhotoFile(file, `offering-${idx}`);
+    if (error) { setOfferingPhotoBusy(null); setPhotoErr("Couldn't upload class photo. " + error); return; }
+    const next = dashSessionOfferings.map((o, i) => i === idx ? { ...o, img: url } : o);
+    setDashSessionOfferings(next);
+    await supabase.from('businesses').update({ session_offerings: next }).eq('id', bizData.id);
+    setBizData(prev => ({ ...prev, session_offerings: next }));
+    setOfferingPhotoBusy(null);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPendingOfferingPhoto(null);
+  }
+  async function saveClassPhoto() {
+    if (!pendingClassPhoto) return;
+    const { className, file, previewUrl } = pendingClassPhoto;
     setPhotoErr(""); setClassPhotoBusy(className);
     const safeSlug = String(className).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'class';
     const { url, error } = await uploadPhotoFile(file, `class-${safeSlug}`);
@@ -6245,8 +6275,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     await supabase.from('businesses').update({ class_photos: next }).eq('id', bizData.id);
     setBizData(prev => ({ ...prev, class_photos: next }));
     setClassPhotoBusy(null);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPendingClassPhoto(null);
   }
   async function removeClassPhoto(className) {
+    if (!window.confirm(`Remove the photo for "${className}"? The class row will fall back to your primary venue photo.`)) return;
     const next = { ...dashClassPhotos };
     delete next[className];
     setDashClassPhotos(next);
@@ -7912,27 +7945,50 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   {dashSessionOfferings.map((off, idx) => {
                     const thumb = off?.img || null;
                     const busy = offeringPhotoBusy === idx;
+                    // If a file is pending for THIS offering, show the
+                    // preview instead of the current thumb + expose Save
+                    // and Cancel. Save uploads + persists; Cancel discards
+                    // without touching Storage or the DB.
+                    const pending = pendingOfferingPhoto?.idx === idx ? pendingOfferingPhoto : null;
+                    const displayThumb = pending ? pending.previewUrl : thumb;
                     return (
-                      <div key={idx} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 10px",background:"#F5F3EE",borderRadius:8}}>
+                      <div key={idx} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 10px",background:pending?"#F0EEE9":"#F5F3EE",borderRadius:8,border:pending?"1px solid rgba(33,60,24,0.2)":"none"}}>
                         <div style={{width:56,height:56,borderRadius:6,overflow:"hidden",background:"#E4E2DD",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",border:"1px solid rgba(195,200,188,0.5)"}}>
-                          {thumb
-                            ? <img src={thumb} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                          {displayThumb
+                            ? <img src={displayThumb} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
                             : <span style={{fontFamily:F2,fontSize:9,fontWeight:700,color:"#A3B18A",letterSpacing:"0.5px",textAlign:"center",padding:"0 4px"}}>NO PHOTO</span>}
                         </div>
                         <div style={{flex:1,minWidth:0}}>
                           <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:"0 0 2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{off.type}</p>
-                          <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0}}>{off.length_min} min · €{off.price_eur}</p>
+                          <p style={{fontFamily:F2,fontSize:11,color:pending?"#7A5C32":"#54584F",margin:0,fontStyle:pending?"italic":"normal"}}>
+                            {pending ? "New photo selected — click Save to upload." : `${off.length_min} min · €${off.price_eur}`}
+                          </p>
                         </div>
                         <div style={{display:"flex",gap:6,flexShrink:0}}>
-                          <label style={{padding:"6px 12px",background:busy?"#E4E2DD":"#213C18",color:busy?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:busy?"not-allowed":"pointer",letterSpacing:"0.3px"}}>
-                            {busy ? "Uploading…" : (thumb ? "Replace" : "Add photo")}
-                            <input type="file" accept="image/*" onChange={(e)=>handleOfferingPhotoUpload(idx,e)} style={{display:"none"}} disabled={busy}/>
-                          </label>
-                          {thumb && !busy && (
-                            <button type="button" onClick={()=>removeOfferingPhoto(idx)}
-                              style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"6px 10px",borderRadius:6,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
-                              Remove
-                            </button>
+                          {pending ? (
+                            <>
+                              <button type="button" onClick={cancelOfferingPhoto} disabled={busy}
+                                style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:11,fontWeight:500,cursor:busy?"not-allowed":"pointer",padding:"6px 10px"}}>
+                                Cancel
+                              </button>
+                              <button type="button" onClick={saveOfferingPhoto} disabled={busy}
+                                style={{padding:"6px 14px",background:busy?"#E4E2DD":"#213C18",color:busy?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:busy?"wait":"pointer",letterSpacing:"0.3px"}}>
+                                {busy ? "Saving…" : "Save"}
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <label style={{padding:"6px 12px",background:busy?"#E4E2DD":"#213C18",color:busy?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:busy?"not-allowed":"pointer",letterSpacing:"0.3px"}}>
+                                {thumb ? "Replace" : "Add photo"}
+                                <input type="file" accept="image/*" onChange={(e)=>pickOfferingPhoto(idx,e)} style={{display:"none"}} disabled={busy}/>
+                              </label>
+                              {thumb && !busy && (
+                                <button type="button" onClick={()=>removeOfferingPhoto(idx)}
+                                  style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"6px 10px",borderRadius:6,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                                  Remove
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>
@@ -8366,27 +8422,49 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                       const thumb = dashClassPhotos[name] || null;
                       const busy = classPhotoBusy === name;
                       const slotCount = rawSlots.filter(s => (s?.name || '').trim() === name).length;
+                      // If a file is pending for THIS class, show preview
+                      // + Save/Cancel. Same Edit → Save pattern as the
+                      // Offering photos panel above.
+                      const pending = pendingClassPhoto?.className === name ? pendingClassPhoto : null;
+                      const displayThumb = pending ? pending.previewUrl : thumb;
                       return (
-                        <div key={name} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 10px",background:"#F5F3EE",borderRadius:8}}>
+                        <div key={name} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 10px",background:pending?"#F0EEE9":"#F5F3EE",borderRadius:8,border:pending?"1px solid rgba(33,60,24,0.2)":"none"}}>
                           <div style={{width:56,height:56,borderRadius:6,overflow:"hidden",background:"#E4E2DD",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",border:"1px solid rgba(195,200,188,0.5)"}}>
-                            {thumb
-                              ? <img src={thumb} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                            {displayThumb
+                              ? <img src={displayThumb} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
                               : <span style={{fontFamily:F2,fontSize:9,fontWeight:700,color:"#A3B18A",letterSpacing:"0.5px",textAlign:"center",padding:"0 4px"}}>NO PHOTO</span>}
                           </div>
                           <div style={{flex:1,minWidth:0}}>
                             <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:"0 0 2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</p>
-                            <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0}}>{slotCount} slot{slotCount === 1 ? '' : 's'} on the timetable</p>
+                            <p style={{fontFamily:F2,fontSize:11,color:pending?"#7A5C32":"#54584F",margin:0,fontStyle:pending?"italic":"normal"}}>
+                              {pending ? "New photo selected — click Save to upload." : `${slotCount} slot${slotCount === 1 ? '' : 's'} on the timetable`}
+                            </p>
                           </div>
                           <div style={{display:"flex",gap:6,flexShrink:0}}>
-                            <label style={{padding:"6px 12px",background:busy?"#E4E2DD":"#213C18",color:busy?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:busy?"not-allowed":"pointer",letterSpacing:"0.3px"}}>
-                              {busy ? "Uploading…" : (thumb ? "Replace" : "Add photo")}
-                              <input type="file" accept="image/*" onChange={(e)=>handleClassPhotoUpload(name, e)} style={{display:"none"}} disabled={busy}/>
-                            </label>
-                            {thumb && !busy && (
-                              <button type="button" onClick={()=>removeClassPhoto(name)}
-                                style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"6px 10px",borderRadius:6,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
-                                Remove
-                              </button>
+                            {pending ? (
+                              <>
+                                <button type="button" onClick={cancelClassPhoto} disabled={busy}
+                                  style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:11,fontWeight:500,cursor:busy?"not-allowed":"pointer",padding:"6px 10px"}}>
+                                  Cancel
+                                </button>
+                                <button type="button" onClick={saveClassPhoto} disabled={busy}
+                                  style={{padding:"6px 14px",background:busy?"#E4E2DD":"#213C18",color:busy?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:busy?"wait":"pointer",letterSpacing:"0.3px"}}>
+                                  {busy ? "Saving…" : "Save"}
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <label style={{padding:"6px 12px",background:busy?"#E4E2DD":"#213C18",color:busy?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:busy?"not-allowed":"pointer",letterSpacing:"0.3px"}}>
+                                  {thumb ? "Replace" : "Add photo"}
+                                  <input type="file" accept="image/*" onChange={(e)=>pickClassPhoto(name, e)} style={{display:"none"}} disabled={busy}/>
+                                </label>
+                                {thumb && !busy && (
+                                  <button type="button" onClick={()=>removeClassPhoto(name)}
+                                    style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"6px 10px",borderRadius:6,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                                    Remove
+                                  </button>
+                                )}
+                              </>
                             )}
                           </div>
                         </div>
