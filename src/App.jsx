@@ -9747,6 +9747,35 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
     else if (!data?.length) console.warn('saveProgress: 0 rows updated — check RLS allows partner to update own row');
     else console.log('saveProgress ok, fields saved:', Object.keys(updates).join(', '));
     setSaving(false);
+    // Immediate best-effort geocode when the address changed. The DB
+    // trigger (business_address_flag_geocode) already clears
+    // geocoded_from + lat/lng in the same transaction, so the pg_cron
+    // backfill will pick this row up on its next tick regardless. This
+    // invoke exists purely so a new partner's pin lands within seconds
+    // rather than up to 5 minutes.
+    if (!error && data?.length && updates.address !== undefined) {
+      const nextAddr = String(updates.address || '').trim();
+      const prevAddr = String(bizData.address || '').trim();
+      if (nextAddr && nextAddr !== prevAddr) {
+        try {
+          const { data: geo } = await supabase.functions.invoke('geocode-address', {
+            body: { address: nextAddr },
+          });
+          if (geo?.ok) {
+            await supabase.from('businesses')
+              .update({ lat: geo.lat, lng: geo.lng, geocoded_from: nextAddr, geocode_failed: false })
+              .eq('id', bizData.id);
+          } else {
+            await supabase.from('businesses')
+              .update({ geocoded_from: nextAddr, geocode_failed: true })
+              .eq('id', bizData.id);
+          }
+        } catch (e) {
+          // Cron is the safety net — silent failure is fine here.
+          console.warn('wizard geocode invoke failed (cron will retry):', e?.message);
+        }
+      }
+    }
   }
 
   // Pre-cropped blob upload (used after the SquareCropModal returns a blob).
