@@ -12082,6 +12082,33 @@ function AdminSetupPage() {
   const [businesses, setBusinesses] = useState([]);
   const [businessId, setBusinessId] = useState('');
   const [bizRow, setBizRow] = useState(null);
+  // Geocode backfill trigger — re-attempts every previously-failed row
+  // through the Nominatim variant cascade in geocode-address. Force=true
+  // so rows that already have geocoded_from set (i.e. we tried once and
+  // failed) get retried, not just the fresh unattempted ones.
+  const [backfillBusy, setBackfillBusy] = useState(false);
+  const [backfillMsg,  setBackfillMsg]  = useState('');
+  async function runGeocodeBackfill() {
+    if (backfillBusy) return;
+    setBackfillBusy(true); setBackfillMsg('');
+    try {
+      const { data, error } = await supabase.functions.invoke('backfill-geocodes', { body: { force: true } });
+      if (error) { setBackfillMsg(`Error: ${error.message}`); return; }
+      if (data?.error) { setBackfillMsg(`Error: ${data.error}`); return; }
+      const p = data?.processed ?? 0;
+      const s = data?.succeeded ?? 0;
+      const f = data?.failed ?? 0;
+      setBackfillMsg(`Processed ${p} · succeeded ${s} · failed ${f}. Refresh to see updated pins.`);
+      // Also refresh the local businesses list so the ⚠︎ flags update
+      // without a full page reload.
+      const { data: refreshed } = await supabase.functions.invoke('admin-businesses', { body: { op: 'list' } });
+      if (Array.isArray(refreshed?.businesses)) setBusinesses(refreshed.businesses);
+    } catch (e) {
+      setBackfillMsg(`Error: ${e?.message || 'invoke failed'}`);
+    } finally {
+      setBackfillBusy(false);
+    }
+  }
   const [inputMode, setInputMode] = useState('file'); // 'file' | 'text'
   const [file, setFile] = useState(null);
   const [text, setText] = useState('');
@@ -12752,9 +12779,18 @@ function AdminSetupPage() {
             const bad = businesses.filter(b => b.geocode_failed === true || (b.address && !b.geocoded_from));
             if (bad.length === 0) return null;
             return (
-              <p style={{ fontSize: 11, color: '#7A5C32', margin: '6px 0 0' }}>
-                <strong>{bad.length}</strong> business{bad.length===1?'':'es'} need attention on address / geocoding — flagged with ⚠︎ above. Fix the address in the partner dashboard (or contact the partner) and it re-geocodes on save.
-              </p>
+              <div style={{ margin: '6px 0 0' }}>
+                <p style={{ fontSize: 11, color: '#7A5C32', margin: 0 }}>
+                  <strong>{bad.length}</strong> business{bad.length===1?'':'es'} need attention on address / geocoding — flagged with ⚠︎ above. Fix the address in the partner dashboard (or contact the partner) and it re-geocodes on save.
+                </p>
+                <button type="button" onClick={runGeocodeBackfill} disabled={backfillBusy}
+                  style={{ marginTop: 8, padding: '6px 14px', fontSize: 11, fontWeight: 600, background: backfillBusy ? '#E4E2DD' : '#213C18', color: backfillBusy ? '#54584F' : '#fff', border: 'none', borderRadius: 6, cursor: backfillBusy ? 'wait' : 'pointer' }}>
+                  {backfillBusy ? 'Running…' : 'Re-run geocoding backfill (force)'}
+                </button>
+                {backfillMsg && (
+                  <p style={{ fontSize: 11, color: backfillMsg.startsWith('Error') ? '#C46A4D' : '#213C18', margin: '6px 0 0' }}>{backfillMsg}</p>
+                )}
+              </div>
             );
           })()}
         </div>
