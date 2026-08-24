@@ -5904,6 +5904,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   }
 
   function toggleCoverageArea(loc) {
+    // Removals are destructive-adjacent (staged locally, but easy to
+    // misclick). Confirm before dropping. Adds go through immediately.
+    const isRemoving = coverageAreas.includes(loc);
+    if (isRemoving && !window.confirm(`Remove ${loc} from your coverage areas? Not persisted until you click Save below.`)) return;
     setCoverageAreas(prev => prev.includes(loc) ? prev.filter(x => x !== loc) : [...prev, loc]);
     // If they add a place to core coverage, drop it from extended-travel so
     // the two lists never overlap. Match on the object's area name.
@@ -5911,6 +5915,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   }
   function toggleTravelArea(loc) {
     if (coverageAreas.includes(loc)) return;
+    const existing = travelAreas.find(z => z.area === loc);
+    // Confirm before removing a fee-carrying zone — the partner has
+    // configured a per-area travel charge and might not want to lose it.
+    if (existing && Number(existing.fee_eur) > 0 && !window.confirm(`Remove ${loc} from your travel zones? The €${existing.fee_eur} fee will be dropped. Not persisted until you click Save below.`)) return;
     setTravelAreas(prev => prev.some(z => z.area === loc)
       ? prev.filter(z => z.area !== loc)
       : [...prev, { area: loc, fee_eur: 0 }]
