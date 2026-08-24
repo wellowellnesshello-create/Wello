@@ -7789,36 +7789,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               </p>
             </div>
 
-            {/* Optional booking-window range. Useful for seasonal pop-ups
-                ("I'm only here Jul 1 – Sep 30"). Empty = rolling 4 weeks. */}
-            <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:14}}>
-              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>When you're taking bookings</p>
-              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Optional. Leave blank to keep a rolling 4-week window. Set a range if you only take bookings between specific dates (e.g. a summer season). Capped at 6 months.</p>
-              <div style={{display:"flex",flexWrap:"wrap",gap:10,alignItems:"flex-end"}}>
-                <div style={{flex:"1 1 160px",minWidth:140}}>
-                  <label style={{display:"block",fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"0 0 4px"}}>From</label>
-                  <input type="date" value={availabilityFrom}
-                    onChange={e=>setAvailabilityFrom(e.target.value)}
-                    style={{...INP,marginBottom:0,width:"100%"}}/>
-                </div>
-                <div style={{flex:"1 1 160px",minWidth:140}}>
-                  <label style={{display:"block",fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"0 0 4px"}}>To</label>
-                  <input type="date" value={availabilityTo}
-                    onChange={e=>setAvailabilityTo(e.target.value)}
-                    min={availabilityFrom || undefined}
-                    style={{...INP,marginBottom:0,width:"100%"}}/>
-                </div>
-                {(availabilityFrom || availabilityTo) && (
-                  <button type="button" onClick={()=>{setAvailabilityFrom("");setAvailabilityTo("");}}
-                    style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer",padding:"10px 12px",textDecoration:"underline"}}>
-                    Clear range
-                  </button>
-                )}
-              </div>
-              {availabilityFrom && availabilityTo && availabilityTo < availabilityFrom && (
-                <p style={{fontFamily:F2,fontSize:11,color:"#C46A4D",margin:"8px 0 0"}}>End date must be on or after the start date.</p>
-              )}
-            </div>
+            {/* Business-level "When you're taking bookings" panel removed —
+                each offering now carries its own How long / When it runs
+                inside the offering card. saveAvailability still reads the
+                business-level availabilityWindows / from / to as a
+                fallback for legacy offerings that predate the copy-down
+                migration, but there's no reason to expose that editing
+                surface anymore. */}
 
             {/* What you offer — chip-based. Each offering is a tappable
                 pill with a clear "Remove" button. Add form is hidden by
@@ -8368,17 +8345,21 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                           {DASH_LENGTH_OPTIONS.map(m => <option key={m} value={m}>{m} min</option>)}
                         </select>
                       )}
-                      <div style={{position:"relative",flex:"1 1 130px",minWidth:100}}>
+                      <div style={{position:"relative",flex:"1 1 150px",minWidth:120}}>
                         <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
                         <input type="number" min="1" value={newOff.price_eur}
                           onChange={e=>setNewOff(p=>({...p,price_eur:e.target.value}))}
                           onFocus={e=>e.target.select()}
-                          placeholder={isRental ? 'per day' : 'price'}
+                          placeholder={isRental ? 'Daily rate' : 'price'}
                           style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
+                        {isRental && <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:"#A3B18A",fontFamily:F2,fontSize:11,fontWeight:500,pointerEvents:"none"}}>/ day</span>}
                       </div>
                     </div>
 
-                    {/* Rental-only: inventory + weekly rate + min/max days + deposit + add-ons */}
+                    {/* Rental-only: inventory + weekly rate + min/max days + deposit + add-ons.
+                        Daily rate above is the primary price — weekly is an
+                        optional discount that only kicks in on 7+ day bookings.
+                        Partner who only rents day-to-day just leaves it blank. */}
                     {isRental && (
                       <>
                         <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:10}}>
@@ -8389,13 +8370,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                               placeholder="How many?"
                               style={{...INP,marginBottom:0,width:110,marginLeft:6}}/>
                           </label>
-                          <label style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>Weekly rate
+                          <label style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>Weekly discount <span style={{color:"#A3B18A",fontWeight:400}}>(optional)</span>
                             <span style={{position:"relative",display:"inline-block",marginLeft:6}}>
                               <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontSize:12,fontWeight:600,pointerEvents:"none"}}>€</span>
                               <input type="number" min="0" value={newOff.weekly_price_eur}
                                 onChange={e=>setNewOff(p=>({...p,weekly_price_eur:e.target.value}))}
                                 onFocus={e=>e.target.select()}
                                 placeholder="7+ days"
+                                title="Only used when a booking is 7 or more days — leave blank to keep charging the daily rate."
                                 style={{...INP,paddingLeft:20,marginBottom:0,width:110}}/>
                             </span>
                           </label>
@@ -8617,9 +8599,16 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               </div>
             )}
 
-            {/* Weekly availability — multi-day picker. Each existing window
-                shows as a row with day, time range, and a clear Remove button.
-                Add form is hidden by default and opens via the dashed button. */}
+            {/* Business-level "When you're available" panel removed —
+                per-offering "When it runs" replaces it. saveAvailability
+                keeps reading availabilityWindows as a fallback for
+                legacy offerings that predate the copy-down migration,
+                but new work happens on the offering cards.
+                Legacy panel starts here (still hidden below via
+                {false && ...} so the JSX doesn't need to be excised
+                yet — kept for reference until we're confident nothing
+                edits business-level windows anymore). */}
+            {false && (
             <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:18}}>
               <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>When you're available</p>
               <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 14px",lineHeight:1.6}}>Click Remove to delete a window, or add a new one below covering multiple days at once.</p>
@@ -8714,6 +8703,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 </div>
               )}
             </div>
+            )}
 
             {/* Save bar — primary action lives here */}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",padding:"12px 0 18px"}}>
