@@ -492,6 +492,39 @@ const CAT_LABELS = { "Private Instructor": "Private Classes" };
 function catLabel(c) { return CAT_LABELS[c] || c; }
 const PRIVATE_CAT = "Private Instructor";
 const isPrivateInstructorCat = (c) => c === PRIVATE_CAT;
+// Auto-healed category label. When a partner's businesses.category is
+// stale (they pivoted from "Yoga" to bike rentals, say), fall back to
+// a label derived from the offering mix so the marketplace card
+// doesn't lie. Only kicks in when the offering set doesn't include
+// anything matching the stored category — otherwise the partner's
+// explicit choice wins.
+function displayedCatLabel(biz) {
+  const cat = biz?.cat || biz?.category || '';
+  const offs = Array.isArray(biz?.session_offerings) ? biz.session_offerings : [];
+  const rentalOnly = offs.length > 0 && offs.every(o => o?.kind === 'rental');
+  if (rentalOnly) return 'Rental';
+  // If the partner's stored category doesn't obviously relate to any of
+  // their offerings' types, surface a neutral label. Cheap fuzzy match:
+  // does at least one offering.type contain the category (or vice versa)?
+  if (cat && offs.length > 0) {
+    const catN = cat.toLowerCase();
+    const anyMatch = offs.some(o => {
+      const t = String(o?.type || '').toLowerCase();
+      return t && (t.includes(catN) || catN.includes(t));
+    });
+    if (!anyMatch) {
+      // Pick the most common non-empty type across offerings as a fallback.
+      const counts = {};
+      for (const o of offs) {
+        const t = String(o?.type || '').trim();
+        if (t) counts[t] = (counts[t] || 0) + 1;
+      }
+      const winner = Object.entries(counts).sort((a,b) => b[1] - a[1])[0];
+      if (winner) return winner[0];
+    }
+  }
+  return catLabel(cat);
+}
 // LOCS is the explore-page location filter chip list. We seed it with the
 // canonical Mallorca place list below so any town a private instructor adds
 // to coverage_areas is filterable. "All Mallorca" stays first.
@@ -1904,11 +1937,17 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     const days = Math.round((new Date(rentalEnd + 'T00:00:00') - new Date(rentalStart + 'T00:00:00')) / 86400000) + 1;
     if (days < minDays) { setRentalError(`Minimum rental is ${minDays} day${minDays===1?'':'s'}.`); return; }
     if (days > maxDays) { setRentalError(`Maximum rental is ${maxDays} day${maxDays===1?'':'s'}.`); return; }
-    // Advance-notice check — 48h minimum for rentals so the partner has
-    // time to prep the item.
+    // Advance-notice check — offering.min_lead_hours (default 48 for
+    // rentals) so the partner has prep time. Partner can set 0 for
+    // walk-up rentals.
+    const leadHrs = Number.isFinite(Number(offering?.min_lead_hours)) && offering.min_lead_hours >= 0
+      ? Number(offering.min_lead_hours) : 48;
     const startMs = new Date(rentalStart + 'T00:00:00').getTime();
-    if (startMs - Date.now() < 48 * 60 * 60 * 1000) {
-      setRentalError("Rentals need at least 48 hours notice."); return;
+    if (startMs - Date.now() < leadHrs * 60 * 60 * 1000) {
+      setRentalError(leadHrs === 0
+        ? "Start date can't be in the past."
+        : `Rentals need at least ${leadHrs} hour${leadHrs===1?'':'s'} notice.`);
+      return;
     }
     // Availability: count overlapping bookings for this rental type.
     setRentalSubmitting(true);
@@ -1967,9 +2006,20 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
       rental_addons: addonsPicked.length > 0 ? addonsPicked : null,
       health_ack_at: rentalHealthAck ? new Date().toISOString() : null,
     };
-    const { error: insErr } = await supabase.from('bookings').insert(payload);
+    const { data: inserted, error: insErr } = await supabase.from('bookings').insert(payload).select('id').single();
+    if (insErr) { setRentalSubmitting(false); setRentalError("Couldn't send rental request: " + insErr.message); return; }
+    // Fire the venue notification (mint accept/decline tokens + email
+    // the venue). Failure is non-blocking — the booking row already
+    // exists; the partner will still see it in Requests. Auto-decline
+    // sweeps at the 48h mark regardless.
+    try {
+      await supabase.functions.invoke('notify-venue-rental-request', {
+        body: { booking_id: inserted.id },
+      });
+    } catch (e) {
+      console.warn('notify-venue-rental-request invoke failed:', e?.message);
+    }
     setRentalSubmitting(false);
-    if (insErr) { setRentalError("Couldn't send rental request: " + insErr.message); return; }
     setRentalSuccessFor(openRentalIdx);
     onBookingsChanged?.();
     showToast?.("Rental request sent. The venue has 48 hours to confirm.", "info", 4200);
@@ -2991,7 +3041,7 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave, compact = false }) 
               "Private" badge next to it was redundant and pushed the pill
               row onto a second line on narrower columns, which cascaded to
               make private-tile rows taller than everything else. */}
-          <span style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:600,color:"#766149",background:"rgba(250,222,192,0.5)",padding:s.pillPad,borderRadius:999}}>{catLabel(biz.cat)}</span>
+          <span style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:600,color:"#766149",background:"rgba(250,222,192,0.5)",padding:s.pillPad,borderRadius:999}}>{displayedCatLabel(biz)}</span>
           {biz.tags?.slice(0,s.tagsToShow).map(t=>(
             <span key={t} style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:500,color:"#54584F",background:"rgba(228,226,221,0.6)",padding:s.pillPad,borderRadius:999}}>{t}</span>
           ))}
@@ -6133,6 +6183,17 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 .filter(a => a && typeof a === 'object' && typeof a.label === 'string' && a.label.trim())
                 .map(a => ({ label: String(a.label).trim(), price_eur: Number.isFinite(Number(a?.price_eur)) ? Math.max(0, Math.round(Number(a.price_eur))) : 0 }))
             : [],
+          // Minimum lead time (hours). Rentals default 48 so partners
+          // have time to prep the item; classes default 0 (same-day
+          // OK). Overridden per offering in the edit form.
+          min_lead_hours: Number.isFinite(Number(o?.min_lead_hours)) && Number(o.min_lead_hours) >= 0
+            ? Number(o.min_lead_hours)
+            : (o?.kind === 'rental' || inferOfferingKind(o) === 'rental' ? 48 : 0),
+          // Optional Booqable product ID — pushed to Booqable to reserve
+          // inventory when a rental booking is confirmed. Nullable
+          // (partner sets it in the rental edit form once they have
+          // Booqable connected). No API calls fire until this is set.
+          booqable_product_id: (typeof o?.booqable_product_id === 'string' && o.booqable_product_id.trim()) ? o.booqable_product_id.trim() : null,
         }))
       : []
   );
@@ -6147,7 +6208,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // newOff.kind = null means the tile picker is showing (partner hasn't
   // chosen a listing type yet). Once picked, sensible defaults are seeded
   // per-kind and the form renders with only the relevant fields.
-  const [newOff, setNewOff] = useState({ kind: null, type: "", length_min: 60, price_eur: "", extra_person_eur: "", max_people: "", capacity: 1, venue_side: "instructor", booking_mode: "instant", inventory: "", weekly_price_eur: "", min_days: 1, max_days: 14, deposit_eur: "", addons: [] });
+  const [newOff, setNewOff] = useState({ kind: null, type: "", length_min: 60, price_eur: "", extra_person_eur: "", max_people: "", capacity: 1, venue_side: "instructor", booking_mode: "instant", inventory: "", weekly_price_eur: "", min_days: 1, max_days: 14, deposit_eur: "", addons: [], min_lead_hours: "", booqable_product_id: "" });
   // In-place offering edit. editingOfferingIdx is the row being edited (null
   // = none). editBuffer is a local draft so Cancel discards cleanly. Save
   // writes the buffer via dashUpdateOffering and closes.
@@ -6218,8 +6279,17 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     const addons           = (kind === 'rental' || kind === 'custom')
       ? (Array.isArray(newOff.addons) ? newOff.addons.filter(a => a && typeof a.label === 'string' && a.label.trim()).map(a => ({ label: String(a.label).trim(), price_eur: Math.max(0, parseInt(a.price_eur, 10) || 0) })) : [])
       : [];
-    setDashSessionOfferings(prev => [...prev, { kind, type, length_min, price_eur, extra_person_eur, max_people, capacity, venue_side, booking_mode, inventory, weekly_price_eur, min_days, max_days, deposit_eur, addons, img: null }]);
-    setNewOff({ kind: null, type: "", length_min: 60, price_eur: "", extra_person_eur: "", max_people: "", capacity: 1, venue_side: "instructor", booking_mode: "instant", inventory: "", weekly_price_eur: "", min_days: 1, max_days: 14, deposit_eur: "", addons: [] });
+    // Lead-time + Booqable are rental-scoped fields; classes ignore
+    // them. min_lead_hours defaults to 48 for rentals when the partner
+    // leaves the field blank so they always have prep time.
+    const leadRaw    = parseInt(newOff.min_lead_hours, 10);
+    const min_lead_hours = kind === 'rental'
+      ? (Number.isFinite(leadRaw) && leadRaw >= 0 ? leadRaw : 48)
+      : (Number.isFinite(leadRaw) && leadRaw > 0 ? leadRaw : null);
+    const booqable_product_id = kind === 'rental' && typeof newOff.booqable_product_id === 'string' && newOff.booqable_product_id.trim()
+      ? newOff.booqable_product_id.trim() : null;
+    setDashSessionOfferings(prev => [...prev, { kind, type, length_min, price_eur, extra_person_eur, max_people, capacity, venue_side, booking_mode, inventory, weekly_price_eur, min_days, max_days, deposit_eur, addons, min_lead_hours, booqable_product_id, img: null }]);
+    setNewOff({ kind: null, type: "", length_min: 60, price_eur: "", extra_person_eur: "", max_people: "", capacity: 1, venue_side: "instructor", booking_mode: "instant", inventory: "", weekly_price_eur: "", min_days: 1, max_days: 14, deposit_eur: "", addons: [], min_lead_hours: "", booqable_product_id: "" });
     setShowAddOffering(false);
   }
   function dashAddOffering() {
@@ -6273,6 +6343,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       addons: Array.isArray(src.addons)
         ? src.addons.map(a => ({ label: String(a?.label || ''), price_eur: Number.isFinite(Number(a?.price_eur)) ? Number(a.price_eur) : 0 }))
         : [],
+      min_lead_hours: Number.isFinite(Number(src.min_lead_hours)) && src.min_lead_hours >= 0 ? src.min_lead_hours : (src.kind === 'rental' ? 48 : ''),
+      booqable_product_id: (typeof src.booqable_product_id === 'string' && src.booqable_product_id) ? src.booqable_product_id : '',
       img: src.img || null,
       category: src.category || '',
     });
@@ -6345,6 +6417,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               .map(a => ({ label: String(a.label).trim(), price_eur: Math.max(0, parseInt(a.price_eur, 10) || 0) }))
           : [])
       : [];
+    const leadRaw = parseInt(editBuffer.min_lead_hours, 10);
+    const min_lead_hours = kind === 'rental'
+      ? (Number.isFinite(leadRaw) && leadRaw >= 0 ? leadRaw : 48)
+      : (Number.isFinite(leadRaw) && leadRaw > 0 ? leadRaw : null);
+    const booqable_product_id = kind === 'rental' && typeof editBuffer.booqable_product_id === 'string' && editBuffer.booqable_product_id.trim()
+      ? editBuffer.booqable_product_id.trim() : null;
     const patched = {
       kind, type, length_min, price_eur,
       extra_person_eur: finalExtras, max_people: finalMax, capacity: finalCapacity,
@@ -6354,6 +6432,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       availability_from,
       availability_to,
       inventory, weekly_price_eur, min_days, max_days, deposit_eur, addons,
+      min_lead_hours, booqable_product_id,
       img: editBuffer.img || null,
       category: editBuffer.category || '',
     };
@@ -8759,7 +8838,23 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                               onFocus={e=>e.target.select()}
                               style={{...INP,marginBottom:0,width:80,marginLeft:6}}/>
                           </label>
+                          <label style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>Min lead hours
+                            <input type="number" min="0" value={newOff.min_lead_hours}
+                              onChange={e=>setNewOff(p=>({...p,min_lead_hours:e.target.value}))}
+                              onFocus={e=>e.target.select()}
+                              placeholder="48"
+                              title="Minimum advance notice before a booking can start. Default 48h so you have prep time; set 0 for walk-ups."
+                              style={{...INP,marginBottom:0,width:80,marginLeft:6}}/>
+                          </label>
                         </div>
+                        {/* Booqable product ID — optional. Blank = no Booqable
+                            sync; the booking still lands in the Wello inbox. */}
+                        <label style={{fontFamily:F2,fontSize:11,color:"#54584F",display:"block",marginBottom:10}}>Booqable product ID <span style={{color:"#A3B18A",fontWeight:400}}>(optional — auto-reserves inventory once you connect Booqable)</span>
+                          <input type="text" value={newOff.booqable_product_id}
+                            onChange={e=>setNewOff(p=>({...p,booqable_product_id:e.target.value}))}
+                            placeholder="e.g. prod_abc123"
+                            style={{...INP,marginBottom:0,width:"100%",marginTop:4}}/>
+                        </label>
                         {/* Add-ons — helmet, lock, panniers, etc. */}
                         <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 6px"}}>Add-ons (optional)</p>
                         {(newOff.addons || []).length > 0 && (

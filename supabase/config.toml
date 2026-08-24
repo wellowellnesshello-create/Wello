@@ -82,6 +82,18 @@ verify_jwt = false
 # in-function requireAdmin still gates writes.
 verify_jwt = false
 
+[functions.notify-venue-rental-request]
+# Invoked from the customer's signed-in browser after inserting a
+# rental booking. Auth is enforced inside via getUser(token) against
+# the booking's user_id — the gateway JWT check is redundant.
+verify_jwt = false
+
+[functions.booqable-sync]
+# Server-to-server only (venue-booking-response, and eventually a
+# cron for reconciliation). Requires the caller to hold the service-
+# role key; explicit Bearer check inside. Not user-callable.
+verify_jwt = false
+
 # extract-sessions intentionally has NO override here — it keeps the platform
 # default (verify_jwt = true). The admin timetable-upload tool is gated
 # client-side by VITE_ADMIN_SETUP_ENABLED + a ?admin=setup URL param, and the
