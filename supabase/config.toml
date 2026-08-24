@@ -68,6 +68,20 @@ verify_jwt = false
 # itself — 144-bit random, single-use, TTL enforced in the function.
 verify_jwt = false
 
+[functions.backfill-geocodes]
+# Fired by the AFTER-trigger on businesses.address (via pg_net) which
+# only has an X-Admin-Token header, not a Supabase JWT. Also invoked by
+# the admin panel with a real user JWT for on-demand runs — that path
+# still goes through requireAdmin so the allowlist check applies.
+# verify_jwt=false only removes the platform-level gateway check.
+verify_jwt = false
+
+[functions.geocode-address]
+# Same reason — invoked from the client with a user JWT for immediate
+# feedback, and (indirectly, via backfill-geocodes) from pg_net. The
+# in-function requireAdmin still gates writes.
+verify_jwt = false
+
 # extract-sessions intentionally has NO override here — it keeps the platform
 # default (verify_jwt = true). The admin timetable-upload tool is gated
 # client-side by VITE_ADMIN_SETUP_ENABLED + a ?admin=setup URL param, and the
