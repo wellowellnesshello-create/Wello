@@ -7856,6 +7856,70 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                             </div>
                           </div>
 
+                          {/* How long — date range that gates slot generation.
+                              Presets cover the common cases (ongoing, 3mo, 6mo);
+                              Custom keeps the raw date pickers for anything
+                              else. Empty = "ongoing" via the rolling 4-week
+                              default in saveAvailability. Any range is capped
+                              at 26 weeks server-side to keep slot counts sane. */}
+                          <div style={{marginBottom:14}}>
+                            <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>How long is this class live for?</p>
+                            {(() => {
+                              const today = new Date().toISOString().slice(0, 10);
+                              const plusMonths = (n) => {
+                                const d = new Date(); d.setMonth(d.getMonth() + n);
+                                return d.toISOString().slice(0, 10);
+                              };
+                              const currentFrom = editBuffer?.availability_from || '';
+                              const currentTo   = editBuffer?.availability_to   || '';
+                              // Detect which preset (if any) matches. Custom
+                              // is anything with a range that isn't one of the
+                              // standard windows.
+                              const isOngoing = !currentFrom && !currentTo;
+                              const isNext3   = currentFrom === today && currentTo === plusMonths(3);
+                              const isNext6   = currentFrom === today && currentTo === plusMonths(6);
+                              const isCustom  = !isOngoing && !isNext3 && !isNext6;
+                              const presets = [
+                                { key:'ongoing', label:'Ongoing',      on:isOngoing, apply:()=>bufferUpdate({ availability_from:'', availability_to:'' }) },
+                                { key:'m3',      label:'Next 3 months', on:isNext3,   apply:()=>bufferUpdate({ availability_from: today, availability_to: plusMonths(3) }) },
+                                { key:'m6',      label:'Next 6 months', on:isNext6,   apply:()=>bufferUpdate({ availability_from: today, availability_to: plusMonths(6) }) },
+                                { key:'custom',  label:'Custom range',  on:isCustom,  apply:()=>{ if (!currentFrom) bufferUpdate({ availability_from: today, availability_to: plusMonths(1) }); } },
+                              ];
+                              return (
+                                <>
+                                  <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
+                                    {presets.map(p => (
+                                      <button key={p.key} type="button" onClick={p.apply}
+                                        style={{padding:"6px 12px",borderRadius:999,border:`1px solid ${p.on?"#213C18":"rgba(195,200,188,0.6)"}`,background:p.on?"#213C18":"#fff",color:p.on?"#fff":"#1B1C19",fontFamily:F2,fontSize:11,fontWeight:p.on?700:500,cursor:"pointer"}}>
+                                        {p.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  {isCustom && (
+                                    <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
+                                      <label style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>From
+                                        <input type="date" value={currentFrom} min={today}
+                                          onChange={e=>bufferUpdate({ availability_from: e.target.value })}
+                                          style={{...INP,marginBottom:0,width:150,marginLeft:6}}/>
+                                      </label>
+                                      <label style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>To
+                                        <input type="date" value={currentTo} min={currentFrom || today}
+                                          onChange={e=>bufferUpdate({ availability_to: e.target.value })}
+                                          style={{...INP,marginBottom:0,width:150,marginLeft:6}}/>
+                                      </label>
+                                    </div>
+                                  )}
+                                  {isOngoing && (
+                                    <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.5}}>Rolling 4-week window — slots regenerate each time you Save availability. Pick a preset or Custom range if you want a specific end date.</p>
+                                  )}
+                                  {(isNext3 || isNext6) && (
+                                    <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.5}}>Slots generated up to {new Date(currentTo + 'T00:00:00').toLocaleDateString('en-GB', { day:'numeric', month:'long', year:'numeric' })}. Hit Save availability again after that to extend.</p>
+                                  )}
+                                </>
+                              );
+                            })()}
+                          </div>
+
                           {/* Per-location prices — for multi-venue offerings
                               (e.g. Noor's Private: at studio 30, at home 60).
                               When empty, the offering uses the base price
