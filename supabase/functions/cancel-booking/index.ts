@@ -19,6 +19,22 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
 const STANDARD_WINDOW_HOURS = 24
 const PRIVATE_WINDOW_HOURS  = 48
+// Rentals default 24h. Partner-set overrides on the offering row win
+// (session_offerings[i].rental_cancellation_hours) — respected below.
+const RENTAL_WINDOW_HOURS   = 24
+
+// Fire-and-forget Booqable release call. Only fires for rentals with
+// a booqable_product_id set; booqable-sync no-ops otherwise.
+function fireBooqableRelease(bookingId: string) {
+  fetch(`${SUPABASE_URL}/functions/v1/booqable-sync`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+    body: JSON.stringify({ op: 'release', booking_id: bookingId }),
+  }).catch(e => console.warn('booqable-sync release invoke failed:', e?.message))
+}
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -51,7 +67,7 @@ serve(async (req) => {
     // still in a cancellable state.
     const { data: booking, error: bookingErr } = await supabase
       .from('bookings')
-      .select('id, user_id, business_id, slot_id, booking_date, start_time, credits_used, status')
+      .select('id, user_id, business_id, slot_id, booking_date, end_date, start_time, credits_used, status, offering_type')
       .eq('id', booking_id)
       .maybeSingle()
     if (bookingErr) {
@@ -111,21 +127,40 @@ serve(async (req) => {
       }
 
       console.log(`cancel-booking: pending booking ${booking.id} cancelled by customer ${user.id}, refunded ${creditsRefunded}`)
+      // Booqable release for pending rentals — nothing was reserved yet
+      // if the venue hadn't accepted, but calling release is safe (no-op
+      // when no booqable_order_id was ever stored).
+      if (booking.end_date) fireBooqableRelease(booking.id)
       return json({ success: true, credits_refunded: creditsRefunded, window_hours: null, was_pending: true })
     }
 
-    // 2. Look up the business to find the category so we can pick the right
-    // window (24h standard vs 48h private instructor).
+    // 2. Look up the business + resolve the cancellation window for this
+    // booking's kind. Rentals prefer the offering's own
+    // rental_cancellation_hours override; classes fall back to the
+    // Private Instructor split (48h) vs standard (24h).
+    const isRental = !!booking.end_date
     const { data: business, error: bizErr } = await supabase
       .from('businesses')
-      .select('category')
+      .select('category, session_offerings')
       .eq('id', booking.business_id)
       .maybeSingle()
     if (bizErr) console.warn('cancel-booking: business lookup failed', bizErr.message)
-    const windowHours = business?.category === 'Private Instructor' ? PRIVATE_WINDOW_HOURS : STANDARD_WINDOW_HOURS
+    let windowHours: number
+    if (isRental) {
+      const offs = Array.isArray(business?.session_offerings) ? business!.session_offerings : []
+      const off = offs.find((o: { type?: string; kind?: string }) => o?.type === booking.offering_type && o?.kind === 'rental')
+      const override = Number((off as { rental_cancellation_hours?: number })?.rental_cancellation_hours)
+      windowHours = Number.isFinite(override) && override >= 0 ? override : RENTAL_WINDOW_HOURS
+    } else {
+      windowHours = business?.category === 'Private Instructor' ? PRIVATE_WINDOW_HOURS : STANDARD_WINDOW_HOURS
+    }
 
     // 3. Enforce the cancellation window.
-    const sessionStart = new Date(`${booking.booking_date}T${(booking.start_time || '00:00').slice(0, 5)}:00`)
+    // Rentals: window is measured against booking_date at 09:00 (assumed
+    // pickup start). Classes: against booking_date + start_time.
+    const sessionStart = isRental
+      ? new Date(`${booking.booking_date}T09:00:00`)
+      : new Date(`${booking.booking_date}T${(booking.start_time || '00:00').slice(0, 5)}:00`)
     const hoursLeft = (sessionStart.getTime() - Date.now()) / (1000 * 60 * 60)
     if (!Number.isFinite(hoursLeft)) return json({ error: 'Could not determine session start time.' }, 500)
     if (hoursLeft < windowHours) {
@@ -183,6 +218,9 @@ serve(async (req) => {
     }
 
     console.log(`cancel-booking: booking ${booking.id} cancelled, refunded ${refund} credits to ${user.id}`)
+    // Booqable release for confirmed rentals — release the reserved
+    // inventory so it's bookable again. Safe no-op for classes.
+    if (isRental) fireBooqableRelease(booking.id)
     return json({ success: true, credits_refunded: refund, window_hours: windowHours })
   } catch (e) {
     console.error('cancel-booking exception:', e)

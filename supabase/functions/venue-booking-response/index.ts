@@ -125,7 +125,7 @@ async function sendEmail(to: string, subject: string, htmlBody: string) {
 async function loadContext(supabase: ReturnType<typeof createClient>, bookingId: string) {
   const { data: booking, error: bookErr } = await supabase
     .from('bookings')
-    .select('id, user_id, business_id, booking_date, start_time, credits_used, notes, status, offering_type, venue_accept_token, venue_decline_token, venue_action_expires_at, created_at')
+    .select('id, user_id, business_id, booking_date, end_date, start_time, credits_used, duration, notes, status, offering_type, rental_addons, venue_accept_token, venue_decline_token, venue_action_expires_at, created_at')
     .eq('id', bookingId)
     .maybeSingle()
   if (bookErr || !booking) return { ok: false as const, error: 'Booking not found' }
@@ -225,11 +225,18 @@ async function applyDecline(
     })
     if (refErr) console.error('applyDecline: refund_by_booking failed for booking', bookingId, refErr.message)
   }
+  // Booqable release for rentals — matches the reserve on accept. Safe
+  // no-op for non-rentals (booqable-sync checks end_date).
+  try { await triggerBooqableSync(bookingId, 'release') } catch (e) { console.warn('booqable release fire-and-forget failed:', (e as Error).message) }
   return { ok: true }
 }
 
 // Shared accept-effect (token or JWT). Credits were already held at
 // request time so accept is a status flip only, no credit movement.
+// For rentals we also fire booqable-sync (reserve) after the flip so the
+// partner's Booqable calendar mirrors the Wello booking. Fire-and-
+// forget — Booqable failures don't block the accept, they surface in
+// the sync function's logs and can be manually retried.
 async function applyAccept(
   supabase: ReturnType<typeof createClient>,
   { bookingId, tokenSig }:
@@ -248,7 +255,23 @@ async function applyAccept(
   const { data: updated, error: updErr } = await q.select('id').maybeSingle()
   if (updErr) return { ok: false, error: updErr.message }
   if (!updated) return { ok: false, error: 'Concurrent update', alreadyHandled: true }
+  // Booqable reserve — only for rentals (end_date != null) and only when
+  // the offering has a booqable_product_id (booqable-sync no-ops otherwise).
+  try { await triggerBooqableSync(bookingId, 'reserve') } catch (e) { console.warn('booqable reserve fire-and-forget failed:', (e as Error).message) }
   return { ok: true }
+}
+
+// Best-effort call into booqable-sync. Returns without waiting so a slow
+// Booqable API doesn't block the accept/decline response to the venue.
+async function triggerBooqableSync(bookingId: string, op: 'reserve' | 'release') {
+  fetch(`${SUPABASE_URL}/functions/v1/booqable-sync`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+    body: JSON.stringify({ op, booking_id: bookingId }),
+  }).catch(e => console.warn('booqable-sync invoke failed:', e?.message))
 }
 
 // Send the customer the "declined / auto-declined" email with 2-3 alternatives.

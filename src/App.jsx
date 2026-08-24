@@ -1949,24 +1949,11 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
         : `Rentals need at least ${leadHrs} hour${leadHrs===1?'':'s'} notice.`);
       return;
     }
-    // Availability: count overlapping bookings for this rental type.
+    // Availability handled server-side inside try_reserve_rental via
+    // pg_advisory_xact_lock — client used to do a SELECT+INSERT which
+    // race'd. Now the RPC serialises on (business_id, offering_type),
+    // re-counts inside the lock, and inserts atomically.
     setRentalSubmitting(true);
-    const { data: overlappingRows, error: availErr } = await supabase
-      .from('bookings')
-      .select('id')
-      .eq('business_id', biz.business_id)
-      .eq('offering_type', offering.type)
-      .not('end_date', 'is', null)
-      .in('status', ['confirmed', 'pending_venue', 'pending_instructor'])
-      .lte('booking_date', rentalEnd)
-      .gte('end_date', rentalStart);
-    if (availErr) { setRentalSubmitting(false); setRentalError("Couldn't check availability: " + availErr.message); return; }
-    const overlaps = (overlappingRows || []).length;
-    if (stock > 0 && overlaps >= stock) {
-      setRentalSubmitting(false);
-      setRentalAvailErr(`All ${stock} in stock are booked for at least part of your range. Try different dates.`);
-      return;
-    }
     // Compute total.
     const useWeeklyRate = weekly && days >= 7;
     const rentalCost = useWeeklyRate ? weekly * Math.ceil(days / 7) : perDay * days;
@@ -1991,23 +1978,35 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
       addonsPicked.length > 0 ? `Add-ons: ${addonsPicked.map(a => `${a.label}${a.price_eur > 0 ? ` (◈ ${a.price_eur})` : ''}`).join(', ')}` : null,
       depo > 0 ? `Deposit held: ◈ ${depo}` : null,
     ].filter(Boolean).join('\n');
-    const payload = {
-      user_id: uid,
-      business_id: biz.business_id,
-      venue_id: biz.business_id,
-      offering_type: offering.type,
-      booking_date: rentalStart,
-      end_date: rentalEnd,
-      duration: durationTxt,
-      credits_used: totalCredits,
-      people_count: 1,
-      status: 'pending_venue',
-      notes,
-      rental_addons: addonsPicked.length > 0 ? addonsPicked : null,
-      health_ack_at: rentalHealthAck ? new Date().toISOString() : null,
-    };
-    const { data: inserted, error: insErr } = await supabase.from('bookings').insert(payload).select('id').single();
-    if (insErr) { setRentalSubmitting(false); setRentalError("Couldn't send rental request: " + insErr.message); return; }
+    // Race-free reserve via RPC. Returns the new booking id on success;
+    // raises 'inventory_full' when all in-stock units overlap the range,
+    // or 'offering_not_found' if the offering config drifted between
+    // page load and submit.
+    const { data: newBookingId, error: insErr } = await supabase.rpc('try_reserve_rental', {
+      p_user_id:       uid,
+      p_business_id:   biz.business_id,
+      p_offering_type: offering.type,
+      p_booking_date:  rentalStart,
+      p_end_date:      rentalEnd,
+      p_duration:      durationTxt,
+      p_credits_used:  totalCredits,
+      p_notes:         notes,
+      p_rental_addons: addonsPicked.length > 0 ? addonsPicked : null,
+      p_health_ack_at: rentalHealthAck ? new Date().toISOString() : null,
+    });
+    if (insErr) {
+      setRentalSubmitting(false);
+      const msg = String(insErr.message || '');
+      if (msg.includes('inventory_full')) {
+        setRentalAvailErr(`All ${stock} in stock are booked for at least part of your range. Try different dates.`);
+      } else if (msg.includes('offering_not_found')) {
+        setRentalError("This rental was removed by the venue. Refresh to see the current listings.");
+      } else {
+        setRentalError("Couldn't send rental request: " + msg);
+      }
+      return;
+    }
+    const inserted = { id: newBookingId };
     // Fire the venue notification (mint accept/decline tokens + email
     // the venue). Failure is non-blocking — the booking row already
     // exists; the partner will still see it in Requests. Auto-decline
