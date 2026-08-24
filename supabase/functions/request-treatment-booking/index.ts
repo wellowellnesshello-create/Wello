@@ -52,21 +52,7 @@ function fmtDate(iso: string) {
   try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) } catch { return iso }
 }
 
-// ── Address / travel-zone helpers ──────────────────────────────────────
-// Mirror of the client-side normalizeForMatch + resolveTravelZone so the
-// server re-computes the travel fee independently rather than trusting
-// what the client sends. Keep the two implementations behaviourally
-// identical.
-function normalizeForMatch(s: string | null | undefined): string {
-  if (s == null) return ''
-  return String(s)
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
+// Travel-zone shape stored on businesses.travel_areas.
 type TravelZone = { area: string; fee_eur: number }
 function normalizeTravelAreas(raw: unknown): TravelZone[] {
   if (!Array.isArray(raw)) return []
@@ -82,19 +68,6 @@ function normalizeTravelAreas(raw: unknown): TravelZone[] {
     }
   }
   return out
-}
-// Longest-first substring match after normalising both sides. Returns
-// the matched zone or null. Empty address returns null.
-function resolveTravelZone(zones: TravelZone[], address: string): TravelZone | null {
-  if (zones.length === 0) return null
-  const addrN = normalizeForMatch(address)
-  if (!addrN) return null
-  const sorted = zones.slice().sort((a, b) => (b.area?.length || 0) - (a.area?.length || 0))
-  for (const z of sorted) {
-    const zoneN = normalizeForMatch(z.area)
-    if (zoneN && addrN.includes(zoneN)) return z
-  }
-  return null
 }
 
 // Time preference keys — must line up with the client picker options.
@@ -132,7 +105,8 @@ serve(async (req) => {
     note?: string
     health_ack_at?: string    // ISO timestamp — set by BizPanel when the customer ticks the health checkbox
     location_label?: string   // For offerings with a locations array; picks which option
-    address?: string          // Customer address; required + used for travel-fee lookup when picked location is venue_side='customer'
+    address?: string          // Customer address (navigation info); required when picked location is venue_side='customer'
+    travel_zone_area?: string // Zone name the customer picked from the partner's published list; server validates and prices from it
   }
   try { body = await req.json() } catch { return json({ error: 'Invalid JSON body.' }, 400) }
 
@@ -227,12 +201,14 @@ serve(async (req) => {
     : (Number(offering.price_eur) > 0 ? Math.round(Number(offering.price_eur)) : 0)
   if (basePrice <= 0) return json({ error: 'This offering has no price set, contact the venue.' }, 400)
 
-  // Address + travel-fee: only when the picked location is at the
-  // customer's address. Server re-resolves the zone from
-  // businesses.travel_areas so the credit total can't be spoofed by the
-  // client. Outside-zone addresses proceed at €0 travel (matching the
-  // slot-side "outside coverage" UX) — the venue still gets the address
-  // in the notes and can accept, decline, or negotiate.
+  // Address + travel-fee. Address is navigation-only. Travel fee is looked
+  // up by exact-match on travel_zone_area against businesses.travel_areas
+  // and businesses.coverage_areas — the client picked from that list, and
+  // we re-verify server-side so a manipulated client can't fabricate a
+  // cheaper zone. Coverage-area matches price at €0; extended-zone matches
+  // use their configured fee. An unknown or missing zone is a hard error:
+  // there is no "elsewhere" fallback in the UI, so any request that arrives
+  // without a valid zone came from a manipulated client.
   let customerAddress: string | null = null
   let matchedZoneArea: string | null = null
   let travelFeeEur = 0
@@ -242,11 +218,22 @@ serve(async (req) => {
       return json({ error: 'address is required for at-customer bookings (at least 6 characters).' }, 400)
     }
     customerAddress = addr
+    const zoneArea = typeof body.travel_zone_area === 'string' ? body.travel_zone_area.trim() : ''
+    if (!zoneArea) {
+      return json({ error: 'travel_zone_area is required — pick your area from the partner\'s published zones.' }, 400)
+    }
     const zones = normalizeTravelAreas(business.travel_areas)
-    const matched = resolveTravelZone(zones, addr)
-    if (matched) {
-      matchedZoneArea = matched.area
-      travelFeeEur = matched.fee_eur
+    const coverage = Array.isArray(business.coverage_areas) ? business.coverage_areas : []
+    const zoneMatch = zones.find(z => z.area.toLowerCase() === zoneArea.toLowerCase())
+    const coverageMatch = coverage.some((a: unknown) => typeof a === 'string' && a.toLowerCase() === zoneArea.toLowerCase())
+    if (zoneMatch) {
+      matchedZoneArea = zoneMatch.area
+      travelFeeEur = zoneMatch.fee_eur
+    } else if (coverageMatch) {
+      matchedZoneArea = zoneArea
+      travelFeeEur = 0
+    } else {
+      return json({ error: `Zone "${zoneArea}" is not on this partner\'s published list.` }, 400)
     }
   }
   const priceEur = basePrice + travelFeeEur

@@ -8,6 +8,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Wello is your wellness pass for Mallorca. Yoga, pilates, gyms, spas and private instructors with one membership." />
     <title>Wello</title>
+    <!-- Leaflet for the Explore map. Loaded from unpkg with subresource
+         integrity hashes so a compromised CDN can't inject arbitrary JS.
+         Used only on the Explore map view; window.L is nullable and the
+         map component no-ops if the load ever fails. -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""></script>
   </head>
   <body>
     <div id="root"></div>

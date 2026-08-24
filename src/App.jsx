@@ -189,23 +189,6 @@ function businessTypeFor(typeId) { return BUSINESS_TYPES.find(t=>t.id===typeId) 
 const CANCEL_WINDOW_STANDARD_HOURS = 24;
 const CANCEL_WINDOW_PRIVATE_HOURS  = 48;
 
-// ── Address normalisation for travel-zone matching ──────────────────────
-// Lowercase, strip diacritics (Sóller → soller), drop punctuation, collapse
-// whitespace. Used on both sides of the substring compare so "cala d'or" and
-// "cala dor" match, "soller" matches "Sóller", and stray postcodes don't
-// break the match. Kept small and predictable — no synonym tables, no fuzzy
-// distance; if it doesn't substring-match after normalisation, the customer
-// is quoted €0 travel with an "outside coverage" warning.
-function normalizeForMatch(s) {
-  if (s == null) return '';
-  return String(s)
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
 // Coerces a stored travel-areas value into the current [{area,fee_eur}] shape.
 // Defensive: mid-flight the DB might briefly return legacy strings for a
 // partner who saved before the migration ran, so we upgrade in place with a
@@ -223,6 +206,48 @@ function normalizeTravelAreas(raw) {
       return null;
     })
     .filter(Boolean);
+}
+// Derives a "starting from" price for an offering that carries a locations
+// array (Noor: Private with At-studio ◈ 30, At-your-home ◈ 60 → 30). Returns
+// null when no location has a positive price so the caller can apply its own
+// fallback. Used by slot generation and the dashboard normalizer so an
+// offering with per-location pricing but no top-level price_eur doesn't get
+// silently coerced to biz.cr, which is what caused Noor's ◈ 25 fallback.
+function offeringLocationsMinPrice(o) {
+  if (!Array.isArray(o?.locations) || o.locations.length === 0) return null;
+  const prices = o.locations
+    .map(l => Number(l?.price_eur))
+    .filter(n => Number.isFinite(n) && n > 0);
+  return prices.length > 0 ? Math.min(...prices) : null;
+}
+// Build the zone-picker options for an at-home booking. Combines core
+// coverage areas (implicit €0) with extended travel zones. Replaces the old
+// address-substring matcher: the customer picks their area explicitly and
+// the fee is deterministic from that pick. No "Elsewhere" fallback — if the
+// customer's area isn't listed, the instructor doesn't travel there and the
+// booking is blocked (with copy nudging them to contact the partner
+// directly or book at studio if that's an option). Returns items shaped as
+// { key, area, fee_eur, kind: 'covered'|'extended' } with `key` stable
+// across renders for React list keys.
+function buildZoneOptions(biz) {
+  const opts = [];
+  const seen = new Set();
+  const coverage = Array.isArray(biz?.coverage_areas) ? biz.coverage_areas : [];
+  for (const a of coverage) {
+    const area = typeof a === 'string' ? a.trim() : '';
+    if (!area) continue;
+    const key = 'core:' + area.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    opts.push({ key, area, fee_eur: 0, kind: 'covered' });
+  }
+  for (const z of normalizeTravelAreas(biz?.travel_areas)) {
+    const key = 'zone:' + z.area.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    opts.push({ key, area: z.area, fee_eur: z.fee_eur, kind: 'extended' });
+  }
+  return opts;
 }
 // Resolves the customer's typed address against a set of {area,fee_eur} zones,
 // returning the matched zone (with .fee_eur) or null. Sorts zones by area
@@ -464,6 +489,61 @@ const MALLORCA_LOCATIONS = [
   "Sóller","Valldemossa",
 ];
 const LOCS = ["All Mallorca", ...MALLORCA_LOCATIONS];
+
+// Coarse town-centre coordinates for the map pin fallback when a business
+// row hasn't been geocoded (businesses.lat/lng are nullable and mostly
+// unpopulated today). One venue per town means overlapping pins; when we
+// wire proper geocoding on address save, biz.lat/lng win over these.
+const MALLORCA_CENTROIDS = {
+  "Alcúdia":          [39.85, 3.12],
+  "Andratx":          [39.57, 2.42],
+  "Artà":             [39.69, 3.35],
+  "Banyalbufar":      [39.69, 2.52],
+  "Cala Bona":        [39.60, 3.39],
+  "Cala d'Or":        [39.37, 3.23],
+  "Cala Millor":      [39.59, 3.38],
+  "Cala Ratjada":     [39.72, 3.47],
+  "Calvià":           [39.57, 2.51],
+  "Deià":             [39.75, 2.65],
+  "Es Trenc":         [39.35, 3.00],
+  "Felanitx":         [39.47, 3.15],
+  "Inca":             [39.72, 2.91],
+  "Llucmajor":        [39.49, 2.89],
+  "Magaluf":          [39.51, 2.53],
+  "Manacor":          [39.57, 3.21],
+  "Palma":            [39.57, 2.65],
+  "Palmanova":        [39.51, 2.53],
+  "Pollença":         [39.87, 3.02],
+  "Port d'Andratx":   [39.55, 2.39],
+  "Port de Pollença": [39.91, 3.08],
+  "Sant Elm":         [39.58, 2.35],
+  "Santanyí":         [39.35, 3.13],
+  "Ses Salines":      [39.34, 3.05],
+  "Sóller":           [39.77, 2.72],
+  "Valldemossa":      [39.71, 2.62],
+};
+// Bounding box the OSM iframe below is loaded with. Kept beside the
+// centroid map so the map+overlay stay consistent — if we change one,
+// change both. left=lngMin, bottom=latMin, right=lngMax, top=latMax.
+const MAP_BBOX = { lngMin: 2.3, latMin: 39.2, lngMax: 3.4, latMax: 40.1 };
+// Return {leftPct, topPct} for a biz on the map, or null if we can't
+// place it. Prefers biz.lat/biz.lng when set (future-geocoded rows),
+// falls back to MALLORCA_CENTROIDS[biz.loc]. Returns null when the loc
+// is unknown so the pin is silently omitted rather than pinned to (0,0).
+function bizMapPosition(biz) {
+  let lat = Number.isFinite(Number(biz?.lat)) ? Number(biz.lat) : null;
+  let lng = Number.isFinite(Number(biz?.lng)) ? Number(biz.lng) : null;
+  if (lat == null || lng == null) {
+    const centroid = MALLORCA_CENTROIDS[biz?.loc];
+    if (!centroid) return null;
+    lat = centroid[0]; lng = centroid[1];
+  }
+  const { lngMin, latMin, lngMax, latMax } = MAP_BBOX;
+  const leftPct = ((lng - lngMin) / (lngMax - lngMin)) * 100;
+  const topPct  = ((latMax - lat) / (latMax - latMin)) * 100;
+  if (leftPct < 0 || leftPct > 100 || topPct < 0 || topPct > 100) return null;
+  return { leftPct, topPct };
+}
 
 // Themed groups for the Explore-page carousels. Each section is hidden if it has
 // zero matching listings under the active location/search filter.
@@ -1012,8 +1092,11 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
   const profileEmail = authSession?.user?.email || profile?.email || "";
   const [myName, setMyName] = useState(profileName);
   const [myEmail, setMyEmail] = useState(profileEmail);
-  const [guests, setGuests] = useState([]); // [{type:"new", id, name, email}]
-  const [newEmail, setNewEmail] = useState("");
+  // Party size — replaces the old guests-email panel + private-extras
+  // stepper with one unified stepper. 1 = just the booker; N > 1 means
+  // they're bringing N-1 friends. Cost derivation branches on private-solo
+  // (extra_person_eur pricing) vs group (flat basePrice × N) further down.
+  const [partySize, setPartySize] = useState(1);
   // Private-instructor only: collected at booking, both fields saved into
   // bookings.notes so the instructor knows where to travel to AND any
   // special instructions (gate codes, parking, what to bring, etc.).
@@ -1031,32 +1114,14 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
   // instant + Massage as request is the canonical mixed-mode case). Falls
   // back to 'instant' when the column is absent.
   const isRequestMode = String(slot?.booking_mode || 'instant') === 'request';
-  // Per-slot venue side is now the sole gate for the address-prompt and
-  // travel-zone path. 'customer' = the session happens at the customer's
-  // address (partner travels to them); 'instructor' = the session happens
-  // at a location the partner controls. This lets a hybrid partner (say a
-  // yoga studio that also offers at-your-home privates) mix modes without
-  // recategorising the business. Existing partners are unaffected because
-  // the 20260817000000 backfill flipped studio slots to 'instructor'; PI
-  // slots stayed at the 'customer' default.
-  const isAtInstructorVenue = String(slot?.venue_side || 'customer') === 'instructor';
-  const needsCustomerAddress = !isAtInstructorVenue;
-  // Group-class path for Private Instructor category slots with real
-  // capacity: when spots > 1, run the studio-group flow (each attendee
-  // credits individually, extras-stepper hidden, guest-invite panel
-  // available). Kept category-gated because the extras stepper below
-  // depends on session_offerings.extra_person_eur, which is Private
-  // Instructor-specific data.
-  const isGroupPrivateSlot = isPrivateBooking && Number(slot?.spots || 1) > 1;
-  // effectiveRequestMode below is recomputed once outsideCoverage is known,
-  // so an instant slot with an out-of-coverage address still goes into a
-  // pending state instead of confirming at €0.
-  // Extra guests requested for a private session (separate from the studio
-  // guest chip list). Only visible when the matched offering allows it.
-  const [privateExtras, setPrivateExtras] = useState(0);
+  // Which location the customer picked, when the matched offering carries a
+  // locations array (Noor's Private: {At studio ◈ 30, At your home ◈ 60}).
+  // A single stamped slot.venue_side / slot.credits can't represent the
+  // choice on its own — the picked location overrides both below.
+  const [locationIdx, setLocationIdx] = useState(0);
   // Look up the offering behind this slot so we can apply group-pricing
-  // (extra_person_eur, max_people). We match on the slot name pattern used
-  // during generation: "${type} · ${length_min} min".
+  // (extra_person_eur, max_people) and per-location pricing. We match on
+  // the slot name pattern used during generation: "${type} · ${length_min} min".
   const matchedOffering = (() => {
     if (!isPrivateBooking) return null;
     const offs = Array.isArray(biz.session_offerings) ? biz.session_offerings : [];
@@ -1071,53 +1136,76 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
     ? matchedOffering.extra_person_eur : 0;
   const offeringMax = matchedOffering && Number.isFinite(matchedOffering.max_people) && matchedOffering.max_people > 1
     ? matchedOffering.max_people : (extraPersonPrice > 0 ? 8 : 1);
-  // Extended travel surcharge — per-zone. Normalises both sides (lowercase,
-  // strip diacritics, drop punctuation) before substring matching, then picks
-  // the longest matching area so "Palma de Mallorca" wins over "Palma" when
-  // both are listed. Core-coverage matches always skip the fee. Falls through
-  // to no fee + "may be outside coverage" warning if nothing matches. Skipped
-  // entirely when the session is at the instructor's own venue.
-  const travelZones       = normalizeTravelAreas(biz.travel_areas);
-  const coverageAreasList = Array.isArray(biz.coverage_areas) ? biz.coverage_areas : [];
-  const rawAddr           = (myLocation || '').trim();
-  const addrN             = normalizeForMatch(rawAddr);
-  const inCore            = needsCustomerAddress && addrN.length > 0
-    && coverageAreasList.some(a => a && addrN.includes(normalizeForMatch(a)));
-  const matchedZone       = needsCustomerAddress && !inCore && addrN.length > 0
-    ? resolveTravelZone(travelZones, rawAddr) : null;
-  const inExtended        = !!matchedZone;
-  const outsideCoverage   = needsCustomerAddress && addrN.length >= 6 && !inCore && !inExtended;
-  const appliedTravelFee  = matchedZone ? Number(matchedZone.fee_eur) || 0 : 0;
-  // Force request routing when the address doesn't fall in any zone — the
-  // instructor should get the chance to accept, decline, or negotiate a
-  // travel fee rather than being locked into a free trip. Only relevant
-  // for at-customer sessions.
-  const effectiveRequestMode = isRequestMode || outsideCoverage;
-  // Base price. Per-slot slots.credits wins so a private instructor with
-  // several differently-priced offerings (Noor Yoga: 15 / 20 / 30 / 60)
-  // renders each slot at its true price. Falls back to biz.cr when the
-  // slot didn't stamp one (legacy rows).
-  const basePrice = Number.isFinite(Number(slot?.credits)) && Number(slot.credits) > 0
-    ? Number(slot.credits)
-    : Number(biz.cr) || 0;
+  // Multi-location pricing. Null for legacy single-price offerings.
+  const offeringLocs = matchedOffering && Array.isArray(matchedOffering.locations) && matchedOffering.locations.length > 0
+    ? matchedOffering.locations : null;
+  const pickedLoc = offeringLocs ? (offeringLocs[locationIdx] || offeringLocs[0]) : null;
+  // Per-slot venue side gates the address-prompt and travel-zone path.
+  // 'customer' = session at the customer's address (partner travels to them);
+  // 'instructor' = session at a partner-controlled location. Picked location
+  // wins when the offering has multi-location pricing; otherwise falls back
+  // to the slot's stamped venue_side (studio slots → 'instructor' via the
+  // 20260817000000 backfill; PI slots default to 'customer').
+  const effectiveVenueSide  = pickedLoc?.venue_side || String(slot?.venue_side || 'customer');
+  const isAtInstructorVenue = effectiveVenueSide === 'instructor';
+  const needsCustomerAddress = !isAtInstructorVenue;
+  // Group-class path for Private Instructor category slots with real
+  // capacity: when spots > 1, run the studio-group flow (each attendee
+  // credits individually, extras-stepper hidden, guest-invite panel
+  // available). Kept category-gated because the extras stepper below
+  // depends on session_offerings.extra_person_eur, which is Private
+  // Instructor-specific data.
+  const isGroupPrivateSlot = isPrivateBooking && Number(slot?.spots || 1) > 1;
+  // Zone picker replaces the old address-substring matcher. Customer picks
+  // their area from a pill row of the partner's published zones (coverage
+  // areas at €0 + extended zones with their fees). No fallback pill — if
+  // the customer's area isn't listed, the instructor doesn't travel there
+  // and the whole at-home flow is blocked with a nudge to book at-studio
+  // or contact the partner directly. Address stays required for navigation
+  // but no longer drives the fee. Skipped entirely for instructor-venue
+  // sessions.
+  const zoneOptions      = needsCustomerAddress ? buildZoneOptions(biz) : [];
+  const hasZones         = zoneOptions.length > 0;
+  const travelBlocked    = needsCustomerAddress && !hasZones;
+  const [zoneIdx, setZoneIdx] = useState(0);
+  const selectedZone     = hasZones ? (zoneOptions[Math.min(zoneIdx, zoneOptions.length - 1)] || zoneOptions[0]) : null;
+  const appliedTravelFee = selectedZone ? Number(selectedZone.fee_eur) || 0 : 0;
+  // effectiveRequestMode is now just the per-slot booking_mode — the
+  // "outside listed zones" pending route is gone because the customer can
+  // only pick from zones the instructor already opted into.
+  const effectiveRequestMode = isRequestMode;
+  // Base price. Picked location wins for multi-location offerings; otherwise
+  // per-slot slots.credits (so a private instructor with several differently-
+  // priced offerings renders each slot at its true price); otherwise biz.cr
+  // for legacy rows that never stamped a slot price.
+  const basePrice = pickedLoc
+    ? (Number.isFinite(Number(pickedLoc.price_eur)) ? Number(pickedLoc.price_eur) : 0)
+    : (Number.isFinite(Number(slot?.credits)) && Number(slot.credits) > 0
+        ? Number(slot.credits)
+        : Number(biz.cr) || 0);
   // Capacity path:
   //   - Group private slot (spots > 1): behave like a studio group class.
-  //   - 1-on-1 private slot: force avail=1 and use the extras stepper.
-  //   - Studio group: unchanged.
-  const avail = (isPrivateBooking && !isGroupPrivateSlot)
-    ? 1
-    : slot.spots - slot.booked;
-  const totalPeople = (isPrivateBooking && !isGroupPrivateSlot)
-    ? (1 + privateExtras)
-    : (1 + guests.length);
-  const cost = (isPrivateBooking && !isGroupPrivateSlot)
-    ? (basePrice + privateExtras * extraPersonPrice + appliedTravelFee)
+  //   - 1-on-1 private slot: slot has 1 spot but party can grow via
+  //     extra_person_eur (offering-defined max).
+  //   - Studio group: capped at remaining slot capacity.
+  const isSoloPrivate = isPrivateBooking && !isGroupPrivateSlot;
+  const maxParty      = isSoloPrivate
+    ? Math.max(1, offeringMax)
+    : Math.max(1, (slot.spots || 1) - (slot.booked || 0));
+  // Clamp partySize into range whenever the slot / offering changes under
+  // us so the total never overshoots. The stepper below drives the state.
+  const totalPeople = Math.min(Math.max(1, partySize), maxParty);
+  const cost = isSoloPrivate
+    ? (basePrice + (totalPeople - 1) * extraPersonPrice + appliedTravelFee)
     : basePrice * totalPeople + appliedTravelFee;
   const canAfford = credits >= cost;
-  const canAddMore = !(isPrivateBooking && !isGroupPrivateSlot) && totalPeople < avail;
   // Require a usable address for at-customer private bookings only.
-  // Instructor-venue slots have no useful address to collect.
-  const locationOk = !needsCustomerAddress || myLocation.trim().length >= 6;
+  // Instructor-venue slots have no useful address to collect. When travel
+  // is blocked (instructor has no published zones), locationOk stays false
+  // and the CTA carries the distinct "not available" copy — hiding the
+  // address input alone would leave the customer stuck on the generic
+  // "add the session address to continue" wording.
+  const locationOk = !needsCustomerAddress || (!travelBlocked && myLocation.trim().length >= 6);
   // Required for at-customer private bookings (instructor needs to be able
   // to call the customer). Loose pattern — just enough digits to be plausible.
   // For instructor-venue and group slots the phone is optional (studio-style).
@@ -1137,16 +1225,6 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
       if (!myPhone && profile?.phone) setMyPhone(profile.phone);
     }
   }, [signedIn, profileName, profileEmail, profile?.phone]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function addNewGuest() {
-    if (!newEmail.trim() || !canAddMore) return;
-    setGuests(p=>[...p, {type:"new", id:Date.now(), name:newEmail, email:newEmail}]);
-    setNewEmail("");
-  }
-
-  function removeGuest(id) {
-    setGuests(p=>p.filter(g=>g.id!==id));
-  }
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(27,28,25,0.75)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"24px 16px"}} onClick={onClose}>
@@ -1218,11 +1296,74 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                 </>
               )}
 
+              {/* Location picker — only when the matched offering has
+                  multiple location options (Noor's Private: At studio /
+                  At your home). Choosing an at-customer location reveals
+                  the phone + address fields below. Pill row so the choice
+                  is one tap. */}
+              {offeringLocs && offeringLocs.length > 1 && (
+                <>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Session location</p>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:18}}>
+                    {offeringLocs.map((l, li) => {
+                      const on = li === locationIdx;
+                      const feeSuffix = l?.venue_side === 'customer' ? " + travel" : "";
+                      return (
+                        <button key={l.label || li} type="button" onClick={() => setLocationIdx(li)}
+                          style={{padding:"9px 14px",borderRadius:999,border:"1px solid " + (on ? "#213C18" : "rgba(195,200,188,0.6)"),background:on ? "#213C18" : "#fff",color:on ? "#fff" : "#213C18",fontFamily:F2,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
+                          {l.label || `Option ${li + 1}`} · ◈ {Number(l?.price_eur) || 0}{feeSuffix}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {/* Travel-blocked: instructor has no published zones, so the
+                  at-home flow is unbookable. Replaces the phone/address/pill
+                  section entirely; CTA below is disabled with matching copy. */}
+              {needsCustomerAddress && travelBlocked && (
+                <div style={{background:"#F5F0E4",border:"1px solid #D9CFB4",borderRadius:10,padding:"12px 14px",marginBottom:18}}>
+                  <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#6F5B44",margin:"0 0 4px",letterSpacing:"0.3px"}}>At-home not available yet</p>
+                  <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:0,lineHeight:1.55}}>
+                    This instructor hasn't published travel areas yet, so we can't confirm they'll travel to you. Try picking a session at their venue instead, or message them directly.
+                  </p>
+                </div>
+              )}
+
+              {/* Zone picker — customer chooses their area from the
+                  instructor's published zones. Fee is deterministic from the
+                  pick; address below is navigation-only. No "elsewhere"
+                  fallback — if their area isn't listed, the hint under the
+                  pills points them elsewhere. */}
+              {needsCustomerAddress && !travelBlocked && (
+                <>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>
+                    Your area <span style={{color:"#C46A4D"}}>*</span>
+                  </p>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}>
+                    {zoneOptions.map((z, zi) => {
+                      const on = zi === Math.min(zoneIdx, zoneOptions.length - 1);
+                      const feeText = z.fee_eur > 0 ? ` · +◈ ${z.fee_eur}` : ' · included';
+                      return (
+                        <button key={z.key} type="button" onClick={() => setZoneIdx(zi)}
+                          style={{padding:"9px 14px",borderRadius:999,border:"1px solid " + (on ? "#213C18" : "rgba(195,200,188,0.6)"),background:on ? "#213C18" : "#fff",color:on ? "#fff" : "#213C18",fontFamily:F2,fontSize:13,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
+                          {z.area}{feeText}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 18px",lineHeight:1.5}}>
+                    Not seeing your area? This instructor doesn't currently travel there.
+                  </p>
+                </>
+              )}
+
               {/* At-customer private bookings only: phone number — so the
                   instructor can reach the customer with logistics questions.
                   Skipped for instructor-venue sessions (customer just shows
                   up, contact via email is enough) and for studio group classes. */}
-              {needsCustomerAddress && (
+              {needsCustomerAddress && !travelBlocked && (
                 <>
                   <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>
                     Your mobile <span style={{color:"#C46A4D"}}>*</span>
@@ -1239,11 +1380,10 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
               )}
 
               {/* At-customer private bookings only: exact session address +
-                  optional arrival notes. Skipped for instructor-venue sessions
-                  where the location is set by the partner. Both fields
-                  composed into bookings.notes so the instructor sees
-                  everything in one place. */}
-              {needsCustomerAddress && (
+                  optional arrival notes. Address is navigation-only now —
+                  the zone pick above determines the fee. Skipped for
+                  instructor-venue sessions and when travel is blocked. */}
+              {needsCustomerAddress && !travelBlocked && (
                 <>
                   <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>
                     Exact session address <span style={{color:"#C46A4D"}}>*</span>
@@ -1274,59 +1414,35 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                 </>
               )}
 
-              {/* Private group pricing — shown only when the instructor's
-                  offering allows more than 1 person (extra_person_eur > 0)
-                  AND the slot is a solo 1-on-1 (not a real group class,
-                  which uses the "bring friends" invite path instead). */}
-              {isPrivateBooking && !isGroupPrivateSlot && extraPersonPrice > 0 && (
+              {/* Unified party-size stepper. Replaces both the old private-
+                  extras stepper (private solo with extra_person_eur pricing)
+                  and the "bring friends" email panel (studio/group flow with
+                  flat basePrice × N pricing). One control, one head count,
+                  cost calc branches upstream. Hidden when the max party is
+                  1 (single-spot slot with no extras allowed). */}
+              {maxParty > 1 && (
                 <div style={{marginBottom:16}}>
-                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Number of people</p>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>How many people?</p>
                   <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 14px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
                     <div>
-                      <p style={{fontFamily:F2,fontSize:13,color:"#1B1C19",fontWeight:600,margin:"0 0 3px"}}>{1 + privateExtras} {1 + privateExtras === 1 ? "person" : "people"}</p>
-                      <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0}}>◈ {biz.cr} for you{privateExtras > 0 ? ` + ${privateExtras} × ◈ ${extraPersonPrice} extra` : ""}</p>
+                      <p style={{fontFamily:F2,fontSize:13,color:"#1B1C19",fontWeight:600,margin:"0 0 3px"}}>{totalPeople} {totalPeople === 1 ? "person" : "people"}</p>
+                      <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0}}>
+                        {isSoloPrivate && totalPeople > 1 && extraPersonPrice > 0
+                          ? `◈ ${basePrice} + ${totalPeople - 1} × ◈ ${extraPersonPrice}`
+                          : `${totalPeople} × ◈ ${basePrice}`}
+                      </p>
                     </div>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <button type="button" onClick={()=>setPrivateExtras(p=>Math.max(0, p-1))} disabled={privateExtras <= 0}
-                        style={{width:32,height:32,borderRadius:"50%",border:"1px solid rgba(33,60,24,0.3)",background:"#fff",color:"#213C18",fontFamily:F2,fontSize:16,fontWeight:700,cursor:privateExtras<=0?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,opacity:privateExtras<=0?0.4:1}}>−</button>
-                      <span style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",minWidth:26,textAlign:"center"}}>{1 + privateExtras}</span>
-                      <button type="button" onClick={()=>setPrivateExtras(p=>Math.min(offeringMax - 1, p+1))} disabled={1 + privateExtras >= offeringMax}
-                        style={{width:32,height:32,borderRadius:"50%",border:"1px solid rgba(33,60,24,0.3)",background:"#fff",color:"#213C18",fontFamily:F2,fontSize:16,fontWeight:700,cursor:(1+privateExtras>=offeringMax)?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,opacity:(1+privateExtras>=offeringMax)?0.4:1}}>+</button>
+                      <button type="button" onClick={()=>setPartySize(p=>Math.max(1, p-1))} disabled={totalPeople <= 1}
+                        style={{width:32,height:32,borderRadius:"50%",border:"1px solid rgba(33,60,24,0.3)",background:"#fff",color:"#213C18",fontFamily:F2,fontSize:16,fontWeight:700,cursor:totalPeople<=1?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,opacity:totalPeople<=1?0.4:1}}>−</button>
+                      <span style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",minWidth:26,textAlign:"center"}}>{totalPeople}</span>
+                      <button type="button" onClick={()=>setPartySize(p=>Math.min(maxParty, p+1))} disabled={totalPeople >= maxParty}
+                        style={{width:32,height:32,borderRadius:"50%",border:"1px solid rgba(33,60,24,0.3)",background:"#fff",color:"#213C18",fontFamily:F2,fontSize:16,fontWeight:700,cursor:totalPeople>=maxParty?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,opacity:totalPeople>=maxParty?0.4:1}}>+</button>
                     </div>
                   </div>
-                  <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:"6px 0 0",lineHeight:1.5}}>Up to {offeringMax} people. The instructor adjusts the session for the group.</p>
-                </div>
-              )}
-
-              {/* Bring friends — group classes (studio OR private-instructor
-                  group slots). Solo private sessions use the extras stepper
-                  above instead. */}
-              {(!isPrivateBooking || isGroupPrivateSlot) && (
-                <>
-                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>Bring friends <span style={{fontFamily:F2,fontSize:10,color:"#54584F",fontWeight:400,letterSpacing:0,textTransform:"none"}}>— optional</span></p>
-                  <div style={{display:"flex",gap:8,marginBottom:20}}>
-                    <input type="email" placeholder="Friend's email address" value={newEmail} onChange={e=>setNewEmail(e.target.value)}
-                      onKeyDown={e=>e.key==="Enter"&&addNewGuest()}
-                      style={{flex:1,border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:13,color:"#1B1C19",outline:"none",background:"#FBF9F4",transition:"border-color .15s"}}
-                      onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
-                    <button onClick={addNewGuest} disabled={!newEmail.trim()||!canAddMore}
-                      style={{padding:"10px 16px",background:newEmail.trim()&&canAddMore?"#213C18":"#E4E2DD",color:newEmail.trim()&&canAddMore?"#fff":"#54584F",border:"none",borderRadius:8,fontFamily:F2,fontSize:13,fontWeight:700,cursor:newEmail.trim()&&newEmail.trim()&&canAddMore?"pointer":"not-allowed",transition:"all .15s",whiteSpace:"nowrap"}}>
-                      + Add
-                    </button>
-                  </div>
-                </>
-              )}
-
-              {/* Added guests list */}
-              {guests.length>0&&(
-                <div style={{background:"#F5F3EE",borderRadius:10,padding:"10px 14px",marginBottom:16}}>
-                  <p style={{fontFamily:F2,fontSize:10,color:"#54584F",fontWeight:600,margin:"0 0 8px",letterSpacing:"1px",textTransform:"uppercase"}}>Booking for {totalPeople} people</p>
-                  {guests.filter(g=>g.type==="new").map(g=>(
-                    <div key={g.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                      <p style={{fontFamily:F2,fontSize:12,color:"#1B1C19",margin:0}}>📧 {g.email} <span style={{color:"#54584F",fontSize:11}}>(invite will be sent)</span></p>
-                      <button onClick={()=>removeGuest(g.id)} style={{background:"transparent",border:"none",color:"#54584F",cursor:"pointer",fontSize:16}}>×</button>
-                    </div>
-                  ))}
+                  <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:"6px 0 0",lineHeight:1.5}}>
+                    Up to {maxParty} people. {isSoloPrivate ? "The instructor adjusts the session for the group." : "Everyone shares one booking on your credits."}
+                  </p>
                 </div>
               )}
 
@@ -1334,15 +1450,15 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
               <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 14px",marginBottom:16}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
                   <span style={{fontFamily:F2,fontSize:13,color:"#54584F"}}>
-                    {isPrivateBooking && !isGroupPrivateSlot && privateExtras > 0
-                      ? `◈ ${basePrice} + ${privateExtras} × ◈ ${extraPersonPrice}`
+                    {isSoloPrivate && totalPeople > 1 && extraPersonPrice > 0
+                      ? `◈ ${basePrice} + ${totalPeople - 1} × ◈ ${extraPersonPrice}`
                       : `${totalPeople} × ◈ ${basePrice} credits`}
                   </span>
-                  <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>◈ {(isPrivateBooking && !isGroupPrivateSlot) ? (basePrice + privateExtras * extraPersonPrice) : (basePrice * totalPeople)}</span>
+                  <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>◈ {cost - appliedTravelFee}</span>
                 </div>
                 {appliedTravelFee > 0 && (
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                    <span style={{fontFamily:F2,fontSize:13,color:"#54584F"}}>Extended travel fee</span>
+                    <span style={{fontFamily:F2,fontSize:13,color:"#54584F"}}>Travel to {selectedZone?.area}</span>
                     <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#B8925C"}}>+ ◈ {appliedTravelFee}</span>
                   </div>
                 )}
@@ -1355,21 +1471,15 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                   <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:canAfford?"#213C18":"#e05c5c"}}>{canAfford?`◈ ${credits-cost}`:"Insufficient credits"}</span>
                 </div>
               </div>
-              {outsideCoverage && (
-                <div style={{background:"#FFE6D9",border:"1px solid #DCC2A6",borderRadius:10,padding:"10px 14px",marginBottom:16}}>
-                  <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:0,lineHeight:1.55}}>
-                    Your address may be outside the instructor's usual coverage. They'll review the request and let you know if they can travel there.
-                  </p>
-                </div>
-              )}
 
               {(() => {
-                const ok = myName && myEmail && canAfford && locationOk && phoneOk && healthAck;
-                const cta = !canAfford ? "Insufficient Credits"
-                  : !phoneOk           ? "Add your mobile number to continue"
-                  : !locationOk        ? "Add the session address to continue"
-                  : !healthAck             ? "Tick the health acknowledgement to continue"
-                  : effectiveRequestMode   ? `Request booking · ◈ ${cost} held`
+                const ok = myName && myEmail && canAfford && !travelBlocked && locationOk && phoneOk && healthAck;
+                const cta = !canAfford        ? "Insufficient Credits"
+                  : travelBlocked             ? "Not available at your home yet"
+                  : !phoneOk                  ? "Add your mobile number to continue"
+                  : !locationOk               ? "Add the session address to continue"
+                  : !healthAck                ? "Tick the health acknowledgement to continue"
+                  : effectiveRequestMode      ? `Request booking · ◈ ${cost} held`
                   : `Confirm · ◈ ${cost} credits`;
                 const cancelWindow = cancelWindowHoursFor(biz);
                 // Detect "late booking" — slot start is within 24h of now.
@@ -1422,10 +1532,10 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                             location: isPrivateBooking ? myLocation.trim() : undefined,
                             locationNote: isPrivateBooking ? myLocationNote.trim() : undefined,
                             travelFee: appliedTravelFee || 0,
-                            // Signal to onConfirm that no travel zone matched
-                            // — forces pending_instructor even on instant
-                            // slots so the instructor decides on the trip.
-                            outsideCoverage: !!outsideCoverage,
+                            // Zone the customer picked from the instructor's
+                            // published list. Null when the session is at the
+                            // instructor's venue (no travel involved).
+                            travelZoneArea: selectedZone?.area || null,
                             healthAckAt: new Date().toISOString(),
                           },
                         });
@@ -1455,19 +1565,12 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
             {effectiveRequestMode && (
               <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 20px",lineHeight:1.6}}>
                 {isPrivateBooking
-                  ? (outsideCoverage
-                      ? "Your address is outside the instructor's listed zones, so we've sent this as a request. They have 48 hours to confirm — credits stay on your account until then. If they can't travel there, your credits are returned in full."
-                      : "Your instructor has been notified by SMS. They have 48 hours to confirm. We'll email you the moment they do — credits stay on your account until then.")
+                  ? "Your instructor has been notified by SMS. They have 48 hours to confirm. We'll email you the moment they do — credits stay on your account until then."
                   : "The venue has been emailed. They have 48 hours to confirm. We'll email you the moment they do — credits stay on your account until then."}
               </p>
             )}
-            {guests.filter(g=>g.type==="new").length>0&&(
-              <div style={{background:"#F5F3EE",borderRadius:10,padding:"12px 16px",marginBottom:20,textAlign:"left"}}>
-                <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#213C18",margin:"0 0 6px"}}>📧 Invite emails sent to:</p>
-                {guests.filter(g=>g.type==="new").map(g=>(
-                  <p key={g.id} style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 2px"}}>{g.email}</p>
-                ))}
-              </div>
+            {totalPeople > 1 && (
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 16px"}}>Booking for {totalPeople} people</p>
             )}
             <div style={{background:"#F5F3EE",borderRadius:10,padding:"10px 16px",marginBottom:24,display:"inline-block"}}>
               <span style={{fontFamily:F2,fontSize:13,color:"#54584F"}}>◈ {cost} used · balance ◈ {credits-cost}</span>
@@ -1670,6 +1773,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   // reveals the address input for travel-zone matching). Both reset when
   // the operator opens a different offering row.
   const [reqLocationIdx, setReqLocationIdx] = useState(0);
+  const [reqZoneIdx, setReqZoneIdx]     = useState(0);
   const [reqAddress, setReqAddress]     = useState("");
   function resetRequestForm() {
     setReqDate(_minReqDate);
@@ -1678,6 +1782,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     setReqNote("");
     setReqHealthAck(false);
     setReqLocationIdx(0);
+    setReqZoneIdx(0);
     setReqAddress("");
     setReqError("");
     setReqSubmitting(false);
@@ -1709,15 +1814,22 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
       ? (Number.isFinite(Number(pickedLoc.price_eur)) ? Number(pickedLoc.price_eur) : 0)
       : (Number.isFinite(Number(offering?.price_eur)) ? Number(offering.price_eur) : 0);
     if (basePrice <= 0) { setReqError("This offering has no price set. Contact the venue directly."); return; }
-    // For at-customer locations, resolve the travel zone client-side too
-    // — display + affordability preview. The edge fn re-computes server-
-    // side (single source of truth so a manipulated client can't skip
-    // the fee).
+    // Zone-based fee lookup replaces the old address-substring matcher —
+    // customer picks their area from the partner's published zones and the
+    // fee is deterministic from that pick. Server re-validates the zone
+    // against businesses.travel_areas so the total can't be spoofed.
     const needsAddress = pickedLoc?.venue_side === 'customer';
+    const zoneOptions = needsAddress ? buildZoneOptions(biz) : [];
+    if (needsAddress && zoneOptions.length === 0) {
+      setReqError("This instructor doesn't publish travel areas yet. Contact them directly to arrange.");
+      return;
+    }
+    const selectedZone = zoneOptions.length > 0
+      ? (zoneOptions[Math.min(reqZoneIdx, zoneOptions.length - 1)] || zoneOptions[0])
+      : null;
     const rawAddr = (reqAddress || '').trim();
     if (needsAddress && rawAddr.length < 6) { setReqError("Add the session address to continue."); return; }
-    const matchedZone = needsAddress ? resolveTravelZone(biz.travel_areas, rawAddr) : null;
-    const clientTravelFee = matchedZone ? Number(matchedZone.fee_eur) || 0 : 0;
+    const clientTravelFee = selectedZone ? Number(selectedZone.fee_eur) || 0 : 0;
     const totalPreview = basePrice + clientTravelFee;
     if (Number(credits) < totalPreview) {
       onGotoCredits?.();
@@ -1734,12 +1846,15 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
           specific_time: reqTimePref === 'specific' ? reqSpecificTime : undefined,
           note: reqNote || undefined,
           health_ack_at: new Date().toISOString(),
-          // New optional fields for multi-location offerings. Server
-          // ignores them for legacy single-price offerings; when
-          // present it looks up the location by label on the offering
-          // and validates against biz.travel_areas server-side.
+          // Multi-location offerings: server ignores these for legacy
+          // single-price offerings; when present it looks up the location
+          // by label on the offering to price the base credits.
           location_label: pickedLoc?.label || undefined,
           address: needsAddress ? rawAddr : undefined,
+          // Customer-picked zone. Server re-validates the area name against
+          // businesses.travel_areas / coverage_areas so the client can't
+          // fabricate a cheaper zone than the partner offers.
+          travel_zone_area: needsAddress ? (selectedZone?.area || null) : undefined,
         },
       });
       if (error) { setReqError(error.message || 'Could not send request.'); return; }
@@ -2159,13 +2274,19 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                     : (Number.isFinite(Number(o?.price_eur)) ? Number(o.price_eur) : (Number(biz.cr) || 0));
                   const needsAddress = pickedLoc?.venue_side === 'customer';
                   const rawAddr = (reqAddress || '').trim();
-                  const addrN = normalizeForMatch(rawAddr);
-                  const matchedZone = needsAddress && addrN.length > 0
-                    ? resolveTravelZone(biz.travel_areas, rawAddr) : null;
-                  const outsideCov = needsAddress && addrN.length >= 6 && !matchedZone;
-                  const travelFee = matchedZone ? Number(matchedZone.fee_eur) || 0 : 0;
+                  // Zone-picker replaces address matching — customer picks
+                  // their area from the partner's published zones. When the
+                  // partner hasn't published any zones the at-home flow is
+                  // blocked; when they have, the pill choice drives the fee.
+                  const zoneOptions = needsAddress ? buildZoneOptions(biz) : [];
+                  const hasZones = zoneOptions.length > 0;
+                  const travelBlocked = needsAddress && !hasZones;
+                  const selectedZone = hasZones
+                    ? (zoneOptions[Math.min(reqZoneIdx, zoneOptions.length - 1)] || zoneOptions[0])
+                    : null;
+                  const travelFee = selectedZone ? Number(selectedZone.fee_eur) || 0 : 0;
                   const totalPrice = basePrice + travelFee;
-                  const addressOk = !needsAddress || (rawAddr.length >= 6);
+                  const addressOk = !needsAddress || (!travelBlocked && rawAddr.length >= 6);
                   const durLabel = humanDuration(o?.length_min);
                   const open = openOfferingIdx === i;
                   // Per-offering photo drives the small thumbnail on the
@@ -2239,11 +2360,46 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                               </div>
                             )}
 
-                            {/* Customer-address input — only when the
-                                picked location is at the customer's
-                                address. Live zone lookup shows the
-                                surcharge and warns on out-of-coverage. */}
-                            {needsAddress && (
+                            {/* Travel-blocked: partner has no published
+                                zones, so at-home isn't bookable. Replaces
+                                pill + address; submit stays disabled. */}
+                            {travelBlocked && (
+                              <div style={{padding:"10px 12px",background:"#F5F0E4",border:"1px solid #D9CFB4",borderRadius:8}}>
+                                <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:0,lineHeight:1.55}}>
+                                  This partner hasn't published travel areas yet — at-home isn't bookable. Message them directly to arrange.
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Zone picker — customer chooses their area
+                                from the partner's published zones. Fee
+                                comes from the pick; address below is
+                                navigation-only. */}
+                            {needsAddress && !travelBlocked && (
+                              <div>
+                                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase",margin:"0 0 4px"}}>Your area</p>
+                                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                                  {zoneOptions.map((z, zi) => {
+                                    const on = zi === Math.min(reqZoneIdx, zoneOptions.length - 1);
+                                    const feeText = z.fee_eur > 0 ? ` · +◈ ${z.fee_eur}` : ' · included';
+                                    return (
+                                      <button key={z.key} type="button" onClick={() => setReqZoneIdx(zi)}
+                                        style={{padding:"7px 12px",borderRadius:999,border:"1px solid " + (on ? "#213C18" : "rgba(195,200,188,0.6)"),background:on ? "#213C18" : "#fff",color:on ? "#fff" : "#213C18",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
+                                        {z.area}{feeText}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                                <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"6px 0 0",lineHeight:1.5}}>
+                                  Not seeing your area? This partner doesn't currently travel there.
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Session address — required for navigation
+                                when the partner is travelling to the
+                                customer. No longer drives the fee. */}
+                            {needsAddress && !travelBlocked && (
                               <div>
                                 <label style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase"}}>
                                   Session address <span style={{color:"#C46A4D"}}>*</span>
@@ -2251,18 +2407,6 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                                     value={reqAddress} onChange={e => setReqAddress(e.target.value)}
                                     style={{display:"block",marginTop:4,padding:"9px 12px",border:"1px solid rgba(195,200,188,0.6)",borderRadius:8,fontFamily:F2,fontSize:13,background:"#fff",color:"#1B1C19",width:"100%",boxSizing:"border-box"}}/>
                                 </label>
-                                {matchedZone && (
-                                  <p style={{fontFamily:F2,fontSize:11,color:"#766149",margin:"6px 0 0",lineHeight:1.55}}>
-                                    {matchedZone.area} · +◈ {Number(matchedZone.fee_eur) || 0} travel
-                                  </p>
-                                )}
-                                {outsideCov && (
-                                  <div style={{marginTop:6,padding:"8px 12px",background:"#FFE6D9",border:"1px solid #DCC2A6",borderRadius:8}}>
-                                    <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:0,lineHeight:1.55}}>
-                                      Your address may be outside the instructor's usual coverage. They'll review the request and let you know.
-                                    </p>
-                                  </div>
-                                )}
                               </div>
                             )}
 
@@ -2323,9 +2467,10 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                             </label>
 
                             <div style={{display:"flex",justifyContent:"flex-end"}}>
-                              <button type="button" onClick={() => submitOfferingRequest(o)} disabled={reqSubmitting || !reqHealthAck || !addressOk}
-                                style={{padding:"10px 20px",background:(reqHealthAck&&addressOk)?"#213C18":"#E4E2DD",color:(reqHealthAck&&addressOk)?"#fff":"#54584F",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:(reqSubmitting||!reqHealthAck||!addressOk)?"not-allowed":"pointer",opacity:reqSubmitting?0.6:1}}>
+                              <button type="button" onClick={() => submitOfferingRequest(o)} disabled={reqSubmitting || travelBlocked || !reqHealthAck || !addressOk}
+                                style={{padding:"10px 20px",background:(!travelBlocked&&reqHealthAck&&addressOk)?"#213C18":"#E4E2DD",color:(!travelBlocked&&reqHealthAck&&addressOk)?"#fff":"#54584F",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:(reqSubmitting||travelBlocked||!reqHealthAck||!addressOk)?"not-allowed":"pointer",opacity:reqSubmitting?0.6:1}}>
                                 {reqSubmitting ? "Sending..."
+                                  : travelBlocked ? "Not available at your home yet"
                                   : !addressOk    ? "Add the session address to continue"
                                   : !reqHealthAck ? "Tick the acknowledgement to continue"
                                   : `Send request · ◈ ${totalPrice} held`}
@@ -2547,6 +2692,182 @@ function SyncEngine({ listings, onUpdate }) {
 // ═══════════════════════════════════════════════════════════════
 // PAGE: HOME
 // ═══════════════════════════════════════════════════════════════
+// ── ExploreMap ─────────────────────────────────────────────────────────
+// Real Leaflet-backed map for the Explore "Map" view. Replaces the old
+// OSM iframe (which couldn't reposition pins on pan/zoom because the
+// iframe never told us its viewport). Leaflet is loaded from a CDN in
+// index.html — window.L is nullable and this component falls back to a
+// text-only "map failed to load" panel if the script is blocked.
+//
+// Pins position off biz.lat/lng when set, else MALLORCA_CENTROIDS[biz.loc].
+// Rebuilds the marker layer on every listings change so filter interactions
+// on Explore keep the map in sync. Click → onSelect(biz).
+function ExploreMap({ listings, onSelect }) {
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  const containerRef = useRef(null);
+  const mapRef       = useRef(null);
+  const markerLayerRef = useRef(null);
+  // Current map viewport in [swLat, swLng, neLat, neLng] form. Drives the
+  // sidebar filter — as the user pans/zooms, the venue list narrows to
+  // only what's inside the visible area. Null until the map's first
+  // 'moveend' fires (which Leaflet emits after init).
+  const [mapBounds, setMapBounds] = useState(null);
+  // Keep the latest onSelect in a ref so we don't rebuild markers just
+  // because the parent handed us a fresh function reference.
+  const onSelectRef  = useRef(onSelect);
+  useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
+  // Track whether we've already auto-fitted the map to markers once so
+  // subsequent listings changes (Explore filter tweaks) don't yank the
+  // view away from what the user has manually panned to.
+  const didFitRef = useRef(false);
+
+  // Init the map once. Loading Leaflet from CDN means window.L may not be
+  // ready on first render if the network is slow — poll briefly, then bail.
+  useEffect(() => {
+    let cancelled = false;
+    let tries = 0;
+    function tryInit() {
+      if (cancelled) return;
+      const L = typeof window !== 'undefined' ? window.L : null;
+      if (!L) {
+        if (tries++ < 20) return void setTimeout(tryInit, 100);
+        return; // Leaflet never loaded — fallback panel handles the UX below.
+      }
+      if (mapRef.current || !containerRef.current) return;
+      const map = L.map(containerRef.current, {
+        center: [39.62, 2.9],
+        zoom: 9,
+        scrollWheelZoom: true,
+      });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 18,
+        attribution: '&copy; OpenStreetMap',
+      }).addTo(map);
+      markerLayerRef.current = L.layerGroup().addTo(map);
+      mapRef.current = map;
+      // Emit initial bounds + re-emit on every pan/zoom end so the sidebar
+      // filter can follow the viewport.
+      const emitBounds = () => {
+        const b = map.getBounds();
+        setMapBounds([b.getSouth(), b.getWest(), b.getNorth(), b.getEast()]);
+      };
+      map.on('moveend', emitBounds);
+      emitBounds();
+    }
+    tryInit();
+    return () => {
+      cancelled = true;
+      if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
+      markerLayerRef.current = null;
+    };
+  }, []);
+
+  // Rebuild the marker layer whenever the listings array changes (search,
+  // category filter, "For You" filter, etc.). Uses a custom divIcon so the
+  // pins match the Wello sage/ivory palette instead of Leaflet's default
+  // blue pushpin — no image assets needed.
+  useEffect(() => {
+    const L = typeof window !== 'undefined' ? window.L : null;
+    const map = mapRef.current;
+    const layer = markerLayerRef.current;
+    if (!L || !map || !layer) return;
+    layer.clearLayers();
+    const bounds = [];
+    for (const b of (listings || [])) {
+      const pos = bizMapPosition(b);
+      if (!pos) continue;
+      // bizMapPosition returns leftPct/topPct for the old iframe overlay,
+      // but its inputs are the real lat/lng. Re-derive them here so the
+      // Leaflet marker sits at the right geo coordinate.
+      let lat = Number.isFinite(Number(b?.lat)) ? Number(b.lat) : null;
+      let lng = Number.isFinite(Number(b?.lng)) ? Number(b.lng) : null;
+      if (lat == null || lng == null) {
+        const centroid = MALLORCA_CENTROIDS[b?.loc];
+        if (!centroid) continue;
+        lat = centroid[0]; lng = centroid[1];
+      }
+      const html = `<div style="width:22px;height:22px;background:#213C18;border:2px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(0,0,0,0.35);"><span style="transform:rotate(45deg);color:#fff;font-family:${F2};font-size:10px;font-weight:800;line-height:1;">◈</span></div>`;
+      const icon = L.divIcon({
+        html,
+        className: 'wello-pin',
+        iconSize: [22, 22],
+        iconAnchor: [11, 22],
+        popupAnchor: [0, -22],
+      });
+      const marker = L.marker([lat, lng], { icon, title: `${b.name} · ${b.loc}` });
+      marker.on('click', () => onSelectRef.current?.(b));
+      layer.addLayer(marker);
+      bounds.push([lat, lng]);
+    }
+    // Auto-fit once on first render with markers so the initial view
+    // matches the data. Subsequent listings changes leave the viewport
+    // alone — the user might be actively panning/zooming and having the
+    // map yank around under them on every filter tweak is jarring.
+    if (!didFitRef.current) {
+      if (bounds.length > 1) map.fitBounds(bounds, { padding: [40, 40], maxZoom: 13 });
+      else if (bounds.length === 1) map.setView(bounds[0], 12);
+      if (bounds.length > 0) didFitRef.current = true;
+    }
+  }, [listings]);
+
+  // Sidebar list = only venues inside the current map viewport. Falls back
+  // to the full list until the map's first moveend has fired (avoids a
+  // one-frame flash of "0 venues" before bounds land).
+  const visibleListings = mapBounds
+    ? listings.filter(b => {
+        let lat = Number.isFinite(Number(b?.lat)) ? Number(b.lat) : null;
+        let lng = Number.isFinite(Number(b?.lng)) ? Number(b.lng) : null;
+        if (lat == null || lng == null) {
+          const centroid = MALLORCA_CENTROIDS[b?.loc];
+          if (!centroid) return false;
+          lat = centroid[0]; lng = centroid[1];
+        }
+        const [swLat, swLng, neLat, neLng] = mapBounds;
+        return lat >= swLat && lat <= neLat && lng >= swLng && lng <= neLng;
+      })
+    : listings;
+
+  const leafletMissing = typeof window !== 'undefined' && !window.L;
+  return (
+    <div style={{borderRadius:16,overflow:"hidden",height:520,position:"relative",marginTop:8,background:"#EAE8E3"}}>
+      <div ref={containerRef} style={{position:"absolute",inset:0}}/>
+      {leafletMissing && (
+        <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",padding:24,textAlign:"center"}}>
+          <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:0}}>Map failed to load. Try refreshing.</p>
+        </div>
+      )}
+      {/* Venue sidebar — same list as before, now purely as a scroll-to
+          companion. Sits above the tiles via zIndex; won't block map
+          panning because it's a small pinned panel. */}
+      <div style={{position:"absolute",top:12,left:12,background:"rgba(255,255,255,0.95)",backdropFilter:"blur(8px)",borderRadius:12,padding:"12px 16px",maxHeight:480,overflowY:"auto",width:220,boxShadow:"0 4px 20px rgba(0,0,0,0.1)",zIndex:500}}>
+        <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 4px"}}>{visibleListings.length} venue{visibleListings.length===1?"":"s"} in view</p>
+        {visibleListings.length !== listings.length && (
+          <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:"0 0 10px",fontStyle:"italic"}}>{listings.length - visibleListings.length} more outside — pan or zoom out to see them.</p>
+        )}
+        {visibleListings.length === listings.length && (
+          <div style={{marginBottom:10}}/>
+        )}
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {visibleListings.map(b=>(
+            <div key={b.id} onClick={()=>onSelect(b)}
+              style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:8,background:"#F5F3EE",cursor:"pointer",transition:"background .15s"}}
+              onMouseEnter={e=>e.currentTarget.style.background="#EAE8E3"}
+              onMouseLeave={e=>e.currentTarget.style.background="#F5F3EE"}>
+              <div style={{width:32,height:32,borderRadius:6,overflow:"hidden",flexShrink:0}}>
+                <img src={b.img} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#1B1C19",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.name}</p>
+                <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>📍 {b.loc} · ◈ {b.cr}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onToggleSave, onSetView, syncingIds, onGotoCredits }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
 
@@ -3500,34 +3821,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
 
         {/* MAP VIEW */}
         {viewMode==="map"&&(
-          <div style={{borderRadius:16,overflow:"hidden",height:520,position:"relative",marginTop:8}}>
-            <iframe
-              title="Wello venues map"
-              width="100%" height="100%" frameBorder="0" scrolling="no"
-              style={{borderRadius:16}}
-              src={`https://www.openstreetmap.org/export/embed.html?bbox=2.3%2C39.2%2C3.4%2C40.1&layer=mapnik&marker=39.6945%2C2.9217`}
-            />
-            {/* Venue pins overlay */}
-            <div style={{position:"absolute",top:12,left:12,background:"rgba(255,255,255,0.95)",backdropFilter:"blur(8px)",borderRadius:12,padding:"12px 16px",maxHeight:480,overflowY:"auto",width:220,boxShadow:"0 4px 20px rgba(0,0,0,0.1)"}}>
-              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 10px"}}>{filtered.length} venues</p>
-              <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                {filtered.map(b=>(
-                  <div key={b.id} onClick={()=>onSelect(b)}
-                    style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderRadius:8,background:"#F5F3EE",cursor:"pointer",transition:"background .15s"}}
-                    onMouseEnter={e=>e.currentTarget.style.background="#EAE8E3"}
-                    onMouseLeave={e=>e.currentTarget.style.background="#F5F3EE"}>
-                    <div style={{width:32,height:32,borderRadius:6,overflow:"hidden",flexShrink:0}}>
-                      <img src={b.img} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-                    </div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#1B1C19",margin:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.name}</p>
-                      <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>📍 {b.loc} · ◈ {b.cr}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <ExploreMap listings={filtered} onSelect={onSelect}/>
         )}
       </div>
 
@@ -5335,9 +5629,32 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       ? bizData.session_offerings.map(o => ({
           type: o?.type || (bizData?.category || ""),
           length_min: Number.isFinite(o?.length_min) && o.length_min > 0 ? o.length_min : 60,
-          price_eur:  Number.isFinite(o?.price_eur)  && o.price_eur  > 0 ? o.price_eur  : (bizData?.cr || 50),
+          // Prefer top-level price_eur; else the min of location prices (the
+          // "starting from" for multi-location offerings); else biz.cr. Without
+          // the middle branch, an offering with locations but no top-level
+          // price fell through to biz.cr and stamped that into every slot.
+          price_eur:  Number.isFinite(o?.price_eur)  && o.price_eur  > 0
+            ? o.price_eur
+            : (offeringLocationsMinPrice(o) ?? (bizData?.cr || 50)),
           extra_person_eur: Number.isFinite(o?.extra_person_eur) && o.extra_person_eur > 0 ? o.extra_person_eur : null,
           max_people:       Number.isFinite(o?.max_people)       && o.max_people       > 0 ? o.max_people       : null,
+          // Capacity per slot — how many independent bookings a slot for this
+          // offering accepts. 1 = strict 1-on-1 or one-booking-per-slot; N > 1
+          // = studio group class (each booker consumes 1 spot until N is
+          // reached). Distinct from max_people (single-booking party size).
+          capacity:         Number.isFinite(o?.capacity)         && o.capacity         > 0 ? o.capacity         : 1,
+          // Where the session happens. 'instructor' = at the partner's own
+          // venue (default), 'customer' = the partner travels to the
+          // customer's address. Overridden per-location for multi-location
+          // offerings — this field only matters for the single-location
+          // (legacy) shape.
+          venue_side:       o?.venue_side === 'customer' ? 'customer' : 'instructor',
+          // Booking flow. 'instant' = customer confirms immediately;
+          // 'request' = partner has 48h to accept/decline. Lets a hybrid
+          // partner mix modes on the same business (Transcend: Fire & Ice
+          // instant + Massage request). Falls back to instant to preserve
+          // existing behaviour for legacy offerings.
+          booking_mode:     o?.booking_mode === 'request' ? 'request' : 'instant',
           // Preserve the multi-location shape when present so hybrid
           // partners (Noor: Private + Group private with studio/at-home
           // options) don't lose their per-location prices on the next
@@ -5363,7 +5680,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // dashed "+ Add offering" / "+ Add availability window" buttons.
   const [showAddOffering, setShowAddOffering] = useState(false);
   const [showAddWindow,   setShowAddWindow]   = useState(false);
-  const [newOff, setNewOff] = useState({ type: "", length_min: 60, price_eur: 50, extra_person_eur: "", max_people: "" });
+  const [newOff, setNewOff] = useState({ type: "", length_min: 60, price_eur: 50, extra_person_eur: "", max_people: "", capacity: 1, venue_side: "instructor", booking_mode: "instant" });
+  // In-place offering edit. editingOfferingIdx is the row being edited (null
+  // = none). editBuffer is a local draft so Cancel discards cleanly. Save
+  // writes the buffer via dashUpdateOffering and closes.
+  const [editingOfferingIdx, setEditingOfferingIdx] = useState(null);
+  const [editBuffer, setEditBuffer] = useState(null);
   // Inline "add new window" form state — supports multi-day in one go
   // ("Mon Wed Fri 09:00 → 12:00" creates 3 windows in one action).
   const [newWindow, setNewWindow] = useState({ days: [], start: "09:00", end: "12:00" });
@@ -5393,8 +5715,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     const extra_person_eur = Number.isFinite(extraRaw) && extraRaw > 0 ? extraRaw : null;
     const maxRaw   = parseInt(newOff.max_people, 10);
     const max_people       = Number.isFinite(maxRaw)   && maxRaw   > 1 ? maxRaw   : null;
-    setDashSessionOfferings(prev => [...prev, { type, length_min, price_eur, extra_person_eur, max_people, img: null }]);
-    setNewOff({ type: "", length_min: 60, price_eur: 50, extra_person_eur: "", max_people: "" });
+    const capRaw   = parseInt(newOff.capacity, 10);
+    const capacity         = Number.isFinite(capRaw)   && capRaw   > 0 ? capRaw   : 1;
+    const venue_side       = newOff.venue_side === 'customer' ? 'customer' : 'instructor';
+    const booking_mode     = newOff.booking_mode === 'request' ? 'request' : 'instant';
+    setDashSessionOfferings(prev => [...prev, { type, length_min, price_eur, extra_person_eur, max_people, capacity, venue_side, booking_mode, img: null }]);
+    setNewOff({ type: "", length_min: 60, price_eur: 50, extra_person_eur: "", max_people: "", capacity: 1, venue_side: "instructor", booking_mode: "instant" });
     setShowAddOffering(false);
   }
   function dashAddOffering() {
@@ -5410,7 +5736,83 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   }
   function dashRemoveOffering(idx) {
     setDashSessionOfferings(prev => prev.filter((_, i) => i !== idx));
+    if (editingOfferingIdx === idx) { setEditingOfferingIdx(null); setEditBuffer(null); }
   }
+  // Open the inline editor: snapshot the row into a local buffer so Cancel
+  // discards cleanly (buffer edits don't touch dashSessionOfferings until Save).
+  function openOfferingEdit(idx) {
+    const src = dashSessionOfferings[idx];
+    if (!src) return;
+    setEditBuffer({
+      type: src.type || "",
+      length_min: src.length_min || 60,
+      price_eur: Number.isFinite(Number(src.price_eur)) ? Number(src.price_eur) : 0,
+      extra_person_eur: Number.isFinite(Number(src.extra_person_eur)) && src.extra_person_eur > 0 ? src.extra_person_eur : "",
+      max_people: Number.isFinite(Number(src.max_people)) && src.max_people > 1 ? src.max_people : "",
+      capacity: Number.isFinite(Number(src.capacity)) && src.capacity > 0 ? src.capacity : 1,
+      venue_side: src.venue_side === 'customer' ? 'customer' : 'instructor',
+      booking_mode: src.booking_mode === 'request' ? 'request' : 'instant',
+      locations: Array.isArray(src.locations) ? src.locations.map(l => ({
+        label: String(l?.label || ""),
+        price_eur: Number.isFinite(Number(l?.price_eur)) ? Number(l.price_eur) : 0,
+        venue_side: l?.venue_side === 'customer' ? 'customer' : 'instructor',
+      })) : [],
+      img: src.img || null,
+      category: src.category || '',
+    });
+    setEditingOfferingIdx(idx);
+  }
+  function closeOfferingEdit() {
+    setEditingOfferingIdx(null);
+    setEditBuffer(null);
+  }
+  async function commitOfferingEdit() {
+    if (editingOfferingIdx == null || !editBuffer) return;
+    const type = (editBuffer.type || "").trim();
+    if (!type) return;
+    const length_min = parseInt(editBuffer.length_min, 10) || 60;
+    const price_eur  = parseInt(editBuffer.price_eur, 10)  || 0;
+    const extraRaw   = parseInt(editBuffer.extra_person_eur, 10);
+    const extra_person_eur = Number.isFinite(extraRaw) && extraRaw > 0 ? extraRaw : null;
+    const maxRaw     = parseInt(editBuffer.max_people, 10);
+    const max_people       = Number.isFinite(maxRaw) && maxRaw > 1 ? maxRaw : null;
+    const capRaw     = parseInt(editBuffer.capacity, 10);
+    const capacity         = Number.isFinite(capRaw) && capRaw > 0 ? capRaw : 1;
+    const venue_side       = editBuffer.venue_side === 'customer' ? 'customer' : 'instructor';
+    const booking_mode     = editBuffer.booking_mode === 'request' ? 'request' : 'instant';
+    const locations = (editBuffer.locations || [])
+      .filter(l => String(l.label || '').trim().length > 0)
+      .map(l => ({
+        label: String(l.label).trim(),
+        price_eur: Math.max(0, parseInt(l.price_eur, 10) || 0),
+        venue_side: l.venue_side === 'customer' ? 'customer' : 'instructor',
+      }));
+    const patched = {
+      type, length_min, price_eur, extra_person_eur, max_people, capacity, venue_side, booking_mode,
+      locations: locations.length > 0 ? locations : undefined,
+      img: editBuffer.img || null,
+      category: editBuffer.category || '',
+    };
+    // Update local state, then persist session_offerings to Supabase
+    // immediately so the change is durable even if the partner doesn't
+    // click Save availability. Slot rows still need a regenerate for the
+    // new price/length to flow through — flash a nudge that says so.
+    const nextArr = dashSessionOfferings.map((o, i) => i === editingOfferingIdx ? { ...o, ...patched } : o);
+    setDashSessionOfferings(nextArr);
+    closeOfferingEdit();
+    const { error } = await supabase
+      .from('businesses').update({ session_offerings: nextArr }).eq('id', bizData.id);
+    if (error) {
+      flashSaveMsg("err", "Offering saved locally but couldn't persist to the DB — " + error.message);
+      return;
+    }
+    setBizData(prev => ({ ...prev, session_offerings: nextArr }));
+    flashSaveMsg("settings", "Offering saved. Click Save availability below to regenerate your timetable slots at the new price/length.");
+  }
+  function bufferUpdate(patch)               { setEditBuffer(p => p ? { ...p, ...patch } : p); }
+  function bufferAddLocation()               { setEditBuffer(p => p ? { ...p, locations: [...(p.locations || []), { label: '', price_eur: 0, venue_side: 'instructor' }] } : p); }
+  function bufferRemoveLocation(i)           { setEditBuffer(p => p ? { ...p, locations: (p.locations || []).filter((_, j) => j !== i) } : p); }
+  function bufferUpdateLocation(i, locPatch) { setEditBuffer(p => p ? { ...p, locations: (p.locations || []).map((l, j) => j === i ? { ...l, ...locPatch } : l) } : p); }
 
   function toggleCoverageArea(loc) {
     setCoverageAreas(prev => prev.includes(loc) ? prev.filter(x => x !== loc) : [...prev, loc]);
@@ -5508,7 +5910,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     (async () => {
       const { data: rows, error } = await supabase
         .from('bookings')
-        .select('id, user_id, slot_id, booking_date, start_time, duration, credits_used, notes, status, offering_type, created_at')
+        .select('id, user_id, slot_id, booking_date, start_time, duration, credits_used, people_count, notes, status, offering_type, created_at')
         .eq('business_id', bizData.id)
         .in('status', ['pending_instructor', 'pending_venue'])
         .order('created_at', { ascending: true });
@@ -5540,7 +5942,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       const todayStr = new Date().toISOString().slice(0, 10);
       const { data: rows, error } = await supabase
         .from('bookings')
-        .select('id, user_id, slot_id, booking_date, start_time, duration, credits_used, notes, status, created_at')
+        .select('id, user_id, slot_id, booking_date, start_time, duration, credits_used, people_count, notes, status, created_at')
         .eq('business_id', bizData.id)
         .eq('status', 'confirmed')
         .gte('booking_date', todayStr)
@@ -5640,8 +6042,35 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       setBizData(prev => ({ ...prev, ...payload }));
     }
     setSaving(false);
-    if (error) flashSaveMsg("err", "Couldn't save. " + error.message);
-    else flashSaveMsg("settings", "Settings saved.");
+    if (error) { flashSaveMsg("err", "Couldn't save. " + error.message); return; }
+    flashSaveMsg("settings", "Settings saved.");
+
+    // Geocode in the background so the marketplace map pin lands at a
+    // real coordinate instead of the town centroid. Skips the lookup
+    // when the address hasn't changed since the last successful geocode
+    // (bizData.geocoded_from is the string we last resolved). Nominatim
+    // is rate-limited server-side (1 req/sec) via the geocode-address
+    // edge fn, so we don't need to gate here.
+    const nextAddr = (payload.address || '').trim();
+    const prevGeocoded = (bizData.geocoded_from || '').trim();
+    if (nextAddr && nextAddr !== prevGeocoded) {
+      try {
+        const { data: geo, error: gErr } = await supabase.functions.invoke('geocode-address', {
+          body: { address: nextAddr },
+        });
+        if (gErr) { console.warn('geocode-address invoke failed:', gErr.message); return; }
+        const patch = geo?.ok
+          ? { lat: geo.lat, lng: geo.lng, geocoded_from: nextAddr, geocode_failed: false }
+          : { geocoded_from: nextAddr, geocode_failed: true };
+        const { error: pErr } = await supabase.from('businesses').update(patch).eq('id', bizData.id);
+        if (pErr) { console.warn('geocode persist failed:', pErr.message); return; }
+        setBizData(prev => ({ ...prev, ...patch }));
+        if (geo?.ok) flashSaveMsg("settings", "Address located on the map.");
+        else flashSaveMsg("err", "Couldn't locate that exact address on the map — using the town centre for now. Admin has been flagged to review.");
+      } catch (e) {
+        console.warn('geocode exception:', e?.message);
+      }
+    }
   }
 
   async function saveListing() {
@@ -5841,6 +6270,28 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // them into concrete slot rows for the next 4 weeks. Mirrors the logic in
   // notify-partner-status so the partner sees changes reflected immediately
   // without waiting for an admin re-approval.
+  // Cancel a single slot from the "What customers can book" list without
+  // regenerating everything. Deletes the row so it disappears from the
+  // marketplace immediately. Blocks when the slot already has a booking
+  // (partner must cancel the booking first — otherwise we'd orphan a
+  // paid customer). Caveat: Save availability re-generates from
+  // offerings × windows, so a one-off cancel comes back if the partner
+  // hits Save later. Copy on the button spells that out.
+  const [cancelingSlotId, setCancelingSlotId] = useState(null);
+  async function cancelSlot(slotId) {
+    if (!slotId) return;
+    if (!window.confirm("Cancel this single slot? It'll disappear from the marketplace immediately. Note: if you hit Save availability later, this slot regenerates from your offerings + windows. Continue?")) return;
+    setCancelingSlotId(slotId);
+    const { error } = await supabase.from('slots').delete().eq('id', slotId);
+    setCancelingSlotId(null);
+    if (error) {
+      flashSaveMsg("err", "Couldn't cancel that slot — " + error.message);
+      return;
+    }
+    setDbSlots(prev => (prev || []).filter(s => s.id !== slotId));
+    flashSaveMsg("settings", "Slot cancelled. It's off the marketplace.");
+  }
+
   async function saveAvailability() {
     if (isPreview || !bizData?.id) return;
     setSaving(true);
@@ -5867,9 +6318,15 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       flashSaveMsg("err", "Your availability couldn't be saved — an RLS policy on the businesses table is blocking the update. Contact hello@wello-wellness.com.");
       return;
     }
-    // Regenerate slot rows: delete old, expand new windows × offerings.
+    // Regenerate slot rows: delete previously-generated ones, expand new
+    // windows × offerings. Additive for studios — rows with source='manual'
+    // (from addSlotDb, the wizard, or extract-sessions) are left untouched
+    // so a studio's hand-managed timetable survives an offering-editor
+    // Save. Only offering_gen rows get wiped-and-regenerated.
     if (linkedListingId) {
-      await supabase.from('slots').delete().eq('listing_id', linkedListingId);
+      await supabase.from('slots').delete()
+        .eq('listing_id', linkedListingId)
+        .eq('source', 'offering_gen');
       const DAY_IDX = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
       const today = new Date();
       const LEAD_MS = 4 * 24 * 60 * 60 * 1000;
@@ -5913,21 +6370,48 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           const d = new Date(dayCursor);
           for (const off of offerings) {
             const dur = off.length_min;
+            // Multi-location offerings stamp the min price as slots.credits so
+            // the marketplace tile shows "from ◈ 30"; BookingModal then picks
+            // up matchedOffering.locations and overrides the base price from
+            // whichever location the customer taps.
+            const stampedCredits = offeringLocationsMinPrice(off) ?? off.price_eur;
             for (let mins = startMin; mins + dur <= endMin; mins += dur) {
               const slotDateTime = new Date(d);
               slotDateTime.setHours(Math.floor(mins / 60), mins % 60, 0, 0);
               if (slotDateTime < minBookable) continue;
               const hh = String(Math.floor(mins / 60)).padStart(2, '0');
               const mm = String(mins % 60).padStart(2, '0');
+              // venue_side stamp. For multi-location offerings the customer
+              // picks the venue at booking time, so the slot's stamp is
+              // advisory. Only stamp 'customer' when EVERY location is
+              // customer-side (unambiguous at-home offering). Mixed
+              // locations (Noor's Private: studio + home) stamp
+              // 'instructor' — otherwise the "At your home" badge fires
+              // on rows that could just as well be at-studio. BookingModal
+              // still routes correctly via pickedLoc.venue_side.
+              const locList = Array.isArray(off.locations) ? off.locations : [];
+              const stampedVenueSide = locList.length > 0
+                ? (locList.every(l => l?.venue_side === 'customer') ? 'customer' : 'instructor')
+                : (off.venue_side === 'customer' ? 'customer' : 'instructor');
               slotRows.push({
                 listing_id: linkedListingId,
                 name: `${off.type} · ${dur} min`,
                 date: d.toISOString().slice(0, 10),
                 time: `${hh}:${mm}`,
                 dur: `${dur} min`,
-                spots: 1,
+                // Per-offering capacity — a group class with capacity 10
+                // stamps spots=10 on every generated slot, so 10 customers
+                // can book independently before the slot fills. Falls back
+                // to 1 for legacy offerings without the field.
+                spots: Number.isFinite(Number(off.capacity)) && off.capacity > 0 ? Number(off.capacity) : 1,
                 booked: 0,
-                credits: off.price_eur,
+                credits: stampedCredits,
+                venue_side: stampedVenueSide,
+                booking_mode: off.booking_mode === 'request' ? 'request' : 'instant',
+                // Marks this row as offering-generated so the next
+                // saveAvailability run can wipe just these and leave any
+                // manually-added rows alone.
+                source: 'offering_gen',
                 acuity_type_id: null,
               });
             }
@@ -6189,6 +6673,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       spots:      +slotData.spots || 10,
       booked:     0,
       credits:    +slotData.credits || (parseInt(listingForm.cr) || 3),
+      // Hand-added by the partner via the per-slot control. Marked
+      // manual so saveAvailability's regenerate doesn't wipe it.
+      source:     'manual',
     };
     const { data, error } = await supabase.from('slots').insert(payload).select().single();
     if (error) { flashSaveMsg("err", "Couldn't add slot. " + error.message); return false; }
@@ -6504,11 +6991,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                             const notesBlob = b.notes || "";
                             const locLine = notesBlob.split('\n').find(l => /^Customer location:/i.test(l)) || "";
                             const noteLine = notesBlob.split('\n').find(l => /^Notes:/i.test(l)) || "";
-                            const peopleLine = notesBlob.split('\n').find(l => /^People:/i.test(l)) || "";
                             const travelLine = notesBlob.split('\n').find(l => /^Travel fee:/i.test(l)) || "";
                             const customerLocation = locLine.replace(/^Customer location:\s*/i, "").trim();
                             const customerNote = noteLine.replace(/^Notes:\s*/i, "").trim();
-                            const peopleCount = parseInt(peopleLine.replace(/^People:\s*/i, "").trim(), 10) || 0;
+                            const peopleCount = Number(b.people_count) || 1;
                             const travelFeePaid = parseInt(travelLine.replace(/^Travel fee:\s*€?/i, "").trim(), 10) || 0;
                             return (
                               <div key={b.id} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"8px 10px",borderRadius:6,background:"#F5F3EE"}}>
@@ -6662,11 +7148,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   const notesBlob = req.notes || '';
                   const locLine = notesBlob.split('\n').find(l => /^Customer location:/i.test(l)) || '';
                   const noteLine = notesBlob.split('\n').find(l => /^Notes:/i.test(l)) || '';
-                  const peopleLine = notesBlob.split('\n').find(l => /^People:/i.test(l)) || '';
                   const travelLine = notesBlob.split('\n').find(l => /^Travel fee:/i.test(l)) || '';
                   const customerLocation = locLine.replace(/^Customer location:\s*/i, '').trim() || 'Not provided';
                   const customerNote = noteLine.replace(/^Notes:\s*/i, '').trim();
-                  const peopleCount = parseInt(peopleLine.replace(/^People:\s*/i, '').trim(), 10) || 0;
+                  const peopleCount = Number(req.people_count) || 1;
                   const travelFeePaid = parseInt(travelLine.replace(/^Travel fee:\s*€?/i, '').trim(), 10) || 0;
                   return (
                     <div key={req.id} style={{padding:"16px 18px",background:"#fff",border:"1px solid #E4E2DD",borderRadius:8}}>
@@ -6747,11 +7232,19 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         )}
 
         {/* ── SCHEDULE ── */}
-        {tab==="manage" && manageSubTab==="schedule" && dashIsPrivate && (
+        {/* Gate dropped: both PI and non-PI partners can use the offering
+            editor now. saveAvailability's regenerate is additive — only
+            offering-generated rows get wiped, so a studio's hand-managed
+            timetable (from the wizard, admin extraction, or per-slot Add)
+            survives. See migration 20260818100000_slots_source.sql. */}
+        {tab==="manage" && manageSubTab==="schedule" && (
           <div>
             <div style={{marginBottom:18}}>
               <h2 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#1B1C19",margin:"0 0 4px"}}>Your weekly availability</h2>
-              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.6}}>Block out time windows + the session types you offer. We generate bookable slots for each offering inside every window. Guests pick the slot they want.</p>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.6}}>
+                Block out time windows + the session types you offer. We generate bookable slots for each offering inside every window. Guests pick the slot they want.
+                {!dashIsPrivate && <span style={{display:"block",marginTop:6,color:"#766149"}}>Studio partners: any slots you added manually or that came from your original setup stay put — Save availability only regenerates rows tied to the offerings below.</span>}
+              </p>
             </div>
 
             {/* Optional booking-window range. Useful for seasonal pop-ups
@@ -6793,26 +7286,237 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>One pill per session type. Click Remove to delete one, or add a new one below.</p>
 
               {dashSessionOfferings.length > 0 && (
-                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
-                  {dashSessionOfferings.map((off, idx) => (
-                    <span key={idx} style={{display:"inline-flex",alignItems:"center",gap:10,padding:"7px 6px 7px 14px",borderRadius:999,background:"rgba(33,60,24,0.06)",border:"1px solid rgba(33,60,24,0.18)",fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600}}>
-                      <span>{off.type}</span>
-                      <span style={{color:"#54584F",fontWeight:400}}>·</span>
-                      <span style={{color:"#54584F",fontWeight:400}}>{off.length_min} min</span>
-                      <span style={{color:"#54584F",fontWeight:400}}>·</span>
-                      <span style={{color:"#766149"}}>€{off.price_eur}</span>
-                      {off.extra_person_eur > 0 && (
-                        <>
+                <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+                  {dashSessionOfferings.map((off, idx) => {
+                    const isEditing = editingOfferingIdx === idx;
+                    if (isEditing) {
+                      // Inline edit form — mirrors the Add form but pre-
+                      // populated from the buffer. Buffer edits stay local
+                      // until Save, so Cancel discards cleanly.
+                      const locs = editBuffer?.locations || [];
+                      const hasLocs = locs.length > 0;
+                      return (
+                        <div key={idx} style={{padding:"14px 16px",background:"#F5F3EE",borderRadius:10,border:"1px solid rgba(33,60,24,0.18)"}}>
+                          <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 10px"}}>Editing offering</p>
+                          <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:10}}>
+                            <input value={editBuffer?.type ?? ''}
+                              onChange={e=>bufferUpdate({ type: e.target.value })}
+                              placeholder="Class type (e.g. Yoga)"
+                              style={{...INP,marginBottom:0,flex:"2 1 180px",minWidth:0}}/>
+                            <select value={editBuffer?.length_min ?? 60}
+                              onChange={e=>bufferUpdate({ length_min: parseInt(e.target.value, 10) })}
+                              style={{...INP,marginBottom:0,flex:"1 1 110px",minWidth:90}}>
+                              {DASH_LENGTH_OPTIONS.map(m => <option key={m} value={m}>{m} min</option>)}
+                            </select>
+                            <div style={{position:"relative",flex:"1 1 110px",minWidth:90}}>
+                              <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
+                              <input type="number" min="0" value={editBuffer?.price_eur ?? 0}
+                                onChange={e=>bufferUpdate({ price_eur: parseInt(e.target.value, 10) || 0 })}
+                                placeholder="base"
+                                disabled={hasLocs}
+                                title={hasLocs ? "Locations drive the price when set — base is ignored." : ""}
+                                style={{...INP,paddingLeft:22,marginBottom:0,width:"100%",opacity:hasLocs?0.55:1}}/>
+                            </div>
+                          </div>
+                          {hasLocs && (
+                            <p style={{fontFamily:F2,fontSize:11,color:"#766149",margin:"0 0 12px"}}>Base price ignored — per-location prices below drive booking cost.</p>
+                          )}
+
+                          {/* Group pricing */}
+                          <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Group pricing (optional)</p>
+                          <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:14}}>
+                            <div style={{position:"relative",flex:"1 1 160px",minWidth:120}}>
+                              <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
+                              <input type="number" min="0" value={editBuffer?.extra_person_eur ?? ''}
+                                onChange={e=>bufferUpdate({ extra_person_eur: e.target.value })}
+                                placeholder="Extra per person"
+                                style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
+                            </div>
+                            <input type="number" min="2" value={editBuffer?.max_people ?? ''}
+                              onChange={e=>bufferUpdate({ max_people: e.target.value })}
+                              placeholder="Max people"
+                              style={{...INP,marginBottom:0,flex:"1 1 120px",minWidth:100}}/>
+                          </div>
+
+                          {/* Slot capacity — how many independent bookings
+                              per generated slot. 1 = strict, N > 1 = group
+                              class where each booking claims one seat. */}
+                          <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Slot capacity <span style={{fontWeight:400}}>— seats per slot (1 = one booking; N &gt; 1 for group classes)</span></p>
+                          <div style={{marginBottom:14}}>
+                            <input type="number" min="1" value={editBuffer?.capacity ?? 1}
+                              onChange={e=>bufferUpdate({ capacity: e.target.value })}
+                              placeholder="1"
+                              style={{...INP,marginBottom:0,width:140}}/>
+                          </div>
+
+                          {/* Where the session happens. Ignored when
+                              locations[] is populated — each location's own
+                              venue_side wins there. */}
+                          <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Where does this happen? {hasLocs && <span style={{fontWeight:400}}>(overridden by locations below)</span>}</p>
+                          <div style={{display:"flex",gap:0,borderRadius:6,overflow:"hidden",border:"1px solid rgba(195,200,188,0.6)",width:"fit-content",marginBottom:14,opacity:hasLocs?0.5:1}}>
+                            {[
+                              { key:'instructor', label:'At my venue' },
+                              { key:'customer',   label:"At customer's address" },
+                            ].map(opt => {
+                              const on = (editBuffer?.venue_side || 'instructor') === opt.key;
+                              return (
+                                <button key={opt.key} type="button" disabled={hasLocs}
+                                  onClick={()=>bufferUpdate({ venue_side: opt.key })}
+                                  style={{padding:"8px 14px",border:"none",background:on?"#213C18":"#fff",color:on?"#fff":"#213C18",fontFamily:F2,fontSize:12,fontWeight:600,cursor:hasLocs?"not-allowed":"pointer"}}>
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Booking mode. Instant confirms immediately;
+                              request routes as pending and gives the
+                              partner 48h to accept/decline. */}
+                          <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Booking flow</p>
+                          <div style={{display:"flex",gap:0,borderRadius:6,overflow:"hidden",border:"1px solid rgba(195,200,188,0.6)",width:"fit-content",marginBottom:14}}>
+                            {[
+                              { key:'instant',  label:'Instant book' },
+                              { key:'request',  label:'Request (48h to confirm)' },
+                            ].map(opt => {
+                              const on = (editBuffer?.booking_mode || 'instant') === opt.key;
+                              return (
+                                <button key={opt.key} type="button"
+                                  onClick={()=>bufferUpdate({ booking_mode: opt.key })}
+                                  style={{padding:"8px 14px",border:"none",background:on?"#213C18":"#fff",color:on?"#fff":"#213C18",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                                  {opt.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* Per-location prices — for multi-venue offerings
+                              (e.g. Noor's Private: at studio 30, at home 60).
+                              When empty, the offering uses the base price
+                              above and inherits venue_side from the slot. */}
+                          <div style={{marginBottom:14}}>
+                            <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 4px"}}>Locations (optional)</p>
+                            <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 10px",lineHeight:1.5}}>Add one row per venue option (e.g. "At studio" + "At your home"). Customers pick a location, and its price + venue side apply.</p>
+                            {locs.length > 0 && (
+                              <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:8}}>
+                                {locs.map((l, li) => (
+                                  <div key={li} style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",padding:"8px 10px",background:"#fff",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8}}>
+                                    <input value={l.label}
+                                      onChange={e=>bufferUpdateLocation(li, { label: e.target.value })}
+                                      placeholder="Label (e.g. At studio)"
+                                      style={{...INP,marginBottom:0,flex:"2 1 160px",minWidth:0}}/>
+                                    <div style={{position:"relative",flex:"1 1 90px",minWidth:80}}>
+                                      <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
+                                      <input type="number" min="0" value={l.price_eur}
+                                        onChange={e=>bufferUpdateLocation(li, { price_eur: parseInt(e.target.value, 10) || 0 })}
+                                        placeholder="price"
+                                        style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
+                                    </div>
+                                    <div style={{display:"flex",gap:0,borderRadius:6,overflow:"hidden",border:"1px solid rgba(195,200,188,0.6)"}}>
+                                      {[
+                                        { key:'instructor', label:'At studio' },
+                                        { key:'customer',   label:'At customer' },
+                                      ].map(opt => {
+                                        const on = (l.venue_side || 'instructor') === opt.key;
+                                        return (
+                                          <button key={opt.key} type="button"
+                                            onClick={()=>bufferUpdateLocation(li, { venue_side: opt.key })}
+                                            style={{padding:"7px 10px",border:"none",background:on?"#213C18":"#fff",color:on?"#fff":"#213C18",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                                            {opt.label}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                    <button type="button" onClick={()=>bufferRemoveLocation(li)} aria-label="Remove location"
+                                      style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 9px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                                      Remove
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            <button type="button" onClick={bufferAddLocation}
+                              style={{background:"transparent",border:"1px dashed rgba(33,60,24,0.4)",color:"#213C18",fontFamily:F2,fontSize:11,fontWeight:600,padding:"7px 14px",borderRadius:999,cursor:"pointer"}}>
+                              + Add location
+                            </button>
+                          </div>
+
+                          <div style={{display:"flex",gap:8,justifyContent:"space-between",flexWrap:"wrap"}}>
+                            <button type="button" onClick={()=>dashRemoveOffering(idx)}
+                              style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:11,fontWeight:700,padding:"7px 14px",borderRadius:6,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                              Delete offering
+                            </button>
+                            <div style={{display:"flex",gap:8}}>
+                              <button type="button" onClick={closeOfferingEdit}
+                                style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:12,fontWeight:500,cursor:"pointer",padding:"7px 12px"}}>
+                                Cancel
+                              </button>
+                              <button type="button" onClick={commitOfferingEdit}
+                                disabled={!editBuffer?.type?.trim()}
+                                style={{padding:"8px 18px",background:!editBuffer?.type?.trim()?"#E4E2DD":"#213C18",color:!editBuffer?.type?.trim()?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:12,fontWeight:700,cursor:!editBuffer?.type?.trim()?"not-allowed":"pointer"}}>
+                                Save changes
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    // Read-only chip. Surfaces price (single, or "from ◈ min"
+                    // when locations vary), extras, max_people, and a location
+                    // count so partners can see their config without opening
+                    // the editor.
+                    const locMinMax = (() => {
+                      const ps = Array.isArray(off.locations)
+                        ? off.locations.map(l => Number(l?.price_eur)).filter(n => Number.isFinite(n) && n >= 0)
+                        : [];
+                      if (ps.length === 0) return null;
+                      return { min: Math.min(...ps), max: Math.max(...ps), count: off.locations.length };
+                    })();
+                    const priceText = locMinMax
+                      ? (locMinMax.min === locMinMax.max ? `€${locMinMax.min}` : `from €${locMinMax.min}`)
+                      : `€${off.price_eur}`;
+                    return (
+                      <div key={idx} style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:10,padding:"9px 6px 9px 14px",borderRadius:10,background:"rgba(33,60,24,0.06)",border:"1px solid rgba(33,60,24,0.18)",fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:600}}>
+                        <span>{off.type || <em style={{color:"#54584F"}}>Unnamed</em>}</span>
+                        <span style={{color:"#54584F",fontWeight:400}}>·</span>
+                        <span style={{color:"#54584F",fontWeight:400}}>{off.length_min} min</span>
+                        <span style={{color:"#54584F",fontWeight:400}}>·</span>
+                        <span style={{color:"#766149"}}>{priceText}</span>
+                        {off.extra_person_eur > 0 && (<>
                           <span style={{color:"#54584F",fontWeight:400}}>·</span>
                           <span style={{color:"#54584F",fontWeight:500}}>+€{off.extra_person_eur}/extra</span>
-                        </>
-                      )}
-                      <button type="button" onClick={()=>dashRemoveOffering(idx)} aria-label={`Remove ${off.type}`}
-                        style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 9px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase",marginLeft:4}}>
-                        Remove
-                      </button>
-                    </span>
-                  ))}
+                        </>)}
+                        {off.max_people > 1 && (<>
+                          <span style={{color:"#54584F",fontWeight:400}}>·</span>
+                          <span style={{color:"#54584F",fontWeight:500}}>up to {off.max_people} people</span>
+                        </>)}
+                        {off.capacity > 1 && (<>
+                          <span style={{color:"#54584F",fontWeight:400}}>·</span>
+                          <span style={{color:"#54584F",fontWeight:500}}>{off.capacity} seats/slot</span>
+                        </>)}
+                        {!locMinMax && off.venue_side === 'customer' && (<>
+                          <span style={{color:"#54584F",fontWeight:400}}>·</span>
+                          <span style={{color:"#54584F",fontWeight:500}}>at customer's address</span>
+                        </>)}
+                        {off.booking_mode === 'request' && (<>
+                          <span style={{color:"#54584F",fontWeight:400}}>·</span>
+                          <span style={{color:"#7A5C32",fontWeight:600}}>request (48h)</span>
+                        </>)}
+                        {locMinMax && locMinMax.count > 0 && (<>
+                          <span style={{color:"#54584F",fontWeight:400}}>·</span>
+                          <span style={{color:"#54584F",fontWeight:500}}>{locMinMax.count} location{locMinMax.count===1?"":"s"}</span>
+                        </>)}
+                        <span style={{flex:1}}/>
+                        <button type="button" onClick={()=>openOfferingEdit(idx)} aria-label={`Edit ${off.type}`}
+                          style={{background:"#fff",border:"1px solid rgba(33,60,24,0.3)",color:"#213C18",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 10px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                          Edit
+                        </button>
+                        <button type="button" onClick={()=>dashRemoveOffering(idx)} aria-label={`Remove ${off.type}`}
+                          style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 9px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase",marginRight:4}}>
+                          Remove
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -6865,8 +7569,47 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                       placeholder="Max people"
                       style={{...INP,marginBottom:0,flex:"1 1 120px",minWidth:100}}/>
                   </div>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Slot capacity <span style={{fontWeight:400}}>— seats per slot (1 = one booking; N &gt; 1 for group classes)</span></p>
+                  <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10}}>
+                    <input type="number" min="1" value={newOff.capacity}
+                      onChange={e=>setNewOff(p=>({...p,capacity:e.target.value}))}
+                      placeholder="1"
+                      style={{...INP,marginBottom:0,width:140}}/>
+                  </div>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Where does this happen?</p>
+                  <div style={{display:"flex",gap:0,borderRadius:6,overflow:"hidden",border:"1px solid rgba(195,200,188,0.6)",width:"fit-content",marginBottom:10}}>
+                    {[
+                      { key:'instructor', label:'At my venue' },
+                      { key:'customer',   label:"At customer's address" },
+                    ].map(opt => {
+                      const on = (newOff.venue_side || 'instructor') === opt.key;
+                      return (
+                        <button key={opt.key} type="button"
+                          onClick={()=>setNewOff(p=>({...p,venue_side:opt.key}))}
+                          style={{padding:"8px 14px",border:"none",background:on?"#213C18":"#fff",color:on?"#fff":"#213C18",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Booking flow</p>
+                  <div style={{display:"flex",gap:0,borderRadius:6,overflow:"hidden",border:"1px solid rgba(195,200,188,0.6)",width:"fit-content",marginBottom:10}}>
+                    {[
+                      { key:'instant',  label:'Instant book' },
+                      { key:'request',  label:'Request (48h to confirm)' },
+                    ].map(opt => {
+                      const on = (newOff.booking_mode || 'instant') === opt.key;
+                      return (
+                        <button key={opt.key} type="button"
+                          onClick={()=>setNewOff(p=>({...p,booking_mode:opt.key}))}
+                          style={{padding:"8px 14px",border:"none",background:on?"#213C18":"#fff",color:on?"#fff":"#213C18",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                    <button type="button" onClick={()=>{setShowAddOffering(false);setNewOff({type:"",length_min:60,price_eur:50,extra_person_eur:"",max_people:""});}}
+                    <button type="button" onClick={()=>{setShowAddOffering(false);setNewOff({type:"",length_min:60,price_eur:50,extra_person_eur:"",max_people:"",capacity:1,venue_side:"instructor",booking_mode:"instant"});}}
                       style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer",padding:"6px 12px"}}>
                       Cancel
                     </button>
@@ -6880,15 +7623,16 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               )}
             </div>
 
-            {/* Class photos — one photo per offering. Optional but drives
-                sharper discovery: Explore's category rails and BizPanel's
-                offering rows use these when set, otherwise fall back to
-                the venue's primary photo. Only shown when the partner
-                actually has offerings to attach photos to. */}
+            {/* Offering photos — one photo per session_offering entry.
+                Shows on the offering row inside the venue popup (BizPanel).
+                Does NOT change the marketplace tile (that's biz.img). The
+                timetable-class equivalent lives further down under
+                "Timetable class photos" and writes to
+                businesses.class_photos. */}
             {dashSessionOfferings.length > 0 && (
               <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:14}}>
-                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>Class photos <span style={{fontWeight:500,textTransform:"none",letterSpacing:0,fontSize:11,color:"#A3B18A",marginLeft:6}}>Optional</span></p>
-                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Attach a specific photo to each class type. Shows on your venue popup and — when guests filter by that class on Explore — on your marketplace card. Skipped classes use your primary venue photo.</p>
+                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>Offering photos <span style={{fontWeight:500,textTransform:"none",letterSpacing:0,fontSize:11,color:"#A3B18A",marginLeft:6}}>Optional</span></p>
+                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Attach a photo to each request-based offering (private sessions, treatments). Shows on the offering row inside your venue popup. Does not change your main marketplace card — that stays your primary venue photo.</p>
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
                   {dashSessionOfferings.map((off, idx) => {
                     const thumb = off?.img || null;
@@ -7128,17 +7872,24 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                           <div style={{display:"flex",flexDirection:"column",gap:3}}>
                             {byDate[date].sort((a,b)=>(a.time||"").localeCompare(b.time||"")).map(s => {
                               const isBooked = (s.booked || 0) > 0;
+                              const busy = cancelingSlotId === s.id;
                               return (
                                 <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 8px",borderRadius:6,background:isBooked?"#F0EEE9":"transparent",fontFamily:F2,fontSize:12,color:"#1B1C19"}}>
                                   <span style={{fontWeight:600}}>
                                     {(s.time||"").slice(0,5)}
                                     <span style={{color:"#54584F",fontWeight:400,marginLeft:8}}>{s.name || ""}</span>
                                   </span>
-                                  <span style={{display:"flex",alignItems:"center",gap:10}}>
+                                  <span style={{display:"flex",alignItems:"center",gap:8}}>
                                     {isBooked && (
                                       <span style={{fontSize:10,fontWeight:700,color:"#766149",letterSpacing:"0.5px",textTransform:"uppercase"}}>Booked</span>
                                     )}
                                     <span style={{color:"#766149",fontWeight:600}}>€{s.credits}</span>
+                                    <button type="button" disabled={isBooked || busy}
+                                      onClick={()=>cancelSlot(s.id)}
+                                      title={isBooked ? "Cancel the customer's booking first, then this slot can be removed." : "Cancel just this slot (won't survive a full Save availability regenerate)."}
+                                      style={{background:isBooked?"#F5F3EE":"#fff",border:`1px solid ${isBooked?"rgba(195,200,188,0.5)":"#C46A4D"}`,color:isBooked?"#A3B18A":"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:999,cursor:isBooked||busy?"not-allowed":"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                                      {busy ? "…" : "Cancel"}
+                                    </button>
                                   </span>
                                 </div>
                               );
@@ -7257,8 +8008,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               if (distinctClassNames.length === 0) return null;
               return (
                 <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:18}}>
-                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>Class photos <span style={{fontWeight:500,textTransform:"none",letterSpacing:0,fontSize:11,color:"#A3B18A",marginLeft:6}}>Optional</span></p>
-                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Attach a specific photo to each class type on your timetable. Shows on your venue popup and — when guests filter by that class on Explore — on your marketplace card. Skipped classes use your primary venue photo.</p>
+                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>Timetable class photos <span style={{fontWeight:500,textTransform:"none",letterSpacing:0,fontSize:11,color:"#A3B18A",marginLeft:6}}>Optional</span></p>
+                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Attach a photo to each timetable class name. Shows on the class row inside your venue popup and — when guests filter by that class on Explore — on your marketplace card. Distinct from Offering photos above, which are for request-based offerings.</p>
                   <div style={{display:"flex",flexDirection:"column",gap:8}}>
                     {distinctClassNames.map(name => {
                       const thumb = dashClassPhotos[name] || null;
@@ -12571,7 +13322,7 @@ export default function App() {
     // (real partners never have a demo- prefixed email).
     const { data: listingRows, error } = await supabase
       .from("listings")
-      .select("*, slots(*), businesses(address, phone, website, instagram, email, gallery, session_offerings, travel_areas, cancellation_safety_window, cancellation_window_hours)")
+      .select("*, slots(*), businesses(address, phone, website, instagram, email, gallery, session_offerings, travel_areas, cancellation_safety_window, cancellation_window_hours, lat, lng)")
       .eq("status","active")
       .order("id");
     if (error) {
@@ -12605,6 +13356,11 @@ export default function App() {
         // Sourced live from the businesses row so partner edits in Settings
         // propagate immediately without needing to mirror every column.
         address:   row.businesses?.address   || row.address   || "",
+        // Optional lat/lng from the businesses row for map pin positioning.
+        // Nullable — the map pin falls back to the town centroid keyed on
+        // `loc` when unset. Written once we wire geocoding on address save.
+        lat:       Number.isFinite(Number(row.businesses?.lat)) ? Number(row.businesses.lat) : null,
+        lng:       Number.isFinite(Number(row.businesses?.lng)) ? Number(row.businesses.lng) : null,
         phone:     row.businesses?.phone     || row.phone     || "",
         website:   row.businesses?.website   || row.website   || "",
         instagram: row.businesses?.instagram || row.instagram || "",
@@ -12839,14 +13595,7 @@ export default function App() {
     const isPrivateBooking = biz.cat === "Private Instructor";
     const isRequestMode    = String(slot?.booking_mode || 'instant') === 'request';
     const pendingStatus    = isPrivateBooking ? 'pending_instructor' : 'pending_venue';
-    // Force request routing whenever the customer's address fell in no
-    // travel zone — regardless of category. Any partner offering an
-    // at-customer session needs to see the booking before we commit them
-    // to a free trip. outsideCoverage is only set in BookingModal when
-    // the slot is venue_side='customer', so this can't trigger for
-    // studio-only bookings.
-    const forceRequestMode = !!form?.outsideCoverage;
-    const effectiveRequest = isRequestMode || forceRequestMode;
+    const effectiveRequest = isRequestMode;
     const bookingStatus    = effectiveRequest ? pendingStatus : 'confirmed';
 
     // Persist the phone the customer typed into the booking modal onto their
@@ -12878,9 +13627,7 @@ export default function App() {
     showToast(
       effectiveRequest
         ? (isPrivateBooking
-            ? (form?.outsideCoverage
-                ? "Request sent — your address is outside listed zones, so the instructor will review."
-                : "Request sent. Instructor has 48 hours to confirm.")
+            ? "Request sent. Instructor has 48 hours to confirm."
             : "Request sent. The venue has 48 hours to confirm.")
         : `Booked! ◈ ${cost} credits used.`,
       "success"
@@ -12897,17 +13644,16 @@ export default function App() {
       // SMS. Group size + extended-travel fee land here too when applicable;
       // single-person / core-area bookings skip those lines so it stays clean.
       // Arrival notes get appended underneath when present (gate code, parking).
-      const peopleCount = Number(form?.guests) || 1;
+      const peopleCount = Math.max(1, Number(form?.guests) || 1);
       const travelFeeApplied = Number(form?.travelFee) || 0;
+      // people_count is now on the bookings row itself, so the notes stop
+      // duplicating "People: N". Zone/travel/address stay in notes since
+      // there's no dedicated column for them yet.
       const notes = isPrivateBooking
         ? [
             form?.location ? `Customer location: ${form.location}` : null,
-            peopleCount > 1 ? `People: ${peopleCount}` : null,
+            form?.travelZoneArea ? `Zone: ${form.travelZoneArea}` : null,
             travelFeeApplied > 0 ? `Travel fee: €${travelFeeApplied}` : null,
-            // Flag outside-coverage on the row itself so the instructor's
-            // SMS/email carries the same signal the modal showed the
-            // customer — no travel zone matched, they need to decide.
-            form?.outsideCoverage ? `Travel: outside listed zones — please review` : null,
             form?.locationNote ? `Notes: ${form.locationNote}` : null,
           ].filter(Boolean).join('\n') || null
         : (form?.note || null);
@@ -12921,6 +13667,7 @@ export default function App() {
         start_time: t,
         duration: slot.dur,
         credits_used: cost,
+        people_count: peopleCount,
         peak_flag,
         status: bookingStatus,
         notes,
