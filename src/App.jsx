@@ -5514,8 +5514,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     try { localStorage.setItem("wello_dash_subtab", manageSubTab); } catch { /* non-critical */ }
   }, [manageSubTab]);
   const [selDay, setSelDay] = useState(0);
-  const [showAddSlot, setShowAddSlot] = useState(false);
-  const [newSlot, setNewSlot] = useState({name:"",time:"09:00",spots:10,credits:3,dur:"60 min"});
+  // Add slot modal + newSlot state retired — per-slot Edit + per-offering
+  // recurrence cover both add-a-one-off and add-a-recurring-class flows.
   const [editListing, setEditListing] = useState(false);
   const [listing, setListing] = useState(isPreview
     ? {name:"Demo Studio",cat:"Yoga",cat2:"Meditation",loc:"Sóller",desc:"Your venue description here.",credits:3,tags:""}
@@ -6889,41 +6889,6 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     win.document.close();
     win.focus();
     setTimeout(() => { try { win.print(); } catch { /* ignore */ } }, 200);
-  }
-
-  // For Add slot: convert a 0-6 weekday index (Mon=0) to an ISO date string for THIS week.
-  function dateForWeekday(dayIdx) {
-    const today  = new Date();
-    const dow    = today.getDay(); // 0=Sun..6=Sat
-    const monday = new Date(today);
-    monday.setDate(today.getDate() - (dow === 0 ? 6 : dow - 1));
-    const target = new Date(monday);
-    target.setDate(monday.getDate() + dayIdx);
-    return target.toISOString().slice(0, 10);
-  }
-
-  async function addSlotDb(slotData) {
-    if (isPreview || !linkedListingId) {
-      flashSaveMsg("err", "Your listing isn't live yet — slot management opens after approval.");
-      return false;
-    }
-    const payload = {
-      listing_id: linkedListingId,
-      name:       slotData.name || "",
-      date:       slotData.date || dateForWeekday(selDay),
-      time:       slotData.time || "09:00",
-      dur:        slotData.dur || "60 min",
-      spots:      +slotData.spots || 10,
-      booked:     0,
-      credits:    +slotData.credits || (parseInt(listingForm.cr) || 3),
-      // Hand-added by the partner via the per-slot control. Marked
-      // manual so saveAvailability's regenerate doesn't wipe it.
-      source:     'manual',
-    };
-    const { data, error } = await supabase.from('slots').insert(payload).select().single();
-    if (error) { flashSaveMsg("err", "Couldn't add slot. " + error.message); return false; }
-    setDbSlots(s => [...(s || []), data]);
-    return true;
   }
 
   async function togglePausedDb(slotId, isCurrentlyLive) {
@@ -8449,10 +8414,6 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   );
                 })}
               </div>
-              <button onClick={()=>setShowAddSlot(true)}
-                style={{padding:"10px 18px",background:"#213C18",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
-                + Add slot
-              </button>
             </div>
 
             {/* Slots for day */}
@@ -8524,117 +8485,6 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               }
             </div>
 
-            {/* Add slot modal */}
-            {showAddSlot&&(()=>{
-              const rawPrice = +newSlot.priceGBP || 0;
-              const exactCr  = rawPrice > 0 ? rawPrice / 1 : null;
-              const floorCr  = exactCr ? Math.max(1, Math.floor(exactCr)) : null;
-              const ceilCr   = exactCr ? Math.ceil(exactCr) : null;
-              const sameRound = floorCr === ceilCr;
-              const DEMAND = {1:94,2:88,3:81,4:72,5:61,6:52,7:44,8:35,9:28,10:22};
-              const getDemand = cr => DEMAND[cr] || (cr > 10 ? Math.max(8, 22 - (cr-10)*4) : 94);
-              return (
-                <div style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(27,28,25,0.7)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowAddSlot(false)}>
-                  <div style={{background:"#fff",borderRadius:16,maxWidth:440,width:"100%",padding:"28px",boxShadow:"0 24px 60px rgba(0,0,0,0.2)",maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
-                      <h3 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#213C18",margin:0}}>Add a class slot</h3>
-                      <button onClick={()=>setShowAddSlot(false)} style={{background:"transparent",border:"none",fontSize:18,cursor:"pointer",color:"#54584F"}}>×</button>
-                    </div>
-                    <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                      {[{l:"Class name",k:"name",p:"e.g. Sunrise Flow"},{l:"Time",k:"time",p:"09:00",t:"time"},{l:"Duration",k:"dur",p:"e.g. 60 min"},{l:"Available spots",k:"spots",p:"10",t:"number"}].map(f=>(
-                        <div key={f.k}>
-                          <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>{f.l}</label>
-                          <input type={f.t||"text"} placeholder={f.p} value={newSlot[f.k]} onChange={e=>setNewSlot(p=>({...p,[f.k]:e.target.value}))} style={{...INP}}
-                            onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
-                        </div>
-                      ))}
-                      <div style={{background:"#F5F3EE",borderRadius:10,padding:"14px"}}>
-                        <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:4}}>Your normal class price</label>
-<p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 10px",lineHeight:1.5}}>1 credit = £1. Enter your normal class price and we'll set the credit price to match.</p>
-                        <div style={{position:"relative"}}>
-                          <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontFamily:F2,fontSize:13,fontWeight:600,color:"#54584F",pointerEvents:"none"}}>£</span>
-                          <input type="number" min="1" placeholder="e.g. 20" value={newSlot.priceGBP||""}
-                            onChange={e=>{
-                              const p = +e.target.value;
-                              const cr = p > 0 ? Math.max(1, Math.round(p)) : 15;
-                              setNewSlot(prev=>({...prev, priceGBP:e.target.value, credits:Math.round(cr)}));
-                            }}
-                            style={{...INP, paddingLeft:28}}
-                            onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
-                        </div>
-                        {exactCr && !sameRound && (
-                          <div style={{marginTop:12}}>
-                            <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:8}}>Choose credit price</label>
-                            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                              {[
-                                { cr: floorCr, rounded: "Round down", valueNote: `£${floorCr} on Wello` },
-                                { cr: ceilCr,  rounded: "Round up",   valueNote: `£${ceilCr} on Wello` },
-                              ].map(({cr, rounded, valueNote})=>{
-                                const sel = newSlot.credits === cr;
-                                const demand = getDemand(cr);
-                                const isLower = cr === floorCr;
-                                return (
-                                  <div key={cr} onClick={()=>setNewSlot(s=>({...s,credits:cr}))}
-                                    style={{borderRadius:10,border:sel?"2px solid #213C18":"1px solid rgba(195,200,188,0.5)",background:sel?"#213C18":"#fff",cursor:"pointer",padding:"12px 10px",textAlign:"center",transition:"all .15s",position:"relative"}}>
-                                    {isLower&&<div style={{position:"absolute",top:-8,left:"50%",transform:"translateX(-50%)",background:"#A3B18A",color:"#1B1C19",fontFamily:F2,fontSize:7,fontWeight:700,letterSpacing:"0.5px",padding:"2px 8px",borderRadius:999,whiteSpace:"nowrap"}}>RECOMMENDED</div>}
-                                    <p style={{fontFamily:F2,fontSize:20,fontWeight:800,color:sel?"#fff":"#213C18",margin:"4px 0 2px",letterSpacing:"-0.5px"}}>◈ {cr}</p>
-                                    <p style={{fontFamily:F2,fontSize:10,color:sel?"rgba(255,255,255,0.65)":"#54584F",margin:"0 0 8px"}}>{valueNote}</p>
-                                    <div style={{height:3,borderRadius:999,background:sel?"rgba(255,255,255,0.2)":"#E4E2DD",overflow:"hidden",margin:"0 0 5px"}}>
-                                      <div style={{width:`${demand}%`,height:"100%",background:sel?"rgba(255,255,255,0.7)":isLower?"#A3B18A":"#A3B18A",borderRadius:999}}/>
-                                    </div>
-                                    <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:sel?"rgba(255,255,255,0.8)":isLower?"#213C18":"#54584F",margin:0}}>{demand}% fill rate</p>
-                                    <p style={{fontFamily:F2,fontSize:8,color:sel?"rgba(255,255,255,0.5)":"#A3B18A",margin:"2px 0 0"}}>{rounded} · platform avg</p>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            <div style={{marginTop:10,padding:"10px 12px",background:"rgba(74,222,128,0.08)",border:"1px solid rgba(74,222,128,0.3)",borderRadius:8,display:"flex",gap:8,alignItems:"flex-start"}}>
-                              <span style={{fontSize:13,flexShrink:0}}>📊</span>
-                              <p style={{fontFamily:F2,fontSize:11,color:"#213C18",margin:0,lineHeight:1.5}}>
-                                Classes at <strong>◈ {floorCr}</strong> fill <strong>{getDemand(floorCr) - getDemand(ceilCr)}% faster</strong> on average than ◈ {ceilCr}. More bookings = more revenue, even at a slightly lower rate.
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                        {exactCr && sameRound && (
-                          <div style={{marginTop:10,display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"#CAECBA",borderRadius:8}}>
-                            <p style={{fontFamily:F2,fontSize:20,fontWeight:800,color:"#213C18",margin:0}}>◈ {floorCr}</p>
-                            <div>
-                              <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 1px"}}>Clean match</p>
-                              <p style={{fontFamily:F2,fontSize:11,color:"#43483F",margin:0}}>£{rawPrice} = exactly ◈ {floorCr} · {getDemand(floorCr)}% avg fill rate</p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <button onClick={async ()=>{
-                        if(!newSlot.name||!newSlot.time) return;
-                        if (isPreview) {
-                          // Demo only — local mutation.
-                          setCLS(p=>[...p,{id:Date.now(),day:selDay,time:newSlot.time,name:newSlot.name,spots:+newSlot.spots||10,booked:0,credits:+newSlot.credits||3,dur:newSlot.dur||"60 min",live:true}]);
-                        } else {
-                          // Live partner — persist to the slots table for this week's selDay.
-                          const ok = await addSlotDb({
-                            name:    newSlot.name,
-                            date:    dateForWeekday(selDay),
-                            time:    newSlot.time,
-                            dur:     newSlot.dur || "60 min",
-                            spots:   +newSlot.spots || 10,
-                            credits: +newSlot.credits || 3,
-                          });
-                          if (!ok) return; // DB failed; keep modal open so the partner can retry
-                        }
-                        setShowAddSlot(false);
-                        setNewSlot({name:"",time:"09:00",spots:10,credits:15,dur:"60 min",priceGBP:""});
-                      }}
-                        disabled={!newSlot.name||!newSlot.time}
-                        style={{marginTop:4,padding:"13px 0",background:newSlot.name&&newSlot.time?"#213C18":"#E4E2DD",color:newSlot.name&&newSlot.time?"#fff":"#54584F",border:"none",borderRadius:999,fontFamily:F2,fontSize:14,fontWeight:700,cursor:newSlot.name&&newSlot.time?"pointer":"not-allowed",transition:"all .15s"}}>
-                        Add slot
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
           </div>
         )}
 
