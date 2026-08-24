@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js'
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 
 function useHasMoreBelow() {
   // True only while the user has meaningful content still below the viewport.
@@ -6379,6 +6379,109 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     flashSaveMsg("settings", "Slot cancelled. It's off the marketplace.");
   }
 
+  // Pure: what (name|date|time) triples would the current rules generate?
+  // Used both by saveAvailability (drives the upsert) and by the orphan
+  // detector (compares against existing offering_gen rows). Keep it side-
+  // effect free so the memoized orphan set can call it on every render
+  // without touching the DB.
+  function computeExpectedTriples(offerings, bizFallback) {
+    const DAY_IDX = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
+    const HARD_CAP_MS = 26 * 7 * 24 * 60 * 60 * 1000;
+    const LEAD_MS = 4 * 24 * 60 * 60 * 1000;
+    const minBookable = new Date(Date.now() + LEAD_MS);
+    const hardCap     = new Date(Date.now() + HARD_CAP_MS);
+    const defaultEnd  = new Date(Date.now() + 4 * 7 * 24 * 60 * 60 * 1000);
+    const bizWindows = Array.isArray(bizFallback?.availability_windows) ? bizFallback.availability_windows : [];
+    const bizFrom    = bizFallback?.availability_from || null;
+    const bizTo      = bizFallback?.availability_to   || null;
+    const set = new Set();
+    for (const off of (offerings || [])) {
+      const offWindows = Array.isArray(off?.availability_windows) && off.availability_windows.length > 0
+        ? off.availability_windows : bizWindows;
+      if (offWindows.length === 0) continue;
+      const offFrom = /^\d{4}-\d{2}-\d{2}$/.test(String(off?.availability_from || '')) ? off.availability_from : bizFrom;
+      const offTo   = /^\d{4}-\d{2}-\d{2}$/.test(String(off?.availability_to   || '')) ? off.availability_to   : bizTo;
+      const rangeFrom = offFrom ? new Date(offFrom + "T00:00:00") : null;
+      const rangeTo   = offTo   ? new Date(offTo   + "T23:59:59") : null;
+      const start = rangeFrom && rangeFrom > minBookable ? rangeFrom : minBookable;
+      const end   = rangeTo ? (rangeTo < hardCap ? rangeTo : hardCap) : defaultEnd;
+      const dur = off.length_min;
+      const nameKey = `${off.type} · ${dur} min`;
+      const dayCursor = new Date(start); dayCursor.setHours(0, 0, 0, 0);
+      const endDay    = new Date(end);   endDay.setHours(0, 0, 0, 0);
+      while (dayCursor <= endDay) {
+        const dow = dayCursor.getDay();
+        for (const w of offWindows) {
+          const dayIdx = DAY_IDX[w.day];
+          if (dayIdx === undefined || dayIdx !== dow) continue;
+          const [sH, sM] = String(w.start || '09:00').split(':').map(x => parseInt(x, 10));
+          const [eH, eM] = String(w.end   || '18:00').split(':').map(x => parseInt(x, 10));
+          const startMin = sH * 60 + sM;
+          const endMin   = eH * 60 + eM;
+          if (endMin <= startMin) continue;
+          const dateStr = dayCursor.toISOString().slice(0, 10);
+          for (let mins = startMin; mins + dur <= endMin; mins += dur) {
+            const slotDT = new Date(dayCursor);
+            slotDT.setHours(Math.floor(mins / 60), mins % 60, 0, 0);
+            if (slotDT < minBookable) continue;
+            const hh = String(Math.floor(mins / 60)).padStart(2, '0');
+            const mm = String(mins % 60).padStart(2, '0');
+            set.add(`${nameKey}|${dateStr}|${hh}:${mm}`);
+          }
+        }
+        dayCursor.setDate(dayCursor.getDate() + 1);
+      }
+    }
+    return set;
+  }
+
+  // Memoised expected-triple set + orphan list for the schedule panel.
+  // Orphans = offering_gen rows that no longer match any current rule +
+  // aren't booked. Booked orphans are silently kept (customer paid; the
+  // partner has to cancel-and-refund through the normal booking flow).
+  const expectedTriples = useMemo(
+    () => computeExpectedTriples(dashSessionOfferings, {
+      availability_windows: availabilityWindows,
+      availability_from:    availabilityFrom,
+      availability_to:      availabilityTo,
+    }),
+    [dashSessionOfferings, availabilityWindows, availabilityFrom, availabilityTo]
+  );
+  const orphanedSlots = useMemo(
+    () => (dbSlots || []).filter(s =>
+      s.source === 'offering_gen'
+      && (s.booked || 0) === 0
+      && !expectedTriples.has(`${s.name}|${s.date}|${String(s.time || '').slice(0, 5)}`)
+    ),
+    [dbSlots, expectedTriples]
+  );
+
+  async function bulkCancelOrphans() {
+    if (isPreview) return;
+    if (orphanedSlots.length === 0) return;
+    if (!window.confirm(`Cancel ${orphanedSlots.length} slot${orphanedSlots.length===1?'':'s'} that no longer match your rules? Booked slots are excluded.`)) return;
+    const ids = orphanedSlots.map(s => s.id);
+    const { error } = await supabase.from('slots').delete().in('id', ids);
+    if (error) { flashSaveMsg("err", "Bulk cancel failed. " + error.message); return; }
+    setDbSlots(prev => (prev || []).filter(s => !ids.includes(s.id)));
+    flashSaveMsg("settings", `Cancelled ${ids.length} orphaned slot${ids.length===1?'':'s'}.`);
+  }
+
+  // Explicit nuclear regenerate — wipes offering_gen unbooked rows for
+  // this listing, then re-runs saveAvailability. Not the default; the
+  // partner opts in when they specifically want a fresh start (e.g. after
+  // renaming an offering, since the name change orphans every prior row).
+  async function regenerateFromScratch() {
+    if (isPreview || !linkedListingId) return;
+    if (!window.confirm("Wipe all offering-generated slots for this listing and regenerate from your current rules? Booked slots and hand-edited (manual) slots are preserved. This can't be undone.")) return;
+    const { error } = await supabase.from('slots').delete()
+      .eq('listing_id', linkedListingId)
+      .eq('source', 'offering_gen')
+      .eq('booked', 0);
+    if (error) { flashSaveMsg("err", "Wipe failed. " + error.message); return; }
+    await saveAvailability();
+  }
+
   async function saveAvailability() {
     if (isPreview || !bizData?.id) return;
     setSaving(true);
@@ -7985,10 +8088,21 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 const badRange = availabilityFrom && availabilityTo && availabilityTo < availabilityFrom;
                 const blocked = saving || isPreview || badRange;
                 return (
-                  <button onClick={saveAvailability} disabled={blocked}
-                    style={{padding:"11px 26px",background:blocked?"#E4E2DD":"#213C18",color:blocked?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:blocked?"not-allowed":"pointer"}}>
-                    {saving ? "Saving" : "Save availability"}
-                  </button>
+                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                    <button onClick={saveAvailability} disabled={blocked}
+                      style={{padding:"11px 26px",background:blocked?"#E4E2DD":"#213C18",color:blocked?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:blocked?"not-allowed":"pointer"}}>
+                      {saving ? "Saving" : "Save availability"}
+                    </button>
+                    {/* Nuclear escape hatch. Not the default — Save
+                        availability is additive and preserves manual
+                        edits. Use this when a rule change orphans lots
+                        of rows and the partner wants a clean state. */}
+                    <button type="button" onClick={regenerateFromScratch} disabled={blocked}
+                      title="Wipe all offering-generated slots for this listing and regenerate. Booked and hand-edited slots are preserved."
+                      style={{padding:"11px 20px",background:"transparent",color:blocked?"#A3B18A":"#766149",border:`1px solid ${blocked?"rgba(195,200,188,0.5)":"rgba(118,97,73,0.4)"}`,borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:600,cursor:blocked?"not-allowed":"pointer"}}>
+                      Regenerate from scratch
+                    </button>
+                  </div>
                 );
               })()}
             </div>
@@ -8027,6 +8141,23 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   </span>
                 )}
               </div>
+
+              {/* Orphan-cancel nudge — offering_gen rows that no longer
+                  match any current rule (e.g. partner narrowed a window
+                  or renamed an offering). Booked orphans are excluded
+                  because customers already paid; those need to go
+                  through the cancel-and-refund flow. */}
+              {orphanedSlots.length > 0 && (
+                <div style={{padding:"12px 14px",background:"#FFF3E6",border:"1px solid #E8C9A4",borderRadius:8,marginBottom:14,display:"flex",flexWrap:"wrap",alignItems:"center",gap:12,justifyContent:"space-between"}}>
+                  <p style={{fontFamily:F2,fontSize:12,color:"#7A5C32",margin:0,lineHeight:1.55,flex:"1 1 240px"}}>
+                    <strong style={{fontWeight:700}}>{orphanedSlots.length} slot{orphanedSlots.length===1?'':'s'} no longer match your rules.</strong> These came from an earlier version of your offerings and haven't been booked. Cancel them?
+                  </p>
+                  <button type="button" onClick={bulkCancelOrphans}
+                    style={{padding:"7px 14px",background:"#7A5C32",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:"0.3px"}}>
+                    Cancel all {orphanedSlots.length}
+                  </button>
+                </div>
+              )}
 
               {dbSlots === null && (
                 <p style={{fontFamily:F2,fontSize:12,color:"#54584F",fontStyle:"italic",margin:0}}>Loading slots…</p>
@@ -8114,11 +8245,20 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                   </div>
                                 );
                               }
+                              const isRuleGen = s.source === 'offering_gen';
                               return (
                                 <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 8px",borderRadius:6,background:isBooked?"#F0EEE9":"transparent",fontFamily:F2,fontSize:12,color:"#1B1C19"}}>
-                                  <span style={{fontWeight:600}}>
+                                  <span style={{fontWeight:600,display:"inline-flex",alignItems:"center",gap:6}}>
                                     {(s.time||"").slice(0,5)}
-                                    <span style={{color:"#54584F",fontWeight:400,marginLeft:8}}>{s.name || ""}</span>
+                                    {/* Recurrence icon — differentiates a
+                                        rule-generated row from a hand-
+                                        edited one. Manual rows carry no
+                                        icon so the timetable stays clean. */}
+                                    {isRuleGen && (
+                                      <span title="Comes from your offering's recurrence rule. Save availability will keep it in sync."
+                                        style={{display:"inline-block",width:14,height:14,borderRadius:"50%",background:"rgba(33,60,24,0.12)",color:"#213C18",fontSize:9,lineHeight:"14px",textAlign:"center",fontWeight:800}}>↻</span>
+                                    )}
+                                    <span style={{color:"#54584F",fontWeight:400,marginLeft:2}}>{s.name || ""}</span>
                                   </span>
                                   <span style={{display:"flex",alignItems:"center",gap:8}}>
                                     {isBooked && (
