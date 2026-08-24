@@ -2861,22 +2861,37 @@ function ExploreMap({ listings, onSelect }) {
     }
   }, [listings]);
 
-  // Sidebar list = only venues inside the current map viewport. Falls back
-  // to the full list until the map's first moveend has fired (avoids a
-  // one-frame flash of "0 venues" before bounds land).
-  const visibleListings = mapBounds
-    ? listings.filter(b => {
-        let lat = coerceNumOrNull(b?.lat);
-        let lng = coerceNumOrNull(b?.lng);
-        if (lat == null || lng == null) {
-          const centroid = centroidForLoc(b?.loc);
-          if (!centroid) return false;
-          lat = centroid[0]; lng = centroid[1];
-        }
-        const [swLat, swLng, neLat, neLng] = mapBounds;
-        return lat >= swLat && lat <= neLat && lng >= swLng && lng <= neLng;
-      })
-    : listings;
+  // Sidebar split into three buckets so the "N more outside" nudge
+  // doesn't lie about panning to find rows that literally can't be
+  // pinned (no lat/lng AND no matching town centroid).
+  //   visibleListings    — placeable AND inside the current viewport
+  //   outsideListings    — placeable but outside the viewport (pan to see)
+  //   unmappableListings — no address / unknown loc; won't appear on any
+  //                        map view. Admin needs to fix these.
+  function resolveBizLatLng(b) {
+    let lat = coerceNumOrNull(b?.lat);
+    let lng = coerceNumOrNull(b?.lng);
+    if (lat == null || lng == null) {
+      const centroid = centroidForLoc(b?.loc);
+      if (!centroid) return null;
+      lat = centroid[0]; lng = centroid[1];
+    }
+    return [lat, lng];
+  }
+  const { visibleListings, outsideListings, unmappableListings } = useMemo(() => {
+    const inView = [];
+    const outside = [];
+    const unmappable = [];
+    for (const b of listings) {
+      const ll = resolveBizLatLng(b);
+      if (!ll) { unmappable.push(b); continue; }
+      if (!mapBounds) { inView.push(b); continue; }
+      const [swLat, swLng, neLat, neLng] = mapBounds;
+      if (ll[0] >= swLat && ll[0] <= neLat && ll[1] >= swLng && ll[1] <= neLng) inView.push(b);
+      else outside.push(b);
+    }
+    return { visibleListings: inView, outsideListings: outside, unmappableListings: unmappable };
+  }, [listings, mapBounds]);
 
   const leafletMissing = typeof window !== 'undefined' && !window.L;
   return (
@@ -2894,10 +2909,13 @@ function ExploreMap({ listings, onSelect }) {
           might add on the right. */}
       <div style={{position:"absolute",top:12,right:12,background:"rgba(255,255,255,0.95)",backdropFilter:"blur(8px)",borderRadius:12,padding:"12px 16px",maxHeight:480,overflowY:"auto",width:220,boxShadow:"0 4px 20px rgba(0,0,0,0.1)",zIndex:1100}}>
         <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1px",textTransform:"uppercase",margin:"0 0 4px"}}>{visibleListings.length} venue{visibleListings.length===1?"":"s"} in view</p>
-        {visibleListings.length !== listings.length && (
-          <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:"0 0 10px",fontStyle:"italic"}}>{listings.length - visibleListings.length} more outside — pan or zoom out to see them.</p>
+        {outsideListings.length > 0 && (
+          <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:"0 0 4px",fontStyle:"italic"}}>{outsideListings.length} outside the map — pan or zoom out.</p>
         )}
-        {visibleListings.length === listings.length && (
+        {unmappableListings.length > 0 && (
+          <p style={{fontFamily:F2,fontSize:10,color:"#7A5C32",margin:"0 0 10px",fontStyle:"italic"}}>{unmappableListings.length} with no known location (address needs fixing).</p>
+        )}
+        {outsideListings.length === 0 && unmappableListings.length === 0 && (
           <div style={{marginBottom:10}}/>
         )}
         <div style={{display:"flex",flexDirection:"column",gap:6}}>
