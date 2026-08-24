@@ -14103,6 +14103,13 @@ function PartnerInviteRedirect() {
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════
 export default function App() {
+  // Latches to true the first time the partner navigates to biz-portal.
+  // Used to keep <BusinessPortal> mounted (hidden via CSS) on subsequent
+  // navigations so mid-edit state survives a tab switch. Not persisted —
+  // a fresh reload starts unmounted again, which is fine because reloads
+  // wipe all local state anyway. The latch effect lives just below the
+  // view state so `view` is in scope by the time the deps array is read.
+  const [bizPortalMounted, setBizPortalMounted] = useState(false);
   const [view,setView]         = useState(()=>{
     const params = new URLSearchParams(window.location.search);
     if(params.get("portal")==="business") return "biz-portal";
@@ -14124,6 +14131,7 @@ export default function App() {
     if(params.get("invite")) return "partnerInvite";
     return "home";
   });
+  useEffect(() => { if (view === "biz-portal") setBizPortalMounted(true); }, [view]);
   // ?claim=WELLO-XXXX-XXXX from the recipient email — read once so RedeemPage
   // can prefill the input. Left in URL until the user submits so a mid-flow
   // sign-in doesn't lose the code.
@@ -15097,7 +15105,16 @@ export default function App() {
           {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds} onGotoCredits={gotoCredits}/>}
           {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds} profile={profile} authSession={authSession} onSaveInterests={saveInterests}/>}
           {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} creditSplit={creditSplit} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion} onSaveInterests={saveInterests} onCancelBooking={cancelBooking} onProfilePatch={(patch)=>setProfile(p => p ? { ...p, ...patch } : { id: authSession?.user?.id, ...patch })}/>}
-          {view==="biz-portal" &&<BusinessPortal onSetView={setView}/>}
+          {/* Keep-mounted-once BusinessPortal. First navigation to biz-portal
+              mounts the component; subsequent navigations away hide it via
+              CSS instead of unmounting, so a partner mid-edit can flip to
+              Explore and back without losing their form state (open chip
+              editor, half-typed inputs, active sub-tab, etc.). */}
+          {(view==="biz-portal" || bizPortalMounted) && (
+            <div style={{ display: view === "biz-portal" ? undefined : "none" }}>
+              <BusinessPortal onSetView={setView}/>
+            </div>
+          )}
           {view==="credits"    &&<CreditsPage credits={credits} creditSplit={creditSplit} listings={listings} authSession={authSession} onCheckout={(qty)=>{ if (!authSession) requireAuthForCheckout(qty); else doCheckout(qty); }} onSetView={setView}/>}
           {view==="about"      &&<AboutPage onSetView={setView}/>}
           {view==="terms"      &&<TermsPage/>}
