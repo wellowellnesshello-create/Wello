@@ -207,6 +207,26 @@ function normalizeTravelAreas(raw) {
     })
     .filter(Boolean);
 }
+// Offering kinds — matches the tile picker on "+ Add offering". Each
+// kind decides which fields render in the form: 'group' shows capacity
+// but hides extras; 'private' shows extras but forces capacity=1;
+// 'treatment' hides both and defaults booking_mode='request'; 'rental'
+// swaps to a completely different shape (inventory, per-day price,
+// min/max days, deposit, add-ons — no schedule); 'custom' shows
+// everything for hybrid setups (Noor's multi-location Private).
+const OFFERING_KINDS = ['group', 'private', 'treatment', 'rental', 'custom'];
+// Infer the kind for legacy offerings that predate the field. Errs
+// toward 'custom' so nothing gets hidden accidentally.
+function inferOfferingKind(o) {
+  if (!o) return 'custom';
+  if (o.kind && OFFERING_KINDS.includes(o.kind)) return o.kind;
+  if (Array.isArray(o.locations) && o.locations.length > 0) return 'custom';
+  if (Number.isFinite(o.inventory) || Array.isArray(o.addons)) return 'rental';
+  if (Number.isFinite(o.extra_person_eur) && o.extra_person_eur > 0) return 'private';
+  if (Number.isFinite(o.capacity) && o.capacity > 1) return 'group';
+  if (o.booking_mode === 'request') return 'treatment';
+  return 'custom';
+}
 // Derives a "starting from" price for an offering that carries a locations
 // array (Noor: Private with At-studio ◈ 30, At-your-home ◈ 60 → 30). Returns
 // null when no location has a positive price so the caller can apply its own
@@ -5769,6 +5789,19 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           // Optional per-offering photo. Falls back to biz.img on the
           // marketplace card + BizPanel offering row when unset.
           img: (typeof o?.img === 'string' && o.img) ? o.img : null,
+          // Class-vs-rental discriminator + rental-specific fields. See
+          // OFFERING_KINDS. price_eur doubles as "per day" for rentals.
+          kind: inferOfferingKind(o),
+          inventory:        Number.isFinite(Number(o?.inventory))        && Number(o.inventory)        > 0 ? Number(o.inventory)        : null,
+          weekly_price_eur: Number.isFinite(Number(o?.weekly_price_eur)) && Number(o.weekly_price_eur) > 0 ? Number(o.weekly_price_eur) : null,
+          min_days:         Number.isFinite(Number(o?.min_days))         && Number(o.min_days)         > 0 ? Number(o.min_days)         : null,
+          max_days:         Number.isFinite(Number(o?.max_days))         && Number(o.max_days)         > 0 ? Number(o.max_days)         : null,
+          deposit_eur:      Number.isFinite(Number(o?.deposit_eur))      && Number(o.deposit_eur)      > 0 ? Number(o.deposit_eur)      : null,
+          addons: Array.isArray(o?.addons)
+            ? o.addons
+                .filter(a => a && typeof a === 'object' && typeof a.label === 'string' && a.label.trim())
+                .map(a => ({ label: String(a.label).trim(), price_eur: Number.isFinite(Number(a?.price_eur)) ? Math.max(0, Math.round(Number(a.price_eur))) : 0 }))
+            : [],
         }))
       : []
   );
@@ -5780,7 +5813,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // dashed "+ Add offering" / "+ Add availability window" buttons.
   const [showAddOffering, setShowAddOffering] = useState(false);
   const [showAddWindow,   setShowAddWindow]   = useState(false);
-  const [newOff, setNewOff] = useState({ type: "", length_min: 60, price_eur: 50, extra_person_eur: "", max_people: "", capacity: 1, venue_side: "instructor", booking_mode: "instant" });
+  // newOff.kind = null means the tile picker is showing (partner hasn't
+  // chosen a listing type yet). Once picked, sensible defaults are seeded
+  // per-kind and the form renders with only the relevant fields.
+  const [newOff, setNewOff] = useState({ kind: null, type: "", length_min: 60, price_eur: "", extra_person_eur: "", max_people: "", capacity: 1, venue_side: "instructor", booking_mode: "instant", inventory: "", weekly_price_eur: "", min_days: 1, max_days: 14, deposit_eur: "", addons: [] });
   // In-place offering edit. editingOfferingIdx is the row being edited (null
   // = none). editBuffer is a local draft so Cancel discards cleanly. Save
   // writes the buffer via dashUpdateOffering and closes.
@@ -5806,21 +5842,53 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     setShowAddWindow(false);
   }
   function commitNewOffering() {
+    const kind = OFFERING_KINDS.includes(newOff.kind) ? newOff.kind : 'custom';
     const type = (newOff.type || "").trim();
     if (!type) return;
     const length_min = parseInt(newOff.length_min, 10) || 60;
     const price_eur  = parseInt(newOff.price_eur, 10)  || 0;
     if (price_eur <= 0) return;
     const extraRaw = parseInt(newOff.extra_person_eur, 10);
-    const extra_person_eur = Number.isFinite(extraRaw) && extraRaw > 0 ? extraRaw : null;
     const maxRaw   = parseInt(newOff.max_people, 10);
-    const max_people       = Number.isFinite(maxRaw)   && maxRaw   > 1 ? maxRaw   : null;
     const capRaw   = parseInt(newOff.capacity, 10);
-    const capacity         = Number.isFinite(capRaw)   && capRaw   > 0 ? capRaw   : 1;
-    const venue_side       = newOff.venue_side === 'customer' ? 'customer' : 'instructor';
-    const booking_mode     = newOff.booking_mode === 'request' ? 'request' : 'instant';
-    setDashSessionOfferings(prev => [...prev, { type, length_min, price_eur, extra_person_eur, max_people, capacity, venue_side, booking_mode, img: null }]);
-    setNewOff({ type: "", length_min: 60, price_eur: 50, extra_person_eur: "", max_people: "", capacity: 1, venue_side: "instructor", booking_mode: "instant" });
+    // Kind-driven normalisation. Group/Private/Treatment forbid or force
+    // certain values (e.g. Private capacity is always 1); rental doesn't
+    // use extras/capacity/venue_side/booking_mode at all.
+    const capacity =
+        kind === 'private'   ? 1
+      : kind === 'treatment' ? 1
+      : kind === 'group'     ? Math.max(1, Number.isFinite(capRaw) ? capRaw : 1)
+      : kind === 'rental'    ? 1
+      :                        (Number.isFinite(capRaw) && capRaw > 0 ? capRaw : 1);
+    const extra_person_eur =
+        (kind === 'private' || kind === 'custom')
+          ? (Number.isFinite(extraRaw) && extraRaw > 0 ? extraRaw : null)
+          : null;
+    const max_people =
+        (kind === 'private' || kind === 'custom')
+          ? (Number.isFinite(maxRaw) && maxRaw > 1 ? maxRaw : null)
+          : null;
+    const venue_side   = kind === 'rental' ? 'instructor'
+      : (newOff.venue_side === 'customer' ? 'customer' : 'instructor');
+    const booking_mode = kind === 'treatment' ? 'request'
+      : kind === 'rental'   ? 'request'
+      : (newOff.booking_mode === 'request' ? 'request' : 'instant');
+    // Rental-specific.
+    const inventoryRaw = parseInt(newOff.inventory, 10);
+    const inventory        = kind === 'rental' ? (Number.isFinite(inventoryRaw) && inventoryRaw > 0 ? inventoryRaw : 1) : null;
+    const weekRaw          = parseInt(newOff.weekly_price_eur, 10);
+    const weekly_price_eur = kind === 'rental' && Number.isFinite(weekRaw) && weekRaw > 0 ? weekRaw : null;
+    const minRaw           = parseInt(newOff.min_days, 10);
+    const min_days         = kind === 'rental' ? (Number.isFinite(minRaw) && minRaw > 0 ? minRaw : 1)  : null;
+    const maxDayRaw        = parseInt(newOff.max_days, 10);
+    const max_days         = kind === 'rental' ? (Number.isFinite(maxDayRaw) && maxDayRaw > 0 ? maxDayRaw : 14) : null;
+    const depRaw           = parseInt(newOff.deposit_eur, 10);
+    const deposit_eur      = kind === 'rental' && Number.isFinite(depRaw) && depRaw > 0 ? depRaw : null;
+    const addons           = (kind === 'rental' || kind === 'custom')
+      ? (Array.isArray(newOff.addons) ? newOff.addons.filter(a => a && typeof a.label === 'string' && a.label.trim()).map(a => ({ label: String(a.label).trim(), price_eur: Math.max(0, parseInt(a.price_eur, 10) || 0) })) : [])
+      : [];
+    setDashSessionOfferings(prev => [...prev, { kind, type, length_min, price_eur, extra_person_eur, max_people, capacity, venue_side, booking_mode, inventory, weekly_price_eur, min_days, max_days, deposit_eur, addons, img: null }]);
+    setNewOff({ kind: null, type: "", length_min: 60, price_eur: "", extra_person_eur: "", max_people: "", capacity: 1, venue_side: "instructor", booking_mode: "instant", inventory: "", weekly_price_eur: "", min_days: 1, max_days: 14, deposit_eur: "", addons: [] });
     setShowAddOffering(false);
   }
   function dashAddOffering() {
@@ -5847,6 +5915,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     // from a previously-open offering.
     setNewOffWindow({ days: [], start: '09:00', end: '12:00' });
     setEditBuffer({
+      kind: OFFERING_KINDS.includes(src.kind) ? src.kind : inferOfferingKind(src),
       type: src.type || "",
       length_min: src.length_min || 60,
       price_eur: Number.isFinite(Number(src.price_eur)) ? Number(src.price_eur) : 0,
@@ -5863,6 +5932,16 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         price_eur: Number.isFinite(Number(l?.price_eur)) ? Number(l.price_eur) : 0,
         venue_side: l?.venue_side === 'customer' ? 'customer' : 'instructor',
       })) : [],
+      // Rental-specific — carried through even for non-rental kinds so
+      // switching kind mid-edit doesn't drop configured values.
+      inventory: Number.isFinite(Number(src.inventory)) && src.inventory > 0 ? src.inventory : "",
+      weekly_price_eur: Number.isFinite(Number(src.weekly_price_eur)) && src.weekly_price_eur > 0 ? src.weekly_price_eur : "",
+      min_days: Number.isFinite(Number(src.min_days)) && src.min_days > 0 ? src.min_days : 1,
+      max_days: Number.isFinite(Number(src.max_days)) && src.max_days > 0 ? src.max_days : 14,
+      deposit_eur: Number.isFinite(Number(src.deposit_eur)) && src.deposit_eur > 0 ? src.deposit_eur : "",
+      addons: Array.isArray(src.addons)
+        ? src.addons.map(a => ({ label: String(a?.label || ''), price_eur: Number.isFinite(Number(a?.price_eur)) ? Number(a.price_eur) : 0 }))
+        : [],
       img: src.img || null,
       category: src.category || '',
     });
@@ -5903,12 +5982,47 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         price_eur: Math.max(0, parseInt(l.price_eur, 10) || 0),
         venue_side: l.venue_side === 'customer' ? 'customer' : 'instructor',
       }));
+    const kind = OFFERING_KINDS.includes(editBuffer.kind) ? editBuffer.kind : 'custom';
+    // Kind-driven normalisation applied on Save, same rules as commitNewOffering.
+    const finalCapacity =
+        kind === 'private'   ? 1
+      : kind === 'treatment' ? 1
+      : kind === 'rental'    ? 1
+      : kind === 'group'     ? Math.max(1, capacity)
+      :                        capacity;
+    const finalExtras   = (kind === 'private' || kind === 'custom') ? extra_person_eur : null;
+    const finalMax      = (kind === 'private' || kind === 'custom') ? max_people       : null;
+    const finalVenueSide= kind === 'rental' ? 'instructor' : venue_side;
+    const finalBooking  = kind === 'treatment' ? 'request'
+      : kind === 'rental'   ? 'request'
+      : booking_mode;
+    // Rental-only fields.
+    const invRaw    = parseInt(editBuffer.inventory, 10);
+    const inventory        = kind === 'rental' ? (Number.isFinite(invRaw) && invRaw > 0 ? invRaw : 1) : null;
+    const weekRaw   = parseInt(editBuffer.weekly_price_eur, 10);
+    const weekly_price_eur = kind === 'rental' && Number.isFinite(weekRaw) && weekRaw > 0 ? weekRaw : null;
+    const minRaw    = parseInt(editBuffer.min_days, 10);
+    const min_days         = kind === 'rental' ? (Number.isFinite(minRaw) && minRaw > 0 ? minRaw : 1)  : null;
+    const maxDayRaw = parseInt(editBuffer.max_days, 10);
+    const max_days         = kind === 'rental' ? (Number.isFinite(maxDayRaw) && maxDayRaw > 0 ? maxDayRaw : 14) : null;
+    const depRaw    = parseInt(editBuffer.deposit_eur, 10);
+    const deposit_eur      = kind === 'rental' && Number.isFinite(depRaw) && depRaw > 0 ? depRaw : null;
+    const addons = (kind === 'rental' || kind === 'custom')
+      ? (Array.isArray(editBuffer.addons)
+          ? editBuffer.addons
+              .filter(a => a && typeof a.label === 'string' && a.label.trim())
+              .map(a => ({ label: String(a.label).trim(), price_eur: Math.max(0, parseInt(a.price_eur, 10) || 0) }))
+          : [])
+      : [];
     const patched = {
-      type, length_min, price_eur, extra_person_eur, max_people, capacity, venue_side, booking_mode,
+      kind, type, length_min, price_eur,
+      extra_person_eur: finalExtras, max_people: finalMax, capacity: finalCapacity,
+      venue_side: finalVenueSide, booking_mode: finalBooking,
       locations: locations.length > 0 ? locations : undefined,
       availability_windows,
       availability_from,
       availability_to,
+      inventory, weekly_price_eur, min_days, max_days, deposit_eur, addons,
       img: editBuffer.img || null,
       category: editBuffer.category || '',
     };
@@ -5932,6 +6046,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   function bufferAddLocation()               { setEditBuffer(p => p ? { ...p, locations: [...(p.locations || []), { label: '', price_eur: 0, venue_side: 'instructor' }] } : p); }
   function bufferRemoveLocation(i)           { setEditBuffer(p => p ? { ...p, locations: (p.locations || []).filter((_, j) => j !== i) } : p); }
   function bufferUpdateLocation(i, locPatch) { setEditBuffer(p => p ? { ...p, locations: (p.locations || []).map((l, j) => j === i ? { ...l, ...locPatch } : l) } : p); }
+  // Rental add-ons — helmet, lock, panniers, etc. Same shape as locations.
+  function bufferAddAddon()                  { setEditBuffer(p => p ? { ...p, addons: [...(p.addons || []), { label: '', price_eur: 0 }] } : p); }
+  function bufferRemoveAddon(i)              { setEditBuffer(p => p ? { ...p, addons: (p.addons || []).filter((_, j) => j !== i) } : p); }
+  function bufferUpdateAddon(i, addonPatch)  { setEditBuffer(p => p ? { ...p, addons: (p.addons || []).map((a, j) => j === i ? { ...a, ...addonPatch } : a) } : p); }
+  // Same for the "add new offering" state so both flows can edit add-ons.
+  function newOffAddAddon()                  { setNewOff(p => ({ ...p, addons: [...(p.addons || []), { label: '', price_eur: 0 }] })); }
+  function newOffRemoveAddon(i)              { setNewOff(p => ({ ...p, addons: (p.addons || []).filter((_, j) => j !== i) })); }
+  function newOffUpdateAddon(i, addonPatch)  { setNewOff(p => ({ ...p, addons: (p.addons || []).map((a, j) => j === i ? { ...a, ...addonPatch } : a) })); }
   function bufferAddWindow(w)                { setEditBuffer(p => p ? { ...p, availability_windows: [...(p.availability_windows || []), w] } : p); }
   function bufferRemoveWindow(i)             { setEditBuffer(p => p ? { ...p, availability_windows: (p.availability_windows || []).filter((_, j) => j !== i) } : p); }
   // Local buffer for the "add window" sub-form inside the offering edit
@@ -8059,13 +8181,34 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     if (off.extra_person_eur > 0)                    flagPills.push({ label: `+€${off.extra_person_eur} per extra person${off.max_people > 1 ? ` · up to ${off.max_people}` : ''}`, color: '#213C18', bg: '#F5F3EE' });
                     return (
                       <div key={idx} style={{padding:"12px 14px",borderRadius:10,background:"#fff",border:"1px solid rgba(33,60,24,0.18)",fontFamily:F2}}>
-                        {/* Row 1 — headline. Name, length, price, actions. */}
+                        {/* Row 1 — headline. Kind pill · name, length, price, actions.
+                            The kind pill is the first thing a partner sees so a
+                            "Rental" vs "Group class" is unmistakable. */}
                         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                          {(() => {
+                            const kind = inferOfferingKind(off);
+                            const kindMeta = {
+                              group:     { label:'Group class',    bg:'#F5F3EE', fg:'#213C18' },
+                              private:   { label:'Private',        bg:'#F5F3EE', fg:'#213C18' },
+                              treatment: { label:'Treatment',      bg:'#FFF3E6', fg:'#7A5C32' },
+                              rental:    { label:'Rental',         bg:'#EAE8E3', fg:'#213C18' },
+                              custom:    { label:'Custom',         bg:'#FBF9F4', fg:'#54584F' },
+                            }[kind] || { label:'Class', bg:'#F5F3EE', fg:'#213C18' };
+                            return (
+                              <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.5px",textTransform:"uppercase",padding:"3px 8px",borderRadius:999,background:kindMeta.bg,color:kindMeta.fg,border:`1px solid ${kindMeta.fg}22`}}>{kindMeta.label}</span>
+                            );
+                          })()}
                           <span style={{fontSize:14,fontWeight:700,color:"#1B1C19"}}>{off.type || <em style={{color:"#54584F"}}>Unnamed class</em>}</span>
+                          {off.kind !== 'rental' && off.length_min > 0 && (<>
+                            <span style={{fontSize:12,color:"#54584F"}}>·</span>
+                            <span style={{fontSize:12,color:"#54584F"}}>{off.length_min} min</span>
+                          </>)}
                           <span style={{fontSize:12,color:"#54584F"}}>·</span>
-                          <span style={{fontSize:12,color:"#54584F"}}>{off.length_min} min</span>
-                          <span style={{fontSize:12,color:"#54584F"}}>·</span>
-                          <span style={{fontSize:13,fontWeight:700,color:"#766149"}}>{priceText}</span>
+                          <span style={{fontSize:13,fontWeight:700,color:"#766149"}}>{off.kind === 'rental' ? `€${off.price_eur}/day` : priceText}</span>
+                          {off.kind === 'rental' && off.inventory > 0 && (<>
+                            <span style={{fontSize:12,color:"#54584F"}}>·</span>
+                            <span style={{fontSize:12,color:"#54584F"}}>{off.inventory} in stock</span>
+                          </>)}
                           <span style={{flex:1}}/>
                           <button type="button" onClick={()=>openOfferingEdit(idx)} aria-label={`Edit ${off.type}`}
                             style={{background:"#213C18",border:"none",color:"#fff",fontSize:10,fontWeight:700,padding:"4px 12px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
@@ -8077,18 +8220,34 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                           </button>
                         </div>
 
-                        {/* Row 2 — schedule. Each grouped-time-window on
-                            its own line. Warns in ochre when no schedule
-                            is set (offering won't generate any slots). */}
+                        {/* Row 2 — schedule (classes) or rental terms
+                            (rentals). Rentals don't have a weekly
+                            recurrence; they surface min/max days and any
+                            weekly discount instead. */}
                         <div style={{marginTop:8,paddingLeft:2}}>
-                          {winSummary === null && (
-                            <p style={{fontSize:12,color:"#C46A4D",fontWeight:600,margin:0}}>No schedule set — click Edit to add days and times.</p>
+                          {off.kind === 'rental' ? (
+                            <p style={{fontSize:12,color:"#1B1C19",fontWeight:500,margin:0}}>
+                              {off.min_days === off.max_days
+                                ? `${off.min_days} day${off.min_days===1?'':'s'}`
+                                : `${off.min_days || 1}–${off.max_days || 14} days`}
+                              {off.weekly_price_eur > 0 && ` · €${off.weekly_price_eur} weekly rate`}
+                              {off.deposit_eur > 0 && ` · €${off.deposit_eur} deposit`}
+                            </p>
+                          ) : (
+                            <>
+                              {winSummary === null && (
+                                <p style={{fontSize:12,color:"#C46A4D",fontWeight:600,margin:0}}>No schedule set — click Edit to add days and times.</p>
+                              )}
+                              {winSummary && winSummary.map((line, i) => (
+                                <p key={i} style={{fontSize:12,color:"#1B1C19",fontWeight:500,margin:i===0?0:"3px 0 0"}}>{line}</p>
+                              ))}
+                              {rangeText && (
+                                <p style={{fontSize:11,color:"#7A5C32",fontWeight:500,margin:"4px 0 0"}}>{rangeText}</p>
+                              )}
+                            </>
                           )}
-                          {winSummary && winSummary.map((line, i) => (
-                            <p key={i} style={{fontSize:12,color:"#1B1C19",fontWeight:500,margin:i===0?0:"3px 0 0"}}>{line}</p>
-                          ))}
-                          {rangeText && (
-                            <p style={{fontSize:11,color:"#7A5C32",fontWeight:500,margin:"4px 0 0"}}>{rangeText}</p>
+                          {off.kind === 'rental' && Array.isArray(off.addons) && off.addons.length > 0 && (
+                            <p style={{fontSize:11,color:"#54584F",margin:"4px 0 0"}}>Add-ons: {off.addons.map(a => `${a.label}${a.price_eur > 0 ? ` (+€${a.price_eur})` : ''}`).join(', ')}</p>
                           )}
                         </div>
 
@@ -8115,102 +8274,280 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 </button>
               )}
 
-              {showAddOffering && (
-                <div style={{padding:"12px 14px",background:"#F5F3EE",borderRadius:8}}>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:10}}>
-                    <input value={newOff.type}
-                      onChange={e=>setNewOff(p=>({...p,type:e.target.value}))}
-                      onKeyDown={e=>{ if (e.key === 'Enter') commitNewOffering(); }}
-                      placeholder="Class type (e.g. Yoga)"
-                      autoFocus
-                      style={{...INP,marginBottom:0,flex:"2 1 180px",minWidth:0}}/>
-                    <select value={newOff.length_min}
-                      onChange={e=>setNewOff(p=>({...p,length_min:parseInt(e.target.value,10)}))}
-                      style={{...INP,marginBottom:0,flex:"1 1 110px",minWidth:90}}>
-                      {DASH_LENGTH_OPTIONS.map(m => <option key={m} value={m}>{m} min</option>)}
-                    </select>
-                    <div style={{position:"relative",flex:"1 1 110px",minWidth:90}}>
-                      <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
-                      <input type="number" min="1" value={newOff.price_eur}
-                        onChange={e=>setNewOff(p=>({...p,price_eur:e.target.value}))}
-                        onFocus={e=>e.target.select()}
-                        onKeyDown={e=>{ if (e.key === 'Enter') commitNewOffering(); }}
-                        placeholder="base"
-                        style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
+              {showAddOffering && (() => {
+                // Reset both the sheet-open flag and the newOff scratch
+                // buffer. Used by Cancel and after a successful commit.
+                const resetNewOff = () => {
+                  setShowAddOffering(false);
+                  setNewOff({ kind: null, type: "", length_min: 60, price_eur: "", extra_person_eur: "", max_people: "", capacity: 1, venue_side: "instructor", booking_mode: "instant", inventory: "", weekly_price_eur: "", min_days: 1, max_days: 14, deposit_eur: "", addons: [] });
+                };
+                // Tile picker step — shown until a kind is chosen. Once
+                // picked, seed sensible defaults for that kind and drop
+                // into the type-appropriate form.
+                if (newOff.kind === null) {
+                  const tiles = [
+                    { key:'group',     label:'Group class',    desc:'Drop-in with capacity. Yoga, Pilates, spin.',    icon:'👥' },
+                    { key:'private',   label:'Private session',desc:'1-on-1 or small group priced per person.',       icon:'🧘' },
+                    { key:'treatment', label:'Treatment',       desc:'Booked by time slot. Massage, spa, physio.',    icon:'💆' },
+                    { key:'rental',    label:'Rental',          desc:'Multi-day inventory. Bikes, kayaks, boards.',   icon:'🚲' },
+                    { key:'custom',    label:'Custom / advanced',desc:'Hybrid setup with multi-location or unusual pricing.', icon:'⚙️' },
+                  ];
+                  const pick = (kind) => {
+                    // Sensible defaults per kind — partner can override
+                    // in the form that opens next.
+                    const defaults = { kind };
+                    if (kind === 'group')     Object.assign(defaults, { capacity: 15, venue_side: 'instructor', booking_mode: 'instant' });
+                    if (kind === 'private')   Object.assign(defaults, { capacity: 1,  venue_side: 'instructor', booking_mode: 'instant' });
+                    if (kind === 'treatment') Object.assign(defaults, { capacity: 1,  venue_side: 'instructor', booking_mode: 'request' });
+                    if (kind === 'rental')    Object.assign(defaults, { capacity: 1,  venue_side: 'instructor', booking_mode: 'request', inventory: 1, min_days: 1, max_days: 14 });
+                    if (kind === 'custom')    Object.assign(defaults, { capacity: 1,  venue_side: 'instructor', booking_mode: 'instant' });
+                    setNewOff(p => ({ ...p, ...defaults }));
+                  };
+                  return (
+                    <div style={{padding:"14px 16px",background:"#F5F3EE",borderRadius:8}}>
+                      <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>What are you listing?</p>
+                      <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.55}}>Pick the type that best fits — we'll only show the fields that matter for it.</p>
+                      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(min(48%,220px),1fr))",gap:8}}>
+                        {tiles.map(t => (
+                          <button key={t.key} type="button" onClick={()=>pick(t.key)}
+                            style={{textAlign:"left",padding:"12px 14px",background:"#fff",border:"1px solid rgba(195,200,188,0.6)",borderRadius:10,cursor:"pointer",transition:"all .12s"}}
+                            onMouseEnter={e=>{e.currentTarget.style.borderColor="#213C18";e.currentTarget.style.background="#FBF9F4";}}
+                            onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(195,200,188,0.6)";e.currentTarget.style.background="#fff";}}>
+                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                              <span style={{fontSize:16}}>{t.icon}</span>
+                              <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>{t.label}</span>
+                            </div>
+                            <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.5}}>{t.desc}</p>
+                          </button>
+                        ))}
+                      </div>
+                      <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
+                        <button type="button" onClick={resetNewOff}
+                          style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer",padding:"6px 12px"}}>Cancel</button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Kind-aware form. Field-visibility flags derived from
+                // newOff.kind — group hides extras, private hides
+                // capacity (forced to 1), treatment hides both and
+                // defaults booking_mode='request'.
+                const kind = newOff.kind;
+                const isRental   = kind === 'rental';
+                const showExtras   = kind === 'private' || kind === 'custom';
+                const showCapacity = kind === 'group' || kind === 'custom';
+                const showVenueSide= !isRental;
+                const showBooking  = !isRental;
+
+                return (
+                  <div style={{padding:"14px 16px",background:"#F5F3EE",borderRadius:8}}>
+                    {/* Header row: shows what kind is being added + Change link back to picker */}
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                      <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase",margin:0}}>
+                        New {kind === 'group' ? 'group class' : kind === 'private' ? 'private session' : kind === 'treatment' ? 'treatment' : kind === 'rental' ? 'rental' : 'custom offering'}
+                      </p>
+                      <button type="button" onClick={()=>setNewOff(p=>({...p, kind: null}))}
+                        style={{background:"transparent",border:"none",color:"#213C18",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",textDecoration:"underline"}}>
+                        Change type
+                      </button>
+                    </div>
+
+                    {/* Name + length + price. For rentals, price is per day. */}
+                    <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:10}}>
+                      <input value={newOff.type}
+                        onChange={e=>setNewOff(p=>({...p,type:e.target.value}))}
+                        onKeyDown={e=>{ if (e.key === 'Enter' && !isRental) commitNewOffering(); }}
+                        placeholder={isRental ? 'e.g. City bike, E-bike, Kayak' : 'e.g. Sunrise Yoga, Deep Tissue Massage'}
+                        autoFocus
+                        style={{...INP,marginBottom:0,flex:"2 1 200px",minWidth:0}}/>
+                      {!isRental && (
+                        <select value={newOff.length_min}
+                          onChange={e=>setNewOff(p=>({...p,length_min:parseInt(e.target.value,10)}))}
+                          style={{...INP,marginBottom:0,flex:"1 1 110px",minWidth:90}}>
+                          {DASH_LENGTH_OPTIONS.map(m => <option key={m} value={m}>{m} min</option>)}
+                        </select>
+                      )}
+                      <div style={{position:"relative",flex:"1 1 130px",minWidth:100}}>
+                        <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
+                        <input type="number" min="1" value={newOff.price_eur}
+                          onChange={e=>setNewOff(p=>({...p,price_eur:e.target.value}))}
+                          onFocus={e=>e.target.select()}
+                          placeholder={isRental ? 'per day' : 'price'}
+                          style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
+                      </div>
+                    </div>
+
+                    {/* Rental-only: inventory + weekly rate + min/max days + deposit + add-ons */}
+                    {isRental && (
+                      <>
+                        <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:10}}>
+                          <label style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>Inventory
+                            <input type="number" min="1" value={newOff.inventory}
+                              onChange={e=>setNewOff(p=>({...p,inventory:e.target.value}))}
+                              onFocus={e=>e.target.select()}
+                              placeholder="How many?"
+                              style={{...INP,marginBottom:0,width:110,marginLeft:6}}/>
+                          </label>
+                          <label style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>Weekly rate
+                            <span style={{position:"relative",display:"inline-block",marginLeft:6}}>
+                              <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontSize:12,fontWeight:600,pointerEvents:"none"}}>€</span>
+                              <input type="number" min="0" value={newOff.weekly_price_eur}
+                                onChange={e=>setNewOff(p=>({...p,weekly_price_eur:e.target.value}))}
+                                onFocus={e=>e.target.select()}
+                                placeholder="7+ days"
+                                style={{...INP,paddingLeft:20,marginBottom:0,width:110}}/>
+                            </span>
+                          </label>
+                          <label style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>Deposit
+                            <span style={{position:"relative",display:"inline-block",marginLeft:6}}>
+                              <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontSize:12,fontWeight:600,pointerEvents:"none"}}>€</span>
+                              <input type="number" min="0" value={newOff.deposit_eur}
+                                onChange={e=>setNewOff(p=>({...p,deposit_eur:e.target.value}))}
+                                onFocus={e=>e.target.select()}
+                                placeholder="optional"
+                                style={{...INP,paddingLeft:20,marginBottom:0,width:110}}/>
+                            </span>
+                          </label>
+                        </div>
+                        <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:10}}>
+                          <label style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>Min days
+                            <input type="number" min="1" value={newOff.min_days}
+                              onChange={e=>setNewOff(p=>({...p,min_days:e.target.value}))}
+                              onFocus={e=>e.target.select()}
+                              style={{...INP,marginBottom:0,width:80,marginLeft:6}}/>
+                          </label>
+                          <label style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>Max days
+                            <input type="number" min="1" value={newOff.max_days}
+                              onChange={e=>setNewOff(p=>({...p,max_days:e.target.value}))}
+                              onFocus={e=>e.target.select()}
+                              style={{...INP,marginBottom:0,width:80,marginLeft:6}}/>
+                          </label>
+                        </div>
+                        {/* Add-ons — helmet, lock, panniers, etc. */}
+                        <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 6px"}}>Add-ons (optional)</p>
+                        {(newOff.addons || []).length > 0 && (
+                          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:8}}>
+                            {newOff.addons.map((a, ai) => (
+                              <div key={ai} style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",padding:"8px 10px",background:"#fff",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8}}>
+                                <input value={a.label}
+                                  onChange={e=>newOffUpdateAddon(ai, { label: e.target.value })}
+                                  placeholder="Label (e.g. Helmet)"
+                                  style={{...INP,marginBottom:0,flex:"2 1 160px",minWidth:0}}/>
+                                <div style={{position:"relative",flex:"1 1 90px",minWidth:80}}>
+                                  <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
+                                  <input type="number" min="0" value={a.price_eur}
+                                    onChange={e=>newOffUpdateAddon(ai, { price_eur: e.target.value === '' ? 0 : (parseInt(e.target.value, 10) || 0) })}
+                                    onFocus={e=>e.target.select()}
+                                    placeholder="price"
+                                    style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
+                                </div>
+                                <button type="button" onClick={()=>newOffRemoveAddon(ai)}
+                                  style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 9px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                                  Remove
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <button type="button" onClick={newOffAddAddon}
+                          style={{background:"transparent",border:"1px dashed rgba(33,60,24,0.4)",color:"#213C18",fontFamily:F2,fontSize:11,fontWeight:600,padding:"7px 14px",borderRadius:999,cursor:"pointer",marginBottom:10}}>
+                          + Add add-on
+                        </button>
+                        <div style={{padding:"10px 12px",background:"#F5F0E4",border:"1px solid #D9CFB4",borderRadius:8,marginBottom:10}}>
+                          <p style={{fontFamily:F2,fontSize:11,color:"#6F5B44",margin:0,lineHeight:1.5}}>Rentals: bookings will land in your Wello inbox for now. Booqable API sync coming — reserving inventory automatically once that ships.</p>
+                        </div>
+                      </>
+                    )}
+
+                    {/* Class-only sections: extras / capacity / venue side / booking flow */}
+                    {showExtras && (
+                      <>
+                        <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Group pricing (optional)</p>
+                        <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:10}}>
+                          <div style={{position:"relative",flex:"1 1 160px",minWidth:120}}>
+                            <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
+                            <input type="number" min="0" value={newOff.extra_person_eur}
+                              onChange={e=>setNewOff(p=>({...p,extra_person_eur:e.target.value}))}
+                              onFocus={e=>e.target.select()}
+                              placeholder="Extra per person"
+                              style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
+                          </div>
+                          <input type="number" min="2" value={newOff.max_people}
+                            onChange={e=>setNewOff(p=>({...p,max_people:e.target.value}))}
+                            onFocus={e=>e.target.select()}
+                            placeholder="Max people"
+                            style={{...INP,marginBottom:0,flex:"1 1 120px",minWidth:100}}/>
+                        </div>
+                      </>
+                    )}
+                    {showCapacity && (
+                      <>
+                        <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Slot capacity <span style={{fontWeight:400}}>— seats per slot</span></p>
+                        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10}}>
+                          <input type="number" min="1" value={newOff.capacity}
+                            onChange={e=>setNewOff(p=>({...p,capacity:e.target.value}))}
+                            onFocus={e=>e.target.select()}
+                            placeholder="1"
+                            style={{...INP,marginBottom:0,width:140}}/>
+                        </div>
+                      </>
+                    )}
+                    {showVenueSide && (
+                      <>
+                        <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Where does this happen?</p>
+                        <div style={{display:"flex",gap:0,borderRadius:6,overflow:"hidden",border:"1px solid rgba(195,200,188,0.6)",width:"fit-content",marginBottom:10}}>
+                          {[
+                            { key:'instructor', label:'At my venue' },
+                            { key:'customer',   label:"At customer's address" },
+                          ].map(opt => {
+                            const on = (newOff.venue_side || 'instructor') === opt.key;
+                            return (
+                              <button key={opt.key} type="button"
+                                onClick={()=>setNewOff(p=>({...p,venue_side:opt.key}))}
+                                style={{padding:"8px 14px",border:"none",background:on?"#213C18":"#fff",color:on?"#fff":"#213C18",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                    {showBooking && (
+                      <>
+                        <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Booking flow</p>
+                        <div style={{display:"flex",gap:0,borderRadius:6,overflow:"hidden",border:"1px solid rgba(195,200,188,0.6)",width:"fit-content",marginBottom:10}}>
+                          {[
+                            { key:'instant',  label:'Instant book' },
+                            { key:'request',  label:'Request (48h to confirm)' },
+                          ].map(opt => {
+                            const on = (newOff.booking_mode || 'instant') === opt.key;
+                            return (
+                              <button key={opt.key} type="button"
+                                onClick={()=>setNewOff(p=>({...p,booking_mode:opt.key}))}
+                                style={{padding:"8px 14px",border:"none",background:on?"#213C18":"#fff",color:on?"#fff":"#213C18",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+
+                    <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:6}}>
+                      <button type="button" onClick={resetNewOff}
+                        style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer",padding:"6px 12px"}}>
+                        Cancel
+                      </button>
+                      <button type="button" onClick={commitNewOffering}
+                        disabled={!newOff.type.trim() || !newOff.price_eur}
+                        style={{padding:"8px 18px",background:(!newOff.type.trim()||!newOff.price_eur)?"#E4E2DD":"#213C18",color:(!newOff.type.trim()||!newOff.price_eur)?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(!newOff.type.trim()||!newOff.price_eur)?"not-allowed":"pointer"}}>
+                        {isRental ? 'Add rental' : 'Add offering'}
+                      </button>
                     </div>
                   </div>
-                  {/* Optional group-pricing row. Leave both blank for a strict
-                      1-to-1 session. Set "Extra per person" to charge more per
-                      additional guest; set "Max people" to cap the group size. */}
-                  <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Group pricing (optional)</p>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:10}}>
-                    <div style={{position:"relative",flex:"1 1 160px",minWidth:120}}>
-                      <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
-                      <input type="number" min="0" value={newOff.extra_person_eur}
-                        onChange={e=>setNewOff(p=>({...p,extra_person_eur:e.target.value}))}
-                        onFocus={e=>e.target.select()}
-                        placeholder="Extra per person"
-                        style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
-                    </div>
-                    <input type="number" min="2" value={newOff.max_people}
-                      onChange={e=>setNewOff(p=>({...p,max_people:e.target.value}))}
-                      onFocus={e=>e.target.select()}
-                      placeholder="Max people"
-                      style={{...INP,marginBottom:0,flex:"1 1 120px",minWidth:100}}/>
-                  </div>
-                  <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Slot capacity <span style={{fontWeight:400}}>— seats per slot (1 = one booking; N &gt; 1 for group classes)</span></p>
-                  <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10}}>
-                    <input type="number" min="1" value={newOff.capacity}
-                      onChange={e=>setNewOff(p=>({...p,capacity:e.target.value}))}
-                      onFocus={e=>e.target.select()}
-                      placeholder="1"
-                      style={{...INP,marginBottom:0,width:140}}/>
-                  </div>
-                  <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Where does this happen?</p>
-                  <div style={{display:"flex",gap:0,borderRadius:6,overflow:"hidden",border:"1px solid rgba(195,200,188,0.6)",width:"fit-content",marginBottom:10}}>
-                    {[
-                      { key:'instructor', label:'At my venue' },
-                      { key:'customer',   label:"At customer's address" },
-                    ].map(opt => {
-                      const on = (newOff.venue_side || 'instructor') === opt.key;
-                      return (
-                        <button key={opt.key} type="button"
-                          onClick={()=>setNewOff(p=>({...p,venue_side:opt.key}))}
-                          style={{padding:"8px 14px",border:"none",background:on?"#213C18":"#fff",color:on?"#fff":"#213C18",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer"}}>
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Booking flow</p>
-                  <div style={{display:"flex",gap:0,borderRadius:6,overflow:"hidden",border:"1px solid rgba(195,200,188,0.6)",width:"fit-content",marginBottom:10}}>
-                    {[
-                      { key:'instant',  label:'Instant book' },
-                      { key:'request',  label:'Request (48h to confirm)' },
-                    ].map(opt => {
-                      const on = (newOff.booking_mode || 'instant') === opt.key;
-                      return (
-                        <button key={opt.key} type="button"
-                          onClick={()=>setNewOff(p=>({...p,booking_mode:opt.key}))}
-                          style={{padding:"8px 14px",border:"none",background:on?"#213C18":"#fff",color:on?"#fff":"#213C18",fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer"}}>
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                    <button type="button" onClick={()=>{setShowAddOffering(false);setNewOff({type:"",length_min:60,price_eur:50,extra_person_eur:"",max_people:"",capacity:1,venue_side:"instructor",booking_mode:"instant"});}}
-                      style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer",padding:"6px 12px"}}>
-                      Cancel
-                    </button>
-                    <button type="button" onClick={commitNewOffering}
-                      disabled={!newOff.type.trim() || !newOff.price_eur}
-                      style={{padding:"8px 18px",background:(!newOff.type.trim()||!newOff.price_eur)?"#E4E2DD":"#213C18",color:(!newOff.type.trim()||!newOff.price_eur)?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(!newOff.type.trim()||!newOff.price_eur)?"not-allowed":"pointer"}}>
-                      Add offering
-                    </button>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* Offering photos — one photo per session_offering entry.
