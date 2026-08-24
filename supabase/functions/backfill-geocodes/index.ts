@@ -31,26 +31,67 @@ function json(body: unknown, status = 200) {
   })
 }
 
-async function geocode(address: string): Promise<{ ok: boolean; lat?: number; lng?: number }> {
+// Mirrors the geocode-address edge fn's variant cascade so backfill
+// picks up messy addresses that failed the first pass. Keep the two in
+// sync — if geocode-address's variants change, update this too.
+function buildAddressVariants(raw: string): string[] {
+  const variants: string[] = []
+  const add = (s: string) => {
+    const trimmed = s.replace(/\s+/g, ' ').trim().replace(/^,\s*|\s*,\s*$/g, '')
+    if (trimmed.length >= 4 && !variants.includes(trimmed)) variants.push(trimmed)
+  }
+  const withMallorca = (s: string) => s.toLowerCase().includes('mallorca') ? s : `${s}, Mallorca`
+  add(withMallorca(raw))
+  let stripped = raw
+    .replace(/,?\s*(illes?\s+balears?|balearic\s+islands?|españa|espana|spain)\b/gi, '')
+    .replace(/,?\s*\d{5}\b/g, '')
+  add(withMallorca(stripped))
+  const noFlatSuffix = stripped.replace(/(\d+)\s*[-\s]?[a-zA-Z](?![a-zA-Z])/g, '$1')
+  add(withMallorca(noFlatSuffix))
+  const parts = stripped.split(',').map(p => p.trim()).filter(Boolean)
+  if (parts.length > 1) {
+    const street = parts[0]
+    const townPart = parts.slice(1).find(p =>
+      /\b(palma|alcudia|andratx|arta|calvi[àa]|dei[àa]|inca|manacor|pollen[çc]a|santany[íi]|s[óo]ller|valldemossa|magaluf|felanitx|llucmajor|port|cala|es\s+trenc|es\s+molinar|portitxol)\b/i.test(p)
+    ) || parts[1]
+    add(withMallorca(`${street}, ${townPart}`))
+    add(withMallorca(street))
+  }
+  return variants
+}
+
+async function nominatimOne(q: string): Promise<{ lat: number; lng: number } | null> {
   const params = new URLSearchParams({
-    format:        'json',
-    q:             address + (address.toLowerCase().includes('mallorca') ? '' : ', Mallorca'),
-    countrycodes:  'es',
-    viewbox:       '2.3,40.1,3.4,39.2',
-    bounded:       '1',
-    limit:         '1',
+    format:         'json',
+    q,
+    countrycodes:   'es',
+    viewbox:        '2.3,40.1,3.4,39.2',
+    bounded:        '1',
+    limit:          '1',
     addressdetails: '0',
   })
   const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`
   try {
     const r = await fetch(url, { headers: { 'User-Agent': UA, 'Accept': 'application/json' } })
-    if (!r.ok) return { ok: false }
+    if (!r.ok) return null
     const arr = await r.json() as Array<{ lat?: string; lon?: string }>
-    if (!Array.isArray(arr) || arr.length === 0) return { ok: false }
+    if (!Array.isArray(arr) || arr.length === 0) return null
     const lat = Number(arr[0].lat), lng = Number(arr[0].lon)
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { ok: false }
-    return { ok: true, lat, lng }
-  } catch { return { ok: false } }
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+    return { lat, lng }
+  } catch { return null }
+}
+
+async function geocode(address: string): Promise<{ ok: boolean; lat?: number; lng?: number }> {
+  const variants = buildAddressVariants(address)
+  for (const q of variants) {
+    const hit = await nominatimOne(q)
+    if (hit) return { ok: true, lat: hit.lat, lng: hit.lng }
+    // Nominatim rate limit: 1 req/sec. Wait between variants so a
+    // cascade over 4 doesn't burst.
+    await new Promise(r => setTimeout(r, MIN_INTERVAL_MS))
+  }
+  return { ok: false }
 }
 
 serve(async (req) => {
