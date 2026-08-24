@@ -5538,7 +5538,16 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // dashboard header immediately. Synced from the prop when the parent
   // re-fetches or switches venues.
   const [bizData, setBizData] = useState(() => bizDataProp || { name:"Demo Studio", cat:"Yoga", loc:"Sóller", monthlyBookings:24, monthlyCredits:86 });
-  useEffect(() => { if (bizDataProp) setBizData(bizDataProp); }, [bizDataProp]);
+  // Only re-sync from the prop when the partner actually switches to a
+  // different venue (id changes). The parent re-issues bizDataProp on
+  // every re-render — including token-refresh SIGNED_IN events fired by
+  // Supabase auth on tab-focus / hourly rotation — and if we unconditionally
+  // setBizData every time, any half-typed edit in the dashboard gets
+  // wiped after ~1 hour of activity ("refreshes if you're there too long").
+  const currentBizId = bizData?.id;
+  useEffect(() => {
+    if (bizDataProp && bizDataProp.id !== currentBizId) setBizData(bizDataProp);
+  }, [bizDataProp?.id, currentBizId, bizDataProp]);
   // Persist the active tab across remounts (navigate-away-and-back snaps the
   // dashboard back to overview otherwise). Stored per-tab not per-venue so a
   // partner who likes the Manage tab can come back to it on any venue.
@@ -7721,8 +7730,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                             </select>
                             <div style={{position:"relative",flex:"1 1 110px",minWidth:90}}>
                               <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
-                              <input type="number" min="0" value={editBuffer?.price_eur ?? 0}
-                                onChange={e=>bufferUpdate({ price_eur: parseInt(e.target.value, 10) || 0 })}
+                              <input type="number" min="0" value={editBuffer?.price_eur ?? ''}
+                                onChange={e=>bufferUpdate({ price_eur: e.target.value })}
+                                onFocus={e=>e.target.select()}
                                 placeholder="base"
                                 disabled={hasLocs}
                                 title={hasLocs ? "Locations drive the price when set — base is ignored." : ""}
@@ -7740,11 +7750,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                               <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
                               <input type="number" min="0" value={editBuffer?.extra_person_eur ?? ''}
                                 onChange={e=>bufferUpdate({ extra_person_eur: e.target.value })}
+                                onFocus={e=>e.target.select()}
                                 placeholder="Extra per person"
                                 style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
                             </div>
                             <input type="number" min="2" value={editBuffer?.max_people ?? ''}
                               onChange={e=>bufferUpdate({ max_people: e.target.value })}
+                              onFocus={e=>e.target.select()}
                               placeholder="Max people"
                               style={{...INP,marginBottom:0,flex:"1 1 120px",minWidth:100}}/>
                           </div>
@@ -7756,6 +7768,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                           <div style={{marginBottom:14}}>
                             <input type="number" min="1" value={editBuffer?.capacity ?? 1}
                               onChange={e=>bufferUpdate({ capacity: e.target.value })}
+                              onFocus={e=>e.target.select()}
                               placeholder="1"
                               style={{...INP,marginBottom:0,width:140}}/>
                           </div>
@@ -7938,7 +7951,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                     <div style={{position:"relative",flex:"1 1 90px",minWidth:80}}>
                                       <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
                                       <input type="number" min="0" value={l.price_eur}
-                                        onChange={e=>bufferUpdateLocation(li, { price_eur: parseInt(e.target.value, 10) || 0 })}
+                                        onChange={e=>bufferUpdateLocation(li, { price_eur: e.target.value === '' ? 0 : (parseInt(e.target.value, 10) || 0) })}
+                                        onFocus={e=>e.target.select()}
                                         placeholder="price"
                                         style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
                                     </div>
@@ -8118,7 +8132,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     <div style={{position:"relative",flex:"1 1 110px",minWidth:90}}>
                       <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
                       <input type="number" min="1" value={newOff.price_eur}
-                        onChange={e=>setNewOff(p=>({...p,price_eur:parseInt(e.target.value,10)||0}))}
+                        onChange={e=>setNewOff(p=>({...p,price_eur:e.target.value}))}
+                        onFocus={e=>e.target.select()}
                         onKeyDown={e=>{ if (e.key === 'Enter') commitNewOffering(); }}
                         placeholder="base"
                         style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
@@ -8133,11 +8148,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                       <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
                       <input type="number" min="0" value={newOff.extra_person_eur}
                         onChange={e=>setNewOff(p=>({...p,extra_person_eur:e.target.value}))}
+                        onFocus={e=>e.target.select()}
                         placeholder="Extra per person"
                         style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
                     </div>
                     <input type="number" min="2" value={newOff.max_people}
                       onChange={e=>setNewOff(p=>({...p,max_people:e.target.value}))}
+                      onFocus={e=>e.target.select()}
                       placeholder="Max people"
                       style={{...INP,marginBottom:0,flex:"1 1 120px",minWidth:100}}/>
                   </div>
@@ -8145,6 +8162,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10}}>
                     <input type="number" min="1" value={newOff.capacity}
                       onChange={e=>setNewOff(p=>({...p,capacity:e.target.value}))}
+                      onFocus={e=>e.target.select()}
                       placeholder="1"
                       style={{...INP,marginBottom:0,width:140}}/>
                   </div>
@@ -8534,11 +8552,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                             <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontSize:12,fontWeight:600,pointerEvents:"none"}}>€</span>
                             <input type="number" min="0" value={bulkEditBuffer.credits}
                               onChange={e=>setBulkEditBuffer(p=>({...p,credits:e.target.value}))}
+                              onFocus={e=>e.target.select()}
                               placeholder="Price"
                               style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
                           </div>
                           <input type="number" min="1" value={bulkEditBuffer.spots}
                             onChange={e=>setBulkEditBuffer(p=>({...p,spots:e.target.value}))}
+                            onFocus={e=>e.target.select()}
                             placeholder="Seats"
                             style={{...INP,marginBottom:0,width:90}}/>
                         </div>
@@ -8590,10 +8610,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                         <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontSize:12,fontWeight:600,pointerEvents:"none"}}>€</span>
                                         <input type="number" min="0" value={slotEditBuffer.credits}
                                           onChange={e=>setSlotEditBuffer(p=>({...p,credits:e.target.value}))}
+                                          onFocus={e=>e.target.select()}
                                           style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
                                       </div>
                                       <input type="number" min="1" value={slotEditBuffer.spots}
                                         onChange={e=>setSlotEditBuffer(p=>({...p,spots:e.target.value}))}
+                                        onFocus={e=>e.target.select()}
                                         title="Seats" style={{...INP,marginBottom:0,width:70}}/>
                                     </div>
                                     <p style={{fontFamily:F2,fontSize:10,color:"#766149",margin:"0 0 8px",lineHeight:1.4}}>Saving here marks this slot as manually edited — future Save availability runs will leave it alone.</p>
