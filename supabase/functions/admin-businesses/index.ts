@@ -114,7 +114,7 @@ serve(async (req) => {
     // connected account vs one still pending, etc).
     const { data, error } = await supabase
       .from('businesses')
-      .select('id, name, business_type, category, status, cr, slots, session_offerings, description, address, img, gallery, tags, email, contact_name, stripe_account_id, stripe_account_status')
+      .select('id, name, business_type, category, status, cr, slots, session_offerings, description, address, img, gallery, tags, email, contact_name, stripe_account_id, stripe_account_status, geocode_failed, geocoded_from, lat, lng')
       .order('name', { ascending: true })
     if (error) return respond(500, { error: error.message })
     return respond(200, { businesses: data || [] })

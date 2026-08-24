@@ -12560,12 +12560,33 @@ function AdminSetupPage() {
           <label style={S.label}>Target business</label>
           <select value={businessId} onChange={e => setBusinessId(e.target.value)} style={S.input}>
             <option value="">— pick a business —</option>
-            {businesses.map(b => (
-              <option key={b.id} value={b.id}>
-                {b.name} (id {b.id}, {b.business_type || b.category || 'unknown type'}, {b.status})
-              </option>
-            ))}
+            {businesses.map(b => {
+              // Prefix with ⚠︎ when the geocoder couldn't resolve the
+              // address — map pin falls back to the town centre. Admin
+              // should verify or correct the address so the pin sits
+              // where the venue actually is. Also flag when geocoded_from
+              // is set but lat/lng are still null (rare — a failed
+              // backfill), and when address is set but no geocode has
+              // been attempted at all.
+              const failed  = b.geocode_failed === true;
+              const missing = !!b.address && !b.geocoded_from;
+              const flag = failed ? '⚠︎ geocode failed · ' : missing ? '⚠︎ not geocoded · ' : '';
+              return (
+                <option key={b.id} value={b.id}>
+                  {flag}{b.name} (id {b.id}, {b.business_type || b.category || 'unknown type'}, {b.status})
+                </option>
+              );
+            })}
           </select>
+          {(() => {
+            const bad = businesses.filter(b => b.geocode_failed === true || (b.address && !b.geocoded_from));
+            if (bad.length === 0) return null;
+            return (
+              <p style={{ fontSize: 11, color: '#7A5C32', margin: '6px 0 0' }}>
+                <strong>{bad.length}</strong> business{bad.length===1?'':'es'} need attention on address / geocoding — flagged with ⚠︎ above. Fix the address in the partner dashboard (or contact the partner) and it re-geocodes on save.
+              </p>
+            );
+          })()}
         </div>
 
         <div style={{ marginBottom: 12 }}>
