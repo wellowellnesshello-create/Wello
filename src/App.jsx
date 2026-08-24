@@ -8050,7 +8050,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                     <div style={{position:"relative",flex:"1 1 90px",minWidth:80}}>
                                       <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
                                       <input type="number" min="0" value={l.price_eur}
-                                        onChange={e=>bufferUpdateLocation(li, { price_eur: e.target.value === '' ? 0 : (parseInt(e.target.value, 10) || 0) })}
+                                        onChange={e=>bufferUpdateLocation(li, { price_eur: e.target.value })}
                                         onFocus={e=>e.target.select()}
                                         placeholder="price"
                                         style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
@@ -8419,7 +8419,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                 <div style={{position:"relative",flex:"1 1 90px",minWidth:80}}>
                                   <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
                                   <input type="number" min="0" value={a.price_eur}
-                                    onChange={e=>newOffUpdateAddon(ai, { price_eur: e.target.value === '' ? 0 : (parseInt(e.target.value, 10) || 0) })}
+                                    onChange={e=>newOffUpdateAddon(ai, { price_eur: e.target.value })}
                                     onFocus={e=>e.target.select()}
                                     placeholder="price"
                                     style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
@@ -11245,7 +11245,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
                 <div style={{position:"relative"}}>
                   <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:T.stone,fontFamily:F.body,fontSize:12,fontWeight:600,pointerEvents:"none"}}>€</span>
                   <input type="number" min="1" value={off.price_eur}
-                    onChange={e=>updateOffering(idx,{price_eur:parseInt(e.target.value,10)||0})}
+                    onChange={e=>updateOffering(idx,{price_eur:e.target.value})}
                     style={{...INP,paddingLeft:22,marginBottom:0}} onFocus={onFi} onBlur={onBl}/>
                 </div>
                 {/* Per-offering category. Empty = inherit venue category
@@ -11361,7 +11361,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
                   <input type="text" value="1 (private)" disabled
                     style={{...INP,background:T.bg2,color:T.stone2,cursor:"not-allowed"}}/>
                 ) : (
-                  <input type="number" min="1" value={newSlot.spots} onChange={e=>setNewSlot(p=>({...p,spots:parseInt(e.target.value)||1}))} style={{...INP}} onFocus={onFi} onBlur={onBl}/>
+                  <input type="number" min="1" value={newSlot.spots} onChange={e=>setNewSlot(p=>({...p,spots:e.target.value}))} onFocus={e=>{ onFi?.(e); e.target.select(); }} onBlur={onBl}/>
                 )}
               </div>
               <div>
