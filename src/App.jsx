@@ -1738,14 +1738,25 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   const offerings = isPrivateInstructor ? [] : rawOfferings;
   const hasClasses = bookableSlots.length > 0;
   const hasOfferings = offerings.length > 0;
-  const showSegments = hasClasses && hasOfferings;
-  // Treatment / spa detection — if every offering type reads like a treatment,
-  // label the segment "Treatments"; otherwise "Private sessions". Keeps the
-  // language honest for spa-type venues without hard-coding categories.
+  // Segment label detection — honest labels for the offering mix.
+  //   All rental → "Rentals"
+  //   All treatment-shaped names → "Treatments"
+  //   Otherwise → "Private sessions"
+  // Also splits rentals into their own segment so a mixed business (yoga
+  // classes AND bike rentals from the same venue) doesn't hide the
+  // rental cards under a "Private sessions" tab.
   const TREATMENT_RE = /(massage|treatment|therapy|reflexolog|facial|reiki|shiatsu|deep tissue|swedish|thai|hot stone|acupuncture)/i;
-  const allTreatments = offerings.length > 0 && offerings.every(o => TREATMENT_RE.test(String(o.type || "")));
+  const rentalOfferings = offerings.filter(o => o?.kind === 'rental');
+  const nonRentalOfferings = offerings.filter(o => o?.kind !== 'rental');
+  const hasRentals = rentalOfferings.length > 0;
+  const hasNonRentalOfferings = nonRentalOfferings.length > 0;
+  const allTreatments = nonRentalOfferings.length > 0 && nonRentalOfferings.every(o => TREATMENT_RE.test(String(o.type || "")));
   const privateSegLabel = allTreatments ? "Treatments" : "Private sessions";
-  const [segment, setSegment] = useState(hasClasses ? "classes" : "private");
+  // Show a segment control when there's more than one kind to switch
+  // between (classes + private/treatment, or + rentals, or all three).
+  // Simple venues render their single kind directly.
+  const showSegments = [hasClasses, hasNonRentalOfferings, hasRentals].filter(Boolean).length >= 2;
+  const [segment, setSegment] = useState(hasClasses ? "classes" : (hasNonRentalOfferings ? "private" : "rentals"));
 
   // ─── Classes segment: filter chips + 7-day chips ────────────────────────
   // Chip key = name|venue_side so a hybrid partner (Noor: "Private" at
@@ -1836,6 +1847,133 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   // request-treatment-booking edge function, mirroring the private
   // instructor pending flow with a 48h window.
   const [openOfferingIdx, setOpenOfferingIdx] = useState(null);
+  // Rental booking state — inline expand per rental card. Only one open
+  // at a time to keep the panel compact. Availability is checked
+  // against overlapping bookings when the partner picks dates.
+  const [openRentalIdx,    setOpenRentalIdx]    = useState(null);
+  const [rentalStart,      setRentalStart]      = useState("");
+  const [rentalEnd,        setRentalEnd]        = useState("");
+  const [rentalAddonPicks, setRentalAddonPicks] = useState(() => new Set()); // add-on indices
+  const [rentalHealthAck,  setRentalHealthAck]  = useState(false);
+  const [rentalSubmitting, setRentalSubmitting] = useState(false);
+  const [rentalError,      setRentalError]      = useState("");
+  const [rentalAvailErr,   setRentalAvailErr]   = useState("");
+  const [rentalSuccessFor, setRentalSuccessFor] = useState(null);
+  function openRentalModal(offering) {
+    // Reset + open. Start defaults to today + min lead (48h for rentals).
+    const minLeadHrs = 48;
+    const start = new Date(Date.now() + minLeadHrs * 60 * 60 * 1000);
+    const startIso = start.toISOString().slice(0, 10);
+    const minDays = Number.isFinite(Number(offering?.min_days)) && offering.min_days > 0 ? Number(offering.min_days) : 1;
+    const endD = new Date(start); endD.setDate(endD.getDate() + (minDays - 1));
+    const endIso = endD.toISOString().slice(0, 10);
+    setRentalStart(startIso);
+    setRentalEnd(endIso);
+    setRentalAddonPicks(new Set());
+    setRentalHealthAck(false);
+    setRentalError(""); setRentalAvailErr("");
+    setRentalSuccessFor(null);
+    const idx = (rentalOfferings || []).findIndex(o => o === offering || (o.type === offering.type && o.kind === 'rental'));
+    setOpenRentalIdx(idx >= 0 ? idx : 0);
+  }
+  function closeRentalModal() {
+    setOpenRentalIdx(null);
+    setRentalError(""); setRentalAvailErr("");
+  }
+  function toggleRentalAddon(idx) {
+    setRentalAddonPicks(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      return next;
+    });
+  }
+  async function submitRentalBooking(offering) {
+    setRentalError(""); setRentalAvailErr("");
+    if (!authSession) { onOpenSignIn?.(); return; }
+    const perDay  = Number(offering?.price_eur) || 0;
+    const weekly  = Number(offering?.weekly_price_eur) || null;
+    const stock   = Number(offering?.inventory) || 0;
+    const minDays = Number(offering?.min_days) || 1;
+    const maxDays = Number(offering?.max_days) || 14;
+    const depo    = Number(offering?.deposit_eur) || 0;
+    const addonList = Array.isArray(offering?.addons) ? offering.addons : [];
+    // Validate range
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(rentalStart) || !/^\d{4}-\d{2}-\d{2}$/.test(rentalEnd)) {
+      setRentalError("Pick a start and end date."); return;
+    }
+    const days = Math.round((new Date(rentalEnd + 'T00:00:00') - new Date(rentalStart + 'T00:00:00')) / 86400000) + 1;
+    if (days < minDays) { setRentalError(`Minimum rental is ${minDays} day${minDays===1?'':'s'}.`); return; }
+    if (days > maxDays) { setRentalError(`Maximum rental is ${maxDays} day${maxDays===1?'':'s'}.`); return; }
+    // Advance-notice check — 48h minimum for rentals so the partner has
+    // time to prep the item.
+    const startMs = new Date(rentalStart + 'T00:00:00').getTime();
+    if (startMs - Date.now() < 48 * 60 * 60 * 1000) {
+      setRentalError("Rentals need at least 48 hours notice."); return;
+    }
+    // Availability: count overlapping bookings for this rental type.
+    setRentalSubmitting(true);
+    const { data: overlappingRows, error: availErr } = await supabase
+      .from('bookings')
+      .select('id')
+      .eq('business_id', biz.business_id)
+      .eq('offering_type', offering.type)
+      .not('end_date', 'is', null)
+      .in('status', ['confirmed', 'pending_venue', 'pending_instructor'])
+      .lte('booking_date', rentalEnd)
+      .gte('end_date', rentalStart);
+    if (availErr) { setRentalSubmitting(false); setRentalError("Couldn't check availability: " + availErr.message); return; }
+    const overlaps = (overlappingRows || []).length;
+    if (stock > 0 && overlaps >= stock) {
+      setRentalSubmitting(false);
+      setRentalAvailErr(`All ${stock} in stock are booked for at least part of your range. Try different dates.`);
+      return;
+    }
+    // Compute total.
+    const useWeeklyRate = weekly && days >= 7;
+    const rentalCost = useWeeklyRate ? weekly * Math.ceil(days / 7) : perDay * days;
+    const addonsPicked = addonList.filter((_, i) => rentalAddonPicks.has(i));
+    const addonsCost   = addonsPicked.reduce((s, a) => s + (Number(a.price_eur) || 0), 0);
+    const totalCredits = rentalCost + addonsCost + depo;
+    if (!Number.isFinite(totalCredits) || totalCredits <= 0) {
+      setRentalSubmitting(false); setRentalError("Something's wrong with the price. Contact the venue."); return;
+    }
+    if (Number(credits) < totalCredits) {
+      setRentalSubmitting(false); onGotoCredits?.(); return;
+    }
+    // Persist. Rentals default to pending_venue (request-mode) so the
+    // partner explicitly confirms before credits are debited.
+    const { data: sess } = await supabase.auth.getSession();
+    const uid = sess?.session?.user?.id;
+    if (!uid) { setRentalSubmitting(false); setRentalError("Sign in expired, try again."); return; }
+    const durationTxt = `${days} day${days===1?'':'s'}`;
+    const notes = [
+      `Rental request: ${offering.type}`,
+      `Dates: ${rentalStart} → ${rentalEnd} (${durationTxt})`,
+      addonsPicked.length > 0 ? `Add-ons: ${addonsPicked.map(a => `${a.label}${a.price_eur > 0 ? ` (◈ ${a.price_eur})` : ''}`).join(', ')}` : null,
+      depo > 0 ? `Deposit held: ◈ ${depo}` : null,
+    ].filter(Boolean).join('\n');
+    const payload = {
+      user_id: uid,
+      business_id: biz.business_id,
+      venue_id: biz.business_id,
+      offering_type: offering.type,
+      booking_date: rentalStart,
+      end_date: rentalEnd,
+      duration: durationTxt,
+      credits_used: totalCredits,
+      people_count: 1,
+      status: 'pending_venue',
+      notes,
+      rental_addons: addonsPicked.length > 0 ? addonsPicked : null,
+      health_ack_at: rentalHealthAck ? new Date().toISOString() : null,
+    };
+    const { error: insErr } = await supabase.from('bookings').insert(payload);
+    setRentalSubmitting(false);
+    if (insErr) { setRentalError("Couldn't send rental request: " + insErr.message); return; }
+    setRentalSuccessFor(openRentalIdx);
+    onBookingsChanged?.();
+    showToast?.("Rental request sent. The venue has 48 hours to confirm.", "info", 4200);
+  }
   const _todayIso = new Date().toISOString().slice(0, 10);
   const _tomorrow = new Date(); _tomorrow.setDate(_tomorrow.getDate() + 1);
   const _plus30   = new Date(); _plus30.setDate(_plus30.getDate() + 30);
@@ -2109,16 +2247,20 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
           </div>
 
           {/* ─── Segment control ────────────────────────────────────────────
-              Shown only when the venue has both a class timetable AND
-              appointment-style offerings. Simple venues (private
-              instructors, class-only studios) render their single kind
-              directly to preserve the current experience. */}
-          {showSegments && (
+              Shown when the venue has more than one kind — a class
+              timetable + appointment offerings, or classes + rentals,
+              or all three. Rentals get their own segment so a customer
+              looking for a bike can find one without wading through
+              yoga classes. */}
+          {(() => {
+            const segs = [];
+            if (hasClasses)               segs.push({ id: "classes", label: "Classes" });
+            if (hasNonRentalOfferings)    segs.push({ id: "private", label: privateSegLabel });
+            if (hasRentals)               segs.push({ id: "rentals", label: "Rentals" });
+            if (segs.length < 2) return null;
+            return (
             <div style={{display:"flex",gap:6,padding:4,background:"#F0EDEA",borderRadius:999,marginBottom:20}}>
-              {[
-                { id: "classes", label: "Classes" },
-                { id: "private", label: privateSegLabel },
-              ].map(seg => {
+              {segs.map(seg => {
                 const on = segment === seg.id;
                 return (
                   <button key={seg.id} onClick={() => setSegment(seg.id)}
@@ -2133,7 +2275,8 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                 );
               })}
             </div>
-          )}
+            );
+          })()}
 
           {/* ─── Classes segment ─────────────────────────────────────────── */}
           {(segment === "classes" || !showSegments) && hasClasses && (
@@ -2324,7 +2467,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
           )}
 
           {/* ─── Private sessions / Treatments segment ─────────────────── */}
-          {(segment === "private" || (!showSegments && hasOfferings)) && hasOfferings && (
+          {(segment === "private" || (!showSegments && hasNonRentalOfferings)) && hasNonRentalOfferings && (
             <>
               <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>
                 {privateSegLabel}
@@ -2333,7 +2476,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                 Not on the timetable. Pick an offering and request a booking. The venue will confirm within 48 hours.
               </p>
               <div style={{display:"flex",flexDirection:"column",gap:10,paddingBottom:8}}>
-                {offerings.map((o, i) => {
+                {nonRentalOfferings.map((o, i) => {
                   const locs = offeringLocations(o);
                   const pickedLoc = locs ? (locs[reqLocationIdx] || locs[0]) : null;
                   // Display price on the offering header row: single price
@@ -2560,6 +2703,194 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                           </div>
                         </div>
                       )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {/* ─── Rentals segment ─────────────────────────────────────────
+              Inventory-based, multi-day. Cards show photo, per-day rate,
+              stock count, min/max days, add-ons. Book → opens the rental
+              booking modal (date range picker + add-ons + inventory
+              availability check). Separate from the class/private/treatment
+              flow because rentals don't map to slot instances. */}
+          {(segment === "rentals" || (!showSegments && hasRentals)) && hasRentals && (
+            <>
+              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>Rentals</p>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",lineHeight:1.55,margin:"0 0 16px"}}>
+                Pick a rental, choose your dates and add-ons. The venue confirms within 48 hours; credits are held from your balance until they do.
+              </p>
+              <div style={{display:"flex",flexDirection:"column",gap:12,paddingBottom:8}}>
+                {rentalOfferings.map((r, i) => {
+                  const perDay = Number.isFinite(Number(r?.price_eur)) ? Number(r.price_eur) : 0;
+                  const weekly = Number.isFinite(Number(r?.weekly_price_eur)) && r.weekly_price_eur > 0 ? Number(r.weekly_price_eur) : null;
+                  const stock  = Number.isFinite(Number(r?.inventory))       && r.inventory       > 0 ? Number(r.inventory)       : 0;
+                  const minD   = Number.isFinite(Number(r?.min_days))        && r.min_days        > 0 ? Number(r.min_days)        : 1;
+                  const maxD   = Number.isFinite(Number(r?.max_days))        && r.max_days        > 0 ? Number(r.max_days)        : 14;
+                  const depo   = Number.isFinite(Number(r?.deposit_eur))     && r.deposit_eur     > 0 ? Number(r.deposit_eur)     : 0;
+                  const addons = Array.isArray(r?.addons) ? r.addons : [];
+                  const rentalImg = (typeof r?.img === 'string' && r.img) ? r.img : (biz.img || null);
+                  return (
+                    <div key={i} style={{padding:"14px 16px",background:"#FBF9F4",borderRadius:12,border:"1px solid rgba(195,200,188,0.5)"}}>
+                      <div style={{display:"flex",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+                        {rentalImg && (
+                          <div style={{width:80,height:80,borderRadius:8,overflow:"hidden",flexShrink:0,background:"#E4E2DD"}}>
+                            <img src={rentalImg} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                          </div>
+                        )}
+                        <div style={{flex:"1 1 200px",minWidth:0}}>
+                          <p style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#1B1C19",margin:"0 0 4px",letterSpacing:"-0.2px"}}>{r?.type || "Rental"}</p>
+                          <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",marginBottom:6}}>
+                            <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>◈ {perDay} / day</span>
+                            {weekly && (
+                              <span style={{fontFamily:F2,fontSize:11,color:"#7A5C32"}}>· ◈ {weekly} per week (7+ days)</span>
+                            )}
+                            {stock > 0 && (
+                              <span style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>· {stock} in stock</span>
+                            )}
+                          </div>
+                          <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 6px"}}>
+                            {minD === maxD ? `${minD} day${minD===1?'':'s'}` : `${minD}–${maxD} days`}
+                            {depo > 0 && ` · €${depo} deposit`}
+                          </p>
+                          {addons.length > 0 && (
+                            <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.55}}>
+                              Add-ons: {addons.map(a => `${a.label}${a.price_eur > 0 ? ` (+◈ ${a.price_eur})` : ' (free)'}`).join(', ')}
+                            </p>
+                          )}
+                        </div>
+                        <button type="button" onClick={()=>openRentalIdx === i ? closeRentalModal() : openRentalModal(r)}
+                          disabled={stock === 0}
+                          style={{padding:"10px 20px",background:stock === 0 ? "#E4E2DD" : (openRentalIdx === i ? "#F5F3EE" : "#213C18"),color:stock === 0 ? "#54584F" : (openRentalIdx === i ? "#213C18" : "#fff"),border:openRentalIdx === i ? "1px solid rgba(195,200,188,0.5)" : "none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:stock === 0 ? "not-allowed" : "pointer",whiteSpace:"nowrap"}}>
+                          {stock === 0 ? "Sold out" : (openRentalIdx === i ? "Close" : "Book")}
+                        </button>
+                      </div>
+
+                      {/* Inline booking form. Same pattern as the
+                          class-request panels above. Success state
+                          shows a confirmation and hides the form. */}
+                      {openRentalIdx === i && rentalSuccessFor === i && (
+                        <div style={{marginTop:14,padding:"12px 14px",background:"#F5F3EE",border:"1px solid rgba(163,177,138,0.6)",borderRadius:10}}>
+                          <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 6px",letterSpacing:"-0.1px"}}>Request sent</p>
+                          <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.55}}>
+                            The venue has 48 hours to confirm your {r?.type || 'rental'} for {rentalStart} → {rentalEnd}. Credits are held from your balance until they do.
+                          </p>
+                        </div>
+                      )}
+                      {openRentalIdx === i && rentalSuccessFor !== i && (() => {
+                        const daysCount = /^\d{4}-\d{2}-\d{2}$/.test(rentalStart) && /^\d{4}-\d{2}-\d{2}$/.test(rentalEnd)
+                          ? Math.max(1, Math.round((new Date(rentalEnd + 'T00:00:00') - new Date(rentalStart + 'T00:00:00')) / 86400000) + 1)
+                          : 0;
+                        const useWeekly = weekly && daysCount >= 7;
+                        const rentalCost = useWeekly ? weekly * Math.ceil(daysCount / 7) : perDay * daysCount;
+                        const addonsCost = addons.reduce((s, a, ai) => s + (rentalAddonPicks.has(ai) ? (Number(a.price_eur) || 0) : 0), 0);
+                        const total = rentalCost + addonsCost + depo;
+                        const canAfford = Number(credits) >= total;
+                        return (
+                        <div style={{marginTop:14,padding:"14px 14px",background:"#fff",border:"1px solid rgba(195,200,188,0.5)",borderRadius:10}}>
+                          <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.2px",textTransform:"uppercase",margin:"0 0 4px"}}>Book rental</p>
+                          <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.55}}>
+                            Pick your dates and any add-ons. The venue has 48 hours to confirm. Credits are held from your balance while the request is pending and returned in full if the venue can't fulfil it.
+                          </p>
+                          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                            <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+                              <label style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase",flex:"1 1 140px"}}>
+                                Start date <span style={{color:"#C46A4D"}}>*</span>
+                                <input type="date" value={rentalStart} min={_minReqDate}
+                                  onChange={e=>setRentalStart(e.target.value)}
+                                  style={{display:"block",marginTop:4,padding:"9px 12px",border:"1px solid rgba(195,200,188,0.6)",borderRadius:8,fontFamily:F2,fontSize:13,background:"#fff",color:"#1B1C19",width:"100%",boxSizing:"border-box"}}/>
+                              </label>
+                              <label style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase",flex:"1 1 140px"}}>
+                                End date <span style={{color:"#C46A4D"}}>*</span>
+                                <input type="date" value={rentalEnd} min={rentalStart || _minReqDate}
+                                  onChange={e=>setRentalEnd(e.target.value)}
+                                  style={{display:"block",marginTop:4,padding:"9px 12px",border:"1px solid rgba(195,200,188,0.6)",borderRadius:8,fontFamily:F2,fontSize:13,background:"#fff",color:"#1B1C19",width:"100%",boxSizing:"border-box"}}/>
+                              </label>
+                            </div>
+
+                            {addons.length > 0 && (
+                              <div>
+                                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase",margin:"0 0 6px"}}>Add-ons</p>
+                                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                                  {addons.map((a, ai) => {
+                                    const on = rentalAddonPicks.has(ai);
+                                    return (
+                                      <label key={ai} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:on?"#F5F3EE":"#FBF9F4",border:`1px solid ${on?"rgba(33,60,24,0.35)":"rgba(195,200,188,0.5)"}`,borderRadius:8,cursor:"pointer"}}>
+                                        <input type="checkbox" checked={on} onChange={()=>toggleRentalAddon(ai)}
+                                          style={{width:16,height:16,accentColor:"#213C18",cursor:"pointer",flexShrink:0}}/>
+                                        <span style={{flex:1,fontFamily:F2,fontSize:13,color:"#1B1C19"}}>{a.label}</span>
+                                        <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#766149"}}>{a.price_eur > 0 ? `+◈ ${a.price_eur}` : 'Free'}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Order summary */}
+                            <div style={{padding:"10px 12px",background:"#F5F3EE",borderRadius:8}}>
+                              {daysCount > 0 && (
+                                <div style={{display:"flex",justifyContent:"space-between",fontFamily:F2,fontSize:12,marginBottom:4}}>
+                                  <span style={{color:"#54584F"}}>
+                                    {useWeekly
+                                      ? `${Math.ceil(daysCount / 7)} × week @ ◈ ${weekly}`
+                                      : `${daysCount} × day @ ◈ ${perDay}`}
+                                  </span>
+                                  <span style={{fontWeight:700,color:"#213C18"}}>◈ {rentalCost}</span>
+                                </div>
+                              )}
+                              {addonsCost > 0 && (
+                                <div style={{display:"flex",justifyContent:"space-between",fontFamily:F2,fontSize:12,marginBottom:4}}>
+                                  <span style={{color:"#54584F"}}>Add-ons</span>
+                                  <span style={{fontWeight:700,color:"#213C18"}}>+ ◈ {addonsCost}</span>
+                                </div>
+                              )}
+                              {depo > 0 && (
+                                <div style={{display:"flex",justifyContent:"space-between",fontFamily:F2,fontSize:12,marginBottom:4}}>
+                                  <span style={{color:"#54584F"}}>Deposit (held, refunded on return)</span>
+                                  <span style={{fontWeight:700,color:"#213C18"}}>+ ◈ {depo}</span>
+                                </div>
+                              )}
+                              <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid rgba(195,200,188,0.4)",paddingTop:6,marginTop:4}}>
+                                <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#54584F"}}>Total held</span>
+                                <span style={{fontFamily:F2,fontSize:13,fontWeight:800,color:"#213C18"}}>◈ {total}</span>
+                              </div>
+                              {!canAfford && (
+                                <p style={{fontFamily:F2,fontSize:11,color:"#C46A4D",margin:"6px 0 0"}}>Not enough credits for this booking — top up your balance to continue.</p>
+                              )}
+                            </div>
+
+                            {rentalAvailErr && (
+                              <div style={{padding:"8px 12px",background:"#FFE6D9",border:"1px solid #DCC2A6",borderRadius:8,fontFamily:F2,fontSize:12,color:"#6F5B44"}}>{rentalAvailErr}</div>
+                            )}
+                            {rentalError && (
+                              <div style={{padding:"8px 12px",background:"#F8E4D9",border:"1px solid rgba(139,47,0,0.2)",borderRadius:8,fontFamily:F2,fontSize:12,color:"#8B2F00"}}>{rentalError}</div>
+                            )}
+
+                            <label style={{display:"flex",gap:10,alignItems:"flex-start",padding:"10px 12px",background:"#F5F3EE",border:`1px solid ${rentalHealthAck ? "rgba(33,60,24,0.35)" : "rgba(195,200,188,0.5)"}`,borderRadius:8,cursor:"pointer"}}>
+                              <input type="checkbox" checked={rentalHealthAck} onChange={e=>setRentalHealthAck(e.target.checked)}
+                                style={{marginTop:3,width:16,height:16,accentColor:"#213C18",cursor:"pointer",flexShrink:0}}/>
+                              <span style={{fontFamily:F2,fontSize:12,color:"#1B1C19",lineHeight:1.55}}>
+                                I'll use the {r?.type || 'rental'} safely and return it in the condition I received it. Any damage may reduce the deposit refund.
+                              </span>
+                            </label>
+
+                            <div style={{display:"flex",justifyContent:"flex-end"}}>
+                              <button type="button" onClick={()=>submitRentalBooking(r)}
+                                disabled={rentalSubmitting || !rentalHealthAck || !canAfford}
+                                style={{padding:"10px 20px",background:(rentalHealthAck && canAfford) ? "#213C18" : "#E4E2DD",color:(rentalHealthAck && canAfford) ? "#fff" : "#54584F",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:(rentalSubmitting || !rentalHealthAck || !canAfford) ? "not-allowed" : "pointer",opacity:rentalSubmitting?0.6:1}}>
+                                {rentalSubmitting ? "Sending…"
+                                  : !canAfford ? "Not enough credits"
+                                  : !rentalHealthAck ? "Tick the acknowledgement to continue"
+                                  : `Send request · ◈ ${total} held`}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                        );
+                      })()}
                     </div>
                   );
                 })}
@@ -6181,7 +6512,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     (async () => {
       const { data: rows, error } = await supabase
         .from('bookings')
-        .select('id, user_id, slot_id, booking_date, start_time, duration, credits_used, people_count, notes, status, offering_type, created_at')
+        .select('id, user_id, slot_id, booking_date, start_time, duration, credits_used, people_count, notes, status, offering_type, end_date, rental_addons, created_at')
         .eq('business_id', bizData.id)
         .in('status', ['pending_instructor', 'pending_venue'])
         .order('created_at', { ascending: true });
@@ -7711,19 +8042,42 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                           {expired ? 'Expiring now' : `${hoursLeft}h to respond`}
                         </span>
                       </div>
+                      {/* Rental requests show a date range and add-on
+                          list in place of the single-time cell. Detected
+                          by end_date being non-null — rental bookings
+                          always carry both start (booking_date) and end
+                          dates; class/private/treatment requests have
+                          null end_date. */}
+                      {req.end_date && (
+                        <span style={{display:"inline-block",fontSize:9,fontWeight:800,letterSpacing:"0.5px",textTransform:"uppercase",padding:"3px 8px",borderRadius:999,background:"#EAE8E3",color:"#213C18",border:"1px solid #213C1822",marginBottom:8}}>Rental</span>
+                      )}
                       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:14,padding:"10px 12px",background:"#F5F3EE",borderRadius:6}}>
                         <div>
-                          <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>Date</p>
-                          <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#1B1C19",margin:0}}>{new Date(req.booking_date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}</p>
+                          <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>{req.end_date ? 'Dates' : 'Date'}</p>
+                          <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#1B1C19",margin:0}}>
+                            {req.end_date
+                              ? `${new Date(req.booking_date+'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'})} → ${new Date(req.end_date+'T00:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'})}`
+                              : new Date(req.booking_date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})}
+                          </p>
                         </div>
                         <div>
-                          <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>Time</p>
-                          <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#1B1C19",margin:0}}>{(req.start_time||'').slice(0,5)} · {req.duration||'-'}</p>
+                          <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>{req.end_date ? 'Item · length' : 'Time'}</p>
+                          <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#1B1C19",margin:0}}>
+                            {req.end_date
+                              ? `${req.offering_type || '-'} · ${req.duration || '-'}`
+                              : `${(req.start_time||'').slice(0,5)} · ${req.duration||'-'}`}
+                          </p>
                         </div>
                         <div>
                           <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>Credits</p>
                           <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#766149",margin:0}}>◈ {req.credits_used||'-'}</p>
                         </div>
+                        {Array.isArray(req.rental_addons) && req.rental_addons.length > 0 && (
+                          <div>
+                            <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>Add-ons</p>
+                            <p style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#213C18",margin:0}}>{req.rental_addons.map(a => a.label).join(', ')}</p>
+                          </div>
+                        )}
                         {peopleCount > 1 && (
                           <div>
                             <p style={{fontFamily:F2,fontSize:9,color:"#54584F",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>People</p>
