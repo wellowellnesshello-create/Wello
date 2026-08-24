@@ -6490,6 +6490,84 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     closeSlotEdit();
     flashSaveMsg("settings", "Slot updated. It won't change when you save availability.");
   }
+
+  // Bulk selection — set of slot ids the partner has checked. Mutations
+  // (bulk price / capacity change, bulk cancel) apply to every id in the
+  // set at once. Booked slots stay selectable but bulk-cancel skips them
+  // and reports the count so the partner knows they need to be dealt with
+  // through the booking-cancellation flow first.
+  const [selectedSlotIds, setSelectedSlotIds] = useState(() => new Set());
+  const [bulkEditOpen,    setBulkEditOpen]    = useState(false);
+  const [bulkEditBuffer,  setBulkEditBuffer]  = useState({ credits: '', spots: '', name: '' });
+  const [bulkBusy,        setBulkBusy]        = useState(false);
+  function toggleSlotSelected(id) {
+    setSelectedSlotIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+  function selectSlotIds(ids, on) {
+    setSelectedSlotIds(prev => {
+      const next = new Set(prev);
+      for (const id of ids) { if (on) next.add(id); else next.delete(id); }
+      return next;
+    });
+  }
+  function clearSlotSelection() { setSelectedSlotIds(new Set()); }
+  async function bulkCancelSelected() {
+    if (bulkBusy || selectedSlotIds.size === 0) return;
+    const bookedRows = (dbSlots || []).filter(s => selectedSlotIds.has(s.id) && (s.booked || 0) > 0);
+    const cancellable = (dbSlots || []).filter(s => selectedSlotIds.has(s.id) && (s.booked || 0) === 0);
+    if (cancellable.length === 0) {
+      flashSaveMsg("err", `Every selected slot has a booking. Cancel the bookings first, then re-select.`);
+      return;
+    }
+    const bookedNote = bookedRows.length > 0
+      ? ` (${bookedRows.length} booked slot${bookedRows.length===1?'':'s'} will be skipped — cancel those bookings separately)`
+      : '';
+    if (!window.confirm(`Cancel ${cancellable.length} slot${cancellable.length===1?'':'s'}${bookedNote}? This can't be undone.`)) return;
+    setBulkBusy(true);
+    const ids = cancellable.map(s => s.id);
+    const { error } = await supabase.from('slots').delete().in('id', ids);
+    setBulkBusy(false);
+    if (error) { flashSaveMsg("err", "Bulk cancel failed — " + error.message); return; }
+    setDbSlots(prev => (prev || []).filter(s => !ids.includes(s.id)));
+    setSelectedSlotIds(prev => {
+      const next = new Set(prev);
+      for (const id of ids) next.delete(id);
+      return next;
+    });
+    flashSaveMsg("settings", `Cancelled ${ids.length} slot${ids.length===1?'':'s'}${bookedNote}.`);
+  }
+  async function bulkEditSelected() {
+    if (bulkBusy || selectedSlotIds.size === 0 || !bulkEditOpen) return;
+    // Only apply fields the partner actually filled in. Empty strings =
+    // "leave unchanged".
+    const patch = {};
+    const credRaw = String(bulkEditBuffer.credits || '').trim();
+    const spotRaw = String(bulkEditBuffer.spots   || '').trim();
+    const nameRaw = String(bulkEditBuffer.name    || '').trim();
+    if (credRaw !== '' && Number.isFinite(Number(credRaw))) patch.credits = Math.max(0, parseInt(credRaw, 10) || 0);
+    if (spotRaw !== '' && Number.isFinite(Number(spotRaw))) patch.spots   = Math.max(1, parseInt(spotRaw, 10) || 1);
+    if (nameRaw !== '') patch.name = nameRaw;
+    if (Object.keys(patch).length === 0) { flashSaveMsg("err", "Fill in at least one field."); return; }
+    // Editing flips the row to source='manual' so a subsequent Save
+    // availability doesn't overwrite the partner's intentional change.
+    patch.source = 'manual';
+    const ids = Array.from(selectedSlotIds);
+    setBulkBusy(true);
+    const { error } = await supabase.from('slots').update(patch).in('id', ids);
+    setBulkBusy(false);
+    if (error) { flashSaveMsg("err", "Bulk edit failed — " + error.message); return; }
+    setDbSlots(prev => (prev || []).map(x => ids.includes(x.id) ? { ...x, ...patch } : x));
+    setBulkEditOpen(false);
+    setBulkEditBuffer({ credits: '', spots: '', name: '' });
+    clearSlotSelection();
+    const summary = Object.keys(patch).filter(k => k !== 'source').join(', ');
+    flashSaveMsg("settings", `Updated ${summary} on ${ids.length} slot${ids.length===1?'':'s'}. They won't be overwritten by Save availability.`);
+  }
+
   async function cancelSlot(slotId) {
     if (!slotId) return;
     if (!window.confirm("Cancel this single slot? It'll disappear from the marketplace immediately. Note: if you hit Save availability later, this slot regenerates from your offerings + windows. Continue?")) return;
@@ -8301,24 +8379,102 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 const dates = Object.keys(byDate).sort();
                 return (
                   <>
-                    {/* Offering breakdown chips */}
+                    {/* Offering breakdown chips + per-offering "Select all"
+                        shortcut so a partner can grab every Sunrise Flow
+                        slot in one click without ticking dozens of rows. */}
                     <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
-                      {Object.entries(byOffering).sort((a,b)=>b[1]-a[1]).map(([name, count]) => (
-                        <span key={name} style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 10px",borderRadius:999,background:"#F5F3EE",border:"1px solid rgba(195,200,188,0.5)",fontFamily:F2,fontSize:11,color:"#1B1C19"}}>
-                          <strong style={{fontWeight:700,color:"#213C18"}}>{count}</strong>
-                          <span style={{color:"#54584F"}}>×</span>
-                          {name}
-                        </span>
-                      ))}
+                      {Object.entries(byOffering).sort((a,b)=>b[1]-a[1]).map(([name, count]) => {
+                        const nameIds = (dbSlots || []).filter(s => s.name === name).map(s => s.id);
+                        const allNameSelected = nameIds.length > 0 && nameIds.every(id => selectedSlotIds.has(id));
+                        return (
+                          <button key={name} type="button"
+                            onClick={()=>selectSlotIds(nameIds, !allNameSelected)}
+                            title={allNameSelected ? `Deselect all ${name} slots` : `Select all ${name} slots for bulk edit`}
+                            style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 10px",borderRadius:999,background:allNameSelected?"#213C18":"#F5F3EE",border:`1px solid ${allNameSelected?"#213C18":"rgba(195,200,188,0.5)"}`,fontFamily:F2,fontSize:11,color:allNameSelected?"#fff":"#1B1C19",cursor:"pointer"}}>
+                            <strong style={{fontWeight:700,color:allNameSelected?"#fff":"#213C18"}}>{count}</strong>
+                            <span style={{color:allNameSelected?"rgba(255,255,255,0.7)":"#54584F"}}>×</span>
+                            {name}
+                          </button>
+                        );
+                      })}
                     </div>
+
+                    {/* Bulk action bar — appears when at least one slot is
+                        selected. Sticky-ish (position:sticky wouldn't help
+                        inside the scrolling list, so this sits above it
+                        and stays visible for as long as the schedule
+                        panel is on screen). */}
+                    {selectedSlotIds.size > 0 && (
+                      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 14px",background:"#213C18",color:"#fff",borderRadius:10,marginBottom:12}}>
+                        <span style={{fontFamily:F2,fontSize:12,fontWeight:600,flex:"1 1 auto"}}>{selectedSlotIds.size} slot{selectedSlotIds.size===1?'':'s'} selected</span>
+                        <button type="button" onClick={()=>{ setBulkEditBuffer({ credits: '', spots: '', name: '' }); setBulkEditOpen(true); }} disabled={bulkBusy}
+                          style={{padding:"7px 14px",background:"#fff",color:"#213C18",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:bulkBusy?"wait":"pointer",letterSpacing:"0.3px"}}>
+                          Bulk edit
+                        </button>
+                        <button type="button" onClick={bulkCancelSelected} disabled={bulkBusy}
+                          style={{padding:"7px 14px",background:"transparent",color:"#fff",border:"1px solid rgba(255,255,255,0.4)",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:bulkBusy?"wait":"pointer",letterSpacing:"0.3px"}}>
+                          {bulkBusy ? "Working…" : "Bulk cancel"}
+                        </button>
+                        <button type="button" onClick={clearSlotSelection} disabled={bulkBusy}
+                          style={{padding:"7px 10px",background:"transparent",color:"rgba(255,255,255,0.7)",border:"none",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer"}}>
+                          Clear
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Bulk-edit form — only rendered while open. Applies
+                        every filled field to every selected slot in one
+                        UPDATE; empty fields are left alone. Bulk-edited
+                        rows flip to source='manual' so the next Save
+                        availability doesn't overwrite them. */}
+                    {bulkEditOpen && (
+                      <div style={{padding:"12px 14px",background:"#F5F3EE",border:"1px solid rgba(33,60,24,0.2)",borderRadius:10,marginBottom:12}}>
+                        <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase",margin:"0 0 6px"}}>Bulk edit · {selectedSlotIds.size} slot{selectedSlotIds.size===1?'':'s'}</p>
+                        <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 10px",lineHeight:1.5}}>Fill only the fields you want to change. Empty fields stay untouched. All updated slots are marked as manual so a Save availability won't overwrite them.</p>
+                        <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:10}}>
+                          <input type="text" value={bulkEditBuffer.name}
+                            onChange={e=>setBulkEditBuffer(p=>({...p,name:e.target.value}))}
+                            placeholder="New name (optional)"
+                            style={{...INP,marginBottom:0,flex:"2 1 180px",minWidth:0}}/>
+                          <div style={{position:"relative",width:110}}>
+                            <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontSize:12,fontWeight:600,pointerEvents:"none"}}>€</span>
+                            <input type="number" min="0" value={bulkEditBuffer.credits}
+                              onChange={e=>setBulkEditBuffer(p=>({...p,credits:e.target.value}))}
+                              placeholder="Price"
+                              style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
+                          </div>
+                          <input type="number" min="1" value={bulkEditBuffer.spots}
+                            onChange={e=>setBulkEditBuffer(p=>({...p,spots:e.target.value}))}
+                            placeholder="Seats"
+                            style={{...INP,marginBottom:0,width:90}}/>
+                        </div>
+                        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                          <button type="button" onClick={()=>{ setBulkEditOpen(false); setBulkEditBuffer({ credits: '', spots: '', name: '' }); }} disabled={bulkBusy}
+                            style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:11,fontWeight:500,cursor:bulkBusy?"not-allowed":"pointer",padding:"6px 10px"}}>Cancel</button>
+                          <button type="button" onClick={bulkEditSelected} disabled={bulkBusy}
+                            style={{padding:"7px 16px",background:bulkBusy?"#E4E2DD":"#213C18",color:bulkBusy?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:bulkBusy?"wait":"pointer"}}>
+                            {bulkBusy ? "Saving…" : `Apply to ${selectedSlotIds.size}`}
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Date-grouped list, scrollable */}
                     <div style={{maxHeight:340,overflowY:"auto",borderTop:"1px solid #E4E2DD"}}>
-                      {dates.map(date => (
+                      {dates.map(date => {
+                        const dayIds = byDate[date].map(s => s.id);
+                        const allSelected = dayIds.length > 0 && dayIds.every(id => selectedSlotIds.has(id));
+                        const anySelected = dayIds.some(id => selectedSlotIds.has(id));
+                        return (
                         <div key={date} style={{padding:"10px 0",borderBottom:"1px solid #E4E2DD"}}>
-                          <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>
-                            {new Date(date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}
-                            <span style={{marginLeft:8,fontWeight:400,color:"#A3B18A"}}>{byDate[date].length} slot{byDate[date].length===1?"":"s"}</span>
+                          <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px",display:"flex",alignItems:"center",gap:8}}>
+                            <input type="checkbox" checked={allSelected}
+                              ref={el => { if (el) el.indeterminate = anySelected && !allSelected; }}
+                              onChange={e => selectSlotIds(dayIds, e.target.checked)}
+                              title={allSelected ? "Deselect this day" : "Select all slots this day"}
+                              style={{cursor:"pointer"}}/>
+                            <span>{new Date(date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</span>
+                            <span style={{fontWeight:400,color:"#A3B18A"}}>{byDate[date].length} slot{byDate[date].length===1?"":"s"}</span>
                           </p>
                           <div style={{display:"flex",flexDirection:"column",gap:3}}>
                             {byDate[date].sort((a,b)=>(a.time||"").localeCompare(b.time||"")).map(s => {
@@ -8359,9 +8515,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                 );
                               }
                               const isRuleGen = s.source === 'offering_gen';
+                              const isChecked = selectedSlotIds.has(s.id);
                               return (
-                                <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 8px",borderRadius:6,background:isBooked?"#F0EEE9":"transparent",fontFamily:F2,fontSize:12,color:"#1B1C19"}}>
-                                  <span style={{fontWeight:600,display:"inline-flex",alignItems:"center",gap:6}}>
+                                <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 8px",borderRadius:6,background:isChecked?"#EFEDE6":(isBooked?"#F0EEE9":"transparent"),fontFamily:F2,fontSize:12,color:"#1B1C19"}}>
+                                  <span style={{fontWeight:600,display:"inline-flex",alignItems:"center",gap:8}}>
+                                    <input type="checkbox" checked={isChecked}
+                                      onChange={()=>toggleSlotSelected(s.id)}
+                                      title="Select for bulk edit / cancel"
+                                      style={{cursor:"pointer",marginRight:2}}/>
                                     {(s.time||"").slice(0,5)}
                                     {/* Recurrence icon — differentiates a
                                         rule-generated row from a hand-
@@ -8395,7 +8556,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                             })}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"14px 0 0",lineHeight:1.6}}>
