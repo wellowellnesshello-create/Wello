@@ -6326,6 +6326,45 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // offerings × windows, so a one-off cancel comes back if the partner
   // hits Save later. Copy on the button spells that out.
   const [cancelingSlotId, setCancelingSlotId] = useState(null);
+  // Per-slot inline editor. Only one row is open at a time. Editing an
+  // offering_gen row flips its source to 'manual' on Save so the next
+  // saveAvailability regenerate leaves it alone — the partner's edit is
+  // what they want, not the rule's default.
+  const [editingSlotId, setEditingSlotId] = useState(null);
+  const [slotEditBuffer, setSlotEditBuffer] = useState(null);
+  const [savingSlotId,  setSavingSlotId]  = useState(null);
+  function openSlotEdit(s) {
+    setSlotEditBuffer({
+      name:    String(s.name || ''),
+      time:    String(s.time || '09:00').slice(0, 5),
+      credits: Number(s.credits) || 0,
+      spots:   Number(s.spots)   || 1,
+      dur:     String(s.dur || '60 min'),
+    });
+    setEditingSlotId(s.id);
+  }
+  function closeSlotEdit() {
+    setEditingSlotId(null);
+    setSlotEditBuffer(null);
+  }
+  async function saveSlotEdit(s) {
+    if (!slotEditBuffer) return;
+    const name    = String(slotEditBuffer.name || '').trim() || s.name;
+    const time    = String(slotEditBuffer.time || '').slice(0, 5);
+    const credits = Math.max(0, parseInt(slotEditBuffer.credits, 10) || 0);
+    const spots   = Math.max(1, parseInt(slotEditBuffer.spots,   10) || 1);
+    const dur     = String(slotEditBuffer.dur || s.dur || '60 min').trim();
+    if (!/^\d{2}:\d{2}$/.test(time)) { flashSaveMsg("err", "Time must be HH:MM."); return; }
+    setSavingSlotId(s.id);
+    const { error } = await supabase.from('slots')
+      .update({ name, time, credits, spots, dur, source: 'manual' })
+      .eq('id', s.id);
+    setSavingSlotId(null);
+    if (error) { flashSaveMsg("err", "Couldn't save slot — " + error.message); return; }
+    setDbSlots(prev => (prev || []).map(x => x.id === s.id ? { ...x, name, time, credits, spots, dur, source: 'manual' } : x));
+    closeSlotEdit();
+    flashSaveMsg("settings", "Slot updated. It won't change when you save availability.");
+  }
   async function cancelSlot(slotId) {
     if (!slotId) return;
     if (!window.confirm("Cancel this single slot? It'll disappear from the marketplace immediately. Note: if you hit Save availability later, this slot regenerates from your offerings + windows. Continue?")) return;
@@ -8041,6 +8080,40 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                             {byDate[date].sort((a,b)=>(a.time||"").localeCompare(b.time||"")).map(s => {
                               const isBooked = (s.booked || 0) > 0;
                               const busy = cancelingSlotId === s.id;
+                              const editing = editingSlotId === s.id;
+                              const saving = savingSlotId === s.id;
+                              if (editing && slotEditBuffer) {
+                                return (
+                                  <div key={s.id} style={{padding:"10px 12px",borderRadius:8,background:"#F5F3EE",border:"1px solid rgba(33,60,24,0.2)",fontFamily:F2,fontSize:12,color:"#1B1C19"}}>
+                                    <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:8}}>
+                                      <input type="text" value={slotEditBuffer.name}
+                                        onChange={e=>setSlotEditBuffer(p=>({...p,name:e.target.value}))}
+                                        placeholder="Name" style={{...INP,marginBottom:0,flex:"1 1 160px",minWidth:0}}/>
+                                      <input type="time" value={slotEditBuffer.time}
+                                        onChange={e=>setSlotEditBuffer(p=>({...p,time:e.target.value}))}
+                                        style={{...INP,marginBottom:0,width:110}}/>
+                                      <div style={{position:"relative",width:90}}>
+                                        <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontSize:12,fontWeight:600,pointerEvents:"none"}}>€</span>
+                                        <input type="number" min="0" value={slotEditBuffer.credits}
+                                          onChange={e=>setSlotEditBuffer(p=>({...p,credits:e.target.value}))}
+                                          style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
+                                      </div>
+                                      <input type="number" min="1" value={slotEditBuffer.spots}
+                                        onChange={e=>setSlotEditBuffer(p=>({...p,spots:e.target.value}))}
+                                        title="Seats" style={{...INP,marginBottom:0,width:70}}/>
+                                    </div>
+                                    <p style={{fontFamily:F2,fontSize:10,color:"#766149",margin:"0 0 8px",lineHeight:1.4}}>Saving here marks this slot as manually edited — future Save availability runs will leave it alone.</p>
+                                    <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                                      <button type="button" onClick={closeSlotEdit}
+                                        style={{background:"transparent",border:"none",color:"#54584F",fontSize:11,fontWeight:500,cursor:"pointer",padding:"6px 10px"}}>Cancel</button>
+                                      <button type="button" onClick={()=>saveSlotEdit(s)} disabled={saving}
+                                        style={{padding:"7px 14px",background:saving?"#E4E2DD":"#213C18",color:saving?"#54584F":"#fff",border:"none",borderRadius:6,fontSize:11,fontWeight:700,cursor:saving?"wait":"pointer"}}>
+                                        {saving ? "Saving…" : "Save"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              }
                               return (
                                 <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 8px",borderRadius:6,background:isBooked?"#F0EEE9":"transparent",fontFamily:F2,fontSize:12,color:"#1B1C19"}}>
                                   <span style={{fontWeight:600}}>
@@ -8052,9 +8125,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                       <span style={{fontSize:10,fontWeight:700,color:"#766149",letterSpacing:"0.5px",textTransform:"uppercase"}}>Booked</span>
                                     )}
                                     <span style={{color:"#766149",fontWeight:600}}>€{s.credits}</span>
+                                    <button type="button" onClick={()=>openSlotEdit(s)}
+                                      title="Edit just this slot. Saving marks it as manual so it won't be overwritten on the next Save availability."
+                                      style={{background:"#fff",border:"1px solid rgba(33,60,24,0.3)",color:"#213C18",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                                      Edit
+                                    </button>
                                     <button type="button" disabled={isBooked || busy}
                                       onClick={()=>cancelSlot(s.id)}
-                                      title={isBooked ? "Cancel the customer's booking first, then this slot can be removed." : "Cancel just this slot (won't survive a full Save availability regenerate)."}
+                                      title={isBooked ? "Cancel the customer's booking first, then this slot can be removed." : "Cancel just this slot."}
                                       style={{background:isBooked?"#F5F3EE":"#fff",border:`1px solid ${isBooked?"rgba(195,200,188,0.5)":"#C46A4D"}`,color:isBooked?"#A3B18A":"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:999,cursor:isBooked||busy?"not-allowed":"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
                                       {busy ? "…" : "Cancel"}
                                     </button>
