@@ -1,5 +1,8 @@
 {
   "rewrites": [
-    { "source": "/cancel/:token", "destination": "/index.html" }
+    {
+      "source": "/cancel/:token",
+      "destination": "https://esocyyhnphjqcfjidffu.supabase.co/functions/v1/studio-cancel-booking?t=:token"
+    }
   ]
 }

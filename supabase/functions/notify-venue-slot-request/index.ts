@@ -18,6 +18,16 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const RESEND_API_KEY            = Deno.env.get('RESEND_API_KEY')            || ''
 const SAFETY_CANCEL_SECRET      = Deno.env.get('SAFETY_CANCEL_SECRET')      || ''
 const PUBLIC_ORIGIN             = Deno.env.get('PUBLIC_ORIGIN')             || 'https://wello-wellness.com'
+// Twilio for venue SMS. Silently no-ops if any are unset. Trim to
+// defuse copy-paste whitespace/newlines in the secret values —
+// Twilio rejects with 20422 "Invalid Parameter" on trailing \n.
+const TWILIO_ACCOUNT_SID        = (Deno.env.get('TWILIO_ACCOUNT_SID')        || '').trim()
+const TWILIO_AUTH_TOKEN         = (Deno.env.get('TWILIO_AUTH_TOKEN')         || '').trim()
+const TWILIO_PHONE_NUMBER       = (Deno.env.get('TWILIO_PHONE_NUMBER')       || '').trim()
+// Twilio WhatsApp — same template Content SID as rentals (variables:
+// {{1}}=name, {{2}}=session, {{3}}=date, {{4}}=time, {{5}}=deadline).
+const TWILIO_WHATSAPP_FROM        = (Deno.env.get('TWILIO_WHATSAPP_FROM')        || '').trim()
+const TWILIO_WHATSAPP_CONTENT_SID = (Deno.env.get('TWILIO_WHATSAPP_CONTENT_SID') || '').trim()
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -82,7 +92,7 @@ serve(async (req) => {
 
   // Venue + customer lookups for the email body.
   const { data: business } = await supabase
-    .from('businesses').select('id, name, email, category').eq('id', booking.business_id).maybeSingle()
+    .from('businesses').select('id, name, email, category, phone, bookings_whatsapp, notify_sms_enabled, notify_whatsapp_enabled').eq('id', booking.business_id).maybeSingle()
   if (!business?.email) return json({ error: 'Venue has no email on file.' }, 400)
 
   const { data: profile } = await supabase
@@ -161,9 +171,112 @@ serve(async (req) => {
     }),
   }).catch(e => { console.error('Resend error:', e); return null })
 
+  // ── Venue SMS ──────────────────────────────────────────────────
+  // Opt-in per business (businesses.notify_sms_enabled).
+  let smsResult: string = 'not_attempted'
+  if (!business.notify_sms_enabled) {
+    smsResult = 'opted_out'
+  } else if (business.phone && TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_PHONE_NUMBER) {
+    const body = `New Wello booking request from ${firstName} for ${sessionName} on ${dateHuman} at ${timeShort}. ${cost} credits held. Accept or decline within 48h at wello-wellness.com`
+    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`
+    const params = new URLSearchParams({ To: business.phone, From: TWILIO_PHONE_NUMBER, Body: body })
+    const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`)
+    try {
+      const r = await fetch(twilioUrl, {
+        method: 'POST',
+        headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString(),
+      })
+      smsResult = r.ok ? 'sent' : 'failed'
+      if (!r.ok) {
+        const errBody = await r.text().catch(() => '')
+        console.error('notify-venue-slot-request: Twilio SMS failed', r.status, 'to:', business.phone, 'body:', errBody)
+      }
+    } catch (e) {
+      smsResult = 'failed'
+      console.error('notify-venue-slot-request: Twilio error', (e as Error).message)
+    }
+  } else {
+    smsResult = !business.phone ? 'no_phone_on_file' : 'twilio_not_configured'
+  }
+
+  // ── Venue WhatsApp ─────────────────────────────────────────────
+  // Opt-in per business. Same approved template as rentals — variables:
+  // {{1}}=name, {{2}}=session, {{3}}=date, {{4}}=time, {{5}}=deadline.
+  let whatsappResult: string = 'not_attempted'
+  const waNumber = business.bookings_whatsapp || business.phone
+  const acceptDeadline = new Date(Date.now() + 48 * 60 * 60 * 1000)
+    .toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  if (!business.notify_whatsapp_enabled) {
+    whatsappResult = 'opted_out'
+  } else if (waNumber && TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_WHATSAPP_FROM && TWILIO_WHATSAPP_CONTENT_SID) {
+    const toFormatted = waNumber.startsWith('whatsapp:') ? waNumber : `whatsapp:${waNumber.replace(/\s+/g, '')}`
+    const fromFormatted = TWILIO_WHATSAPP_FROM.startsWith('whatsapp:') ? TWILIO_WHATSAPP_FROM : `whatsapp:${TWILIO_WHATSAPP_FROM.replace(/\s+/g, '')}`
+    const params = new URLSearchParams({
+      From: fromFormatted,
+      To: toFormatted,
+      ContentSid: TWILIO_WHATSAPP_CONTENT_SID,
+      ContentVariables: JSON.stringify({
+        '1': firstName,
+        '2': sessionName,
+        '3': dateHuman,
+        '4': timeShort,
+        '5': acceptDeadline,
+      }),
+    })
+    const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`)
+    try {
+      const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`, {
+        method: 'POST',
+        headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString(),
+      })
+      whatsappResult = r.ok ? 'sent' : 'failed'
+      if (!r.ok) {
+        const txt = await r.text().catch(() => '')
+        console.error('notify-venue-slot-request: WhatsApp send failed', r.status, txt)
+      }
+    } catch (e) {
+      whatsappResult = 'failed'
+      console.error('notify-venue-slot-request: WhatsApp error', (e as Error).message)
+    }
+  } else {
+    whatsappResult = !waNumber ? 'no_whatsapp_on_file' : 'whatsapp_not_configured'
+  }
+
+  // ── Customer confirmation email ────────────────────────────────
+  if (profile?.email) {
+    const customerHtml = `
+      <div style="font-family:Manrope,Arial,sans-serif;max-width:540px;margin:0 auto;padding:24px;color:#1B1C19;background:#FBF9F4;">
+        <h2 style="color:#213C18;font-size:20px;margin:0 0 12px;">Booking request received</h2>
+        <p style="margin:0 0 16px;line-height:1.55;">Hi ${firstName}, thanks for your request. <b>${business.name}</b> has 48 hours to confirm your <b>${sessionName}</b>.</p>
+        <table style="width:100%;border-collapse:collapse;background:#F5F3EE;border-radius:8px;padding:14px;margin:0 0 18px;">
+          <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;width:140px;">Session</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">${sessionName}</td></tr>
+          <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">When</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;">${dateHuman} at ${timeShort}</td></tr>
+          <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Duration</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;">${booking.duration || '—'}</td></tr>
+          <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Credits held</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">◈ ${cost}</td></tr>
+        </table>
+        <p style="margin:0 0 8px;font-size:12px;color:#54584F;line-height:1.55;">We'll email you the moment the venue accepts. If they can't fulfil the request, your credits are returned in full.</p>
+        <p style="margin:0;font-size:12px;color:#54584F;line-height:1.55;">Manage your bookings in your <a href="${PUBLIC_ORIGIN}/profile" style="color:#213C18;font-weight:600;">Wello reservations</a>.</p>
+      </div>`
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: 'Wello <hello@wello-wellness.com>',
+        to: profile.email,
+        subject: `Booking request received — ${sessionName} · ${dateHuman}`,
+        html: customerHtml,
+      }),
+    }).catch(e => console.error('Customer email error:', e))
+  }
+
   return json({
     ok: true,
     sent: !!emailRes?.ok,
+    sms: smsResult,
+    whatsapp: whatsappResult,
+    customer_email: profile?.email ? 'sent' : 'no_customer_email',
     accept_url: acceptUrl,
     decline_url: declineUrl,
     public_origin: PUBLIC_ORIGIN,

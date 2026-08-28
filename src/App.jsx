@@ -163,7 +163,7 @@ const PAY = [
   { id:"google", label:"Google Pay",          sub:"Google Account" },
   { id:"paypal", label:"PayPal",              sub:"Balance or linked card" },
 ];
-const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","Meditation","Spa","Massage","Sound Bath","Padel","Tennis","Pickleball","Private Instructor"];
+const CATS = ["All","Yoga","Pilates","Surfing","Paddle Boarding","Kayaking","Cycling","Running","Hiking","Hotel Gym","Pool Access","Fitness Class","Meditation","Spa","Massage","Sound Bath","Padel","Tennis","Pickleball","Private Instructor","Rental"];
 
 // Business-type decision drives the onboarding flow flavor. Stored in
 // businesses.business_type (a fixed enum-ish string). isPrivateInstructor —
@@ -1260,7 +1260,13 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
   // wins when the offering has multi-location pricing; otherwise falls back
   // to the slot's stamped venue_side (studio slots → 'instructor' via the
   // 20260817000000 backfill; PI slots default to 'customer').
-  const effectiveVenueSide  = pickedLoc?.venue_side || String(slot?.venue_side || 'customer');
+  // Fallback rule: for private-instructor slots, historical default is
+  // 'customer' (their session travels to the customer). For every other
+  // business type, default to 'instructor' (at the venue) — otherwise a
+  // fresh studio's first slot would incorrectly label as "at your home"
+  // just because the venue_side column hadn't been stamped yet.
+  const _sideFallback = biz?.cat === 'Private Instructor' ? 'customer' : 'instructor';
+  const effectiveVenueSide  = pickedLoc?.venue_side || String(slot?.venue_side || _sideFallback);
   const isAtInstructorVenue = effectiveVenueSide === 'instructor';
   const needsCustomerAddress = !isAtInstructorVenue;
   // Group-class path for Private Instructor category slots with real
@@ -1356,7 +1362,13 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
               <h2 style={{fontFamily:F2,fontSize:20,fontWeight:700,color:"#fff",margin:"0 0 4px",letterSpacing:"-0.5px"}}>{slot.name}</h2>
               <p style={{fontFamily:F2,fontSize:13,color:"rgba(255,255,255,0.65)",margin:"0 0 14px"}}>{biz.name} · {fd(slot.date)} · {slot.time} · {slot.dur}</p>
               <div style={{display:"flex",gap:16}}>
-                {[["Pass",`◈ ${basePrice} per person`],["Available",`${avail} spots`]].map(([k,v])=>(
+                {(() => {
+                  // Compute remaining seats from the slot's own capacity.
+                  // Falls back to spots when booked is unset so a fresh
+                  // slot shows the full number.
+                  const remaining = Math.max(0, Number(slot?.spots || 0) - Number(slot?.booked || 0));
+                  return [["Pass",`◈ ${basePrice} per person`],["Available",`${remaining} spots`]];
+                })().map(([k,v])=>(
                   <div key={k}>
                     <p style={{fontFamily:F2,fontSize:9,color:"rgba(255,255,255,0.45)",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 2px"}}>{k}</p>
                     <p style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#fff",margin:0}}>{v}</p>
@@ -1699,7 +1711,7 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
 }
 
 // ─── Business Panel ───────────────────────────────────────────────────────────
-function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, onGotoCredits, onBookingsChanged, showToast }) {
+function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, onGotoCredits, onBookingsChanged, showToast, onTopUpAndResume, resumeRental, onRentalResumeConsumed }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
 
   // Photo carousel — primary img + gallery, deduped and blank-filtered.
@@ -1751,10 +1763,6 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     }
     return false;
   }
-  // Slots filtered to ones that are still bookable. Used for the date
-  // pills, the slot list, and the "next slot" preview at the bottom.
-  const bookableSlots = (biz.slots || []).filter(s => !isEffectivelyBlocked(s));
-
   // ─── Multi-modality routing ─────────────────────────────────────────────
   // Businesses now come in three shapes:
   //   - Classes only (traditional studios, gyms, hotels)
@@ -1769,6 +1777,16 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   const rawOfferings = Array.isArray(biz.session_offerings) ? biz.session_offerings : [];
   const isPrivateInstructor = biz.cat === "Private Instructor";
   const offerings = isPrivateInstructor ? [] : rawOfferings;
+  // A pure-rental business — slot rows may linger from an earlier class-
+  // shaped setup, so hide them here to avoid a stale "Classes" tab. The
+  // partner can clean the slots up in the dashboard whenever.
+  const _isRentalOnlyBiz = offerings.length > 0
+    && offerings.every(o => o?.kind === 'rental');
+  // Slots filtered to ones that are still bookable. Used for the date
+  // pills, the slot list, and the "next slot" preview at the bottom.
+  const bookableSlots = _isRentalOnlyBiz
+    ? []
+    : (biz.slots || []).filter(s => !isEffectivelyBlocked(s));
   const hasClasses = bookableSlots.length > 0;
   const hasOfferings = offerings.length > 0;
   // Segment label detection — honest labels for the offering mix.
@@ -1885,6 +1903,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   // against overlapping bookings when the partner picks dates.
   const [openRentalIdx,    setOpenRentalIdx]    = useState(null);
   const [rentalStart,      setRentalStart]      = useState("");
+  const [rentalStartTime,  setRentalStartTime]  = useState("09:00"); // pickup time, HH:MM
   const [rentalEnd,        setRentalEnd]        = useState("");
   const [rentalAddonPicks, setRentalAddonPicks] = useState(() => new Set()); // add-on indices
   const [rentalHealthAck,  setRentalHealthAck]  = useState(false);
@@ -1892,15 +1911,32 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   const [rentalError,      setRentalError]      = useState("");
   const [rentalAvailErr,   setRentalAvailErr]   = useState("");
   const [rentalSuccessFor, setRentalSuccessFor] = useState(null);
+  // Inline top-up widget: quantity the customer wants to buy. Defaults to
+  // the shortfall so a single click covers exactly what's needed.
+  const [topUpQty,         setTopUpQty]         = useState(0);
+  const [topUpBusy,        setTopUpBusy]        = useState(false);
   function openRentalModal(offering) {
     // Reset + open. Start defaults to today + min lead (48h for rentals).
-    const minLeadHrs = 48;
-    const start = new Date(Date.now() + minLeadHrs * 60 * 60 * 1000);
+    const leadHrs = Number.isFinite(Number(offering?.min_lead_hours)) && offering.min_lead_hours >= 0
+      ? Number(offering.min_lead_hours) : 48;
+    const start = new Date(Date.now() + leadHrs * 60 * 60 * 1000);
     const startIso = start.toISOString().slice(0, 10);
     const minDays = Number.isFinite(Number(offering?.min_days)) && offering.min_days > 0 ? Number(offering.min_days) : 1;
+    // Calendar-day model: 1 day = same date pickup + return. Default
+    // end = start + (minDays - 1). Same-day for a 1-day offering.
     const endD = new Date(start); endD.setDate(endD.getDate() + (minDays - 1));
     const endIso = endD.toISOString().slice(0, 10);
+    // Pick the earliest hourly pickup slot on startIso that still clears
+    // the lead-hour window. Falls back to 09:00 if the default date has
+    // no valid slot (edge case; the selector will guide the user to
+    // bump the date).
+    const PICKUP_HOURS = ['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'];
+    const seedTime = PICKUP_HOURS.find(t => {
+      const ms = new Date(`${startIso}T${t}:00`).getTime();
+      return ms - Date.now() >= leadHrs * 60 * 60 * 1000;
+    }) || '09:00';
     setRentalStart(startIso);
+    setRentalStartTime(seedTime);
     setRentalEnd(endIso);
     setRentalAddonPicks(new Set());
     setRentalHealthAck(false);
@@ -1913,6 +1949,104 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     setOpenRentalIdx(null);
     setRentalError(""); setRentalAvailErr("");
   }
+
+  // Rehydrate a rental booking form after a Stripe top-up round-trip.
+  // Parent stashes { bizId, offType, rentalStart, rentalEnd,
+  // rentalAddonPicks, rentalHealthAck } into sessionStorage before
+  // redirect, then passes the parsed shape back as `resumeRental` when
+  // the app re-opens on the same biz. We re-seed the rental state,
+  // open the matching offering card, and clear the stash.
+  useEffect(() => {
+    if (!resumeRental) return;
+    if (!biz || String(resumeRental.bizId) !== String(biz.id)) return;
+    const off = (rentalOfferings || []).find(o => o?.type === resumeRental.offType);
+    if (!off) return;
+    if (typeof resumeRental.rentalStart === 'string') setRentalStart(resumeRental.rentalStart);
+    if (typeof resumeRental.rentalStartTime === 'string') setRentalStartTime(resumeRental.rentalStartTime);
+    if (typeof resumeRental.rentalEnd   === 'string') setRentalEnd(resumeRental.rentalEnd);
+    if (Array.isArray(resumeRental.rentalAddonPicks)) setRentalAddonPicks(new Set(resumeRental.rentalAddonPicks));
+    if (typeof resumeRental.rentalHealthAck === 'boolean') setRentalHealthAck(resumeRental.rentalHealthAck);
+    const idx = (rentalOfferings || []).indexOf(off);
+    setOpenRentalIdx(idx >= 0 ? idx : 0);
+    onRentalResumeConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeRental, biz]);
+
+  // Pragmatic availability check — when the customer changes dates on
+  // an open rental card, query overlapping active bookings and stash
+  // the remaining stock so the UI can show "sold out for these dates"
+  // + disable the Send button BEFORE they submit and hit the RPC's
+  // inventory_full path. Debounced against rapid changes.
+  //
+  // IMPORTANT: `rentalOfferings` is a fresh filter() array on every
+  // render, so listing it in deps caused the effect to re-fire on
+  // every render → set stock to null → re-render → fire again. That
+  // was the "sold out" message flashing on/off. Depend on the stable
+  // biz.session_offerings ref (only changes when the biz row loads)
+  // and pull the offering inside the effect body.
+  const [rentalRemainingStock, setRentalRemainingStock] = useState(null); // null=unknown, N=free units
+  useEffect(() => {
+    if (openRentalIdx == null) { setRentalRemainingStock(null); return; }
+    const offs = Array.isArray(biz?.session_offerings)
+      ? biz.session_offerings.filter(o => o?.kind === 'rental')
+      : [];
+    const off = offs[openRentalIdx];
+    if (!off) { setRentalRemainingStock(null); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(rentalStart) || !/^\d{4}-\d{2}-\d{2}$/.test(rentalEnd)) {
+      setRentalRemainingStock(null);
+      return;
+    }
+    if (rentalEnd < rentalStart) { setRentalRemainingStock(null); return; }
+    const stock = Number.isFinite(Number(off?.inventory)) && off.inventory > 0 ? Number(off.inventory) : 0;
+    if (stock === 0) { setRentalRemainingStock(0); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      // Count overlapping active Wello bookings for this offering
+      // type on this business. Overlap rule mirrors try_reserve_rental
+      // so the client hint matches the server truth.
+      const { data, error } = await supabase
+        .from('bookings')
+        .select('id', { count: 'exact', head: false })
+        .eq('business_id', biz.business_id ?? biz.id)
+        .eq('offering_type', off.type)
+        .not('end_date', 'is', null)
+        .in('status', ['confirmed', 'pending_venue', 'pending_instructor'])
+        .lte('booking_date', rentalEnd)
+        .gte('end_date',    rentalStart);
+      if (cancelled) return;
+      if (error) { setRentalRemainingStock(null); return; }
+      const wOverlaps = Array.isArray(data) ? data.length : 0;
+      const wRemaining = Math.max(0, stock - wOverlaps);
+
+      // If the offering is Booqable-synced, also ask Booqable what's
+      // available for the range — the partner may have direct
+      // bookings on their own site that Wello doesn't know about.
+      // Take the min of the two views so we never show more than
+      // either system agrees is actually free.
+      const bqProductId = off?.booqable_product_id;
+      if (bqProductId) {
+        const pickupTime = /^\d{2}:\d{2}$/.test(rentalStartTime) ? rentalStartTime : '09:00';
+        const { data: bqData, error: bqErr } = await supabase.functions.invoke('booqable-sync', {
+          body: {
+            op: 'check_availability',
+            business_id: biz.business_id ?? biz.id,
+            product_id: bqProductId,
+            starts_at: `${rentalStart}T${pickupTime}:00Z`,
+            stops_at:  `${rentalEnd}T18:00:00Z`,
+          },
+        });
+        if (cancelled) return;
+        if (!bqErr && bqData?.ok && Number.isFinite(Number(bqData.remaining))) {
+          setRentalRemainingStock(Math.min(wRemaining, Number(bqData.remaining)));
+          return;
+        }
+        // Booqable check failed — fall back to Wello-only count
+        // rather than blocking the booking flow entirely.
+      }
+      setRentalRemainingStock(wRemaining);
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [openRentalIdx, rentalStart, rentalStartTime, rentalEnd, biz?.business_id, biz?.id, biz?.session_offerings]);
   function toggleRentalAddon(idx) {
     setRentalAddonPicks(prev => {
       const next = new Set(prev);
@@ -1934,19 +2068,29 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     if (!/^\d{4}-\d{2}-\d{2}$/.test(rentalStart) || !/^\d{4}-\d{2}-\d{2}$/.test(rentalEnd)) {
       setRentalError("Pick a start and end date."); return;
     }
+    // Calendar-day rental model: count every day the customer physically
+    // has the item. Pickup 28th + drop 28th = 1 day (same-day rental).
+    // Pickup 28th + drop 29th = 2 days (kept overnight, had it both
+    // days). Pickup 28th + drop 30th = 3 days. Matches how Mallorca
+    // bike/board/kayak shops count; the 24h-nights model under-charged
+    // for a partner because a "1 day" overnight rental gave the
+    // customer the item across two calendar days.
     const days = Math.round((new Date(rentalEnd + 'T00:00:00') - new Date(rentalStart + 'T00:00:00')) / 86400000) + 1;
     if (days < minDays) { setRentalError(`Minimum rental is ${minDays} day${minDays===1?'':'s'}.`); return; }
     if (days > maxDays) { setRentalError(`Maximum rental is ${maxDays} day${maxDays===1?'':'s'}.`); return; }
     // Advance-notice check — offering.min_lead_hours (default 48 for
     // rentals) so the partner has prep time. Partner can set 0 for
-    // walk-up rentals.
+    // walk-up rentals. Anchored on the customer-picked pickup time so
+    // "Friday 2pm" from Wed 10am is 52h out (passes) whereas hard-coding
+    // a midnight or 09:00 anchor mis-classified those requests.
     const leadHrs = Number.isFinite(Number(offering?.min_lead_hours)) && offering.min_lead_hours >= 0
       ? Number(offering.min_lead_hours) : 48;
-    const startMs = new Date(rentalStart + 'T00:00:00').getTime();
+    const pickupTime = /^\d{2}:\d{2}$/.test(rentalStartTime) ? rentalStartTime : '09:00';
+    const startMs = new Date(`${rentalStart}T${pickupTime}:00`).getTime();
     if (startMs - Date.now() < leadHrs * 60 * 60 * 1000) {
       setRentalError(leadHrs === 0
         ? "Start date can't be in the past."
-        : `Rentals need at least ${leadHrs} hour${leadHrs===1?'':'s'} notice.`);
+        : `Rentals need at least ${leadHrs} hour${leadHrs===1?'':'s'} notice. Try a later pickup time or a different day.`);
       return;
     }
     // Availability handled server-side inside try_reserve_rental via
@@ -1959,7 +2103,10 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     const rentalCost = useWeeklyRate ? weekly * Math.ceil(days / 7) : perDay * days;
     const addonsPicked = addonList.filter((_, i) => rentalAddonPicks.has(i));
     const addonsCost   = addonsPicked.reduce((s, a) => s + (Number(a.price_eur) || 0), 0);
-    const totalCredits = rentalCost + addonsCost + depo;
+    // Deposit is collected + refunded by the partner directly at pickup —
+    // Wello only holds credits for rental + add-ons. Kept on the offering
+    // as an informational field so the customer knows what to expect.
+    const totalCredits = rentalCost + addonsCost;
     if (!Number.isFinite(totalCredits) || totalCredits <= 0) {
       setRentalSubmitting(false); setRentalError("Something's wrong with the price. Contact the venue."); return;
     }
@@ -1972,11 +2119,14 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     const uid = sess?.session?.user?.id;
     if (!uid) { setRentalSubmitting(false); setRentalError("Sign in expired, try again."); return; }
     const durationTxt = `${days} day${days===1?'':'s'}`;
+    // Deposit is deliberately NOT mentioned in the booking notes — it's
+    // handled entirely between customer and venue at pickup, and Wello
+    // stays out of the arrangement. Adding a "deposit held" line to
+    // notes would drag us back into that flow.
     const notes = [
       `Rental request: ${offering.type}`,
-      `Dates: ${rentalStart} → ${rentalEnd} (${durationTxt})`,
+      `Dates: ${rentalStart} ${pickupTime} → ${rentalEnd} (${durationTxt})`,
       addonsPicked.length > 0 ? `Add-ons: ${addonsPicked.map(a => `${a.label}${a.price_eur > 0 ? ` (◈ ${a.price_eur})` : ''}`).join(', ')}` : null,
-      depo > 0 ? `Deposit held: ◈ ${depo}` : null,
     ].filter(Boolean).join('\n');
     // Race-free reserve via RPC. Returns the new booking id on success;
     // raises 'inventory_full' when all in-stock units overlap the range,
@@ -1988,6 +2138,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
       p_offering_type: offering.type,
       p_booking_date:  rentalStart,
       p_end_date:      rentalEnd,
+      p_start_time:    pickupTime,
       p_duration:      durationTxt,
       p_credits_used:  totalCredits,
       p_notes:         notes,
@@ -2007,6 +2158,44 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
       return;
     }
     const inserted = { id: newBookingId };
+    // Hold the credits against this booking so the balance drops now
+    // and the partner sees the full commitment on their inbox. Uses
+    // the same spend-booking-credits ledger path as classes so refund-
+    // by-booking works cleanly on cancel / decline. Rollback the
+    // booking if the hold can't be taken (rare — insufficient credits
+    // was checked client-side, but a stale balance or a concurrent
+    // spend could still trip it).
+    const holdRes = await supabase.functions.invoke('spend-booking-credits', {
+      body: { booking_id: inserted.id, source: 'booking_hold' },
+    });
+    // supabase.functions.invoke sets `error` for any non-2xx response but
+    // the actual server-side error string lands in `data.error` (Supabase
+    // pipes the response body back even on FunctionsHttpError). Pull the
+    // structured error first so we surface e.g. 'insufficient_credits'
+    // instead of a generic "non-2xx" wrapper.
+    const holdErrCode = holdRes.data?.error || holdRes.error?.message || null;
+    if (holdErrCode) {
+      console.error('[submitRentalBooking] spend-booking-credits failed:', holdErrCode, 'full:', holdRes);
+      await supabase.from('bookings').delete().eq('id', inserted.id);
+      setRentalSubmitting(false);
+      const isInsufficient = String(holdErrCode).includes('insufficient_credits');
+      setRentalError(isInsufficient
+        ? "Not enough credits. Top up and try again."
+        : `Couldn't hold your credits (${holdErrCode}). Rental was rolled back.`);
+      return;
+    }
+    // Defensive silent-zero check: the fn returns { ok:true, credits_spent:0,
+    // note:'no cost' } when the booking's credits_used is 0 — which would
+    // silently leave the balance untouched. If we expected a real spend
+    // and got zero, treat as a hard failure.
+    const spentActual = Number(holdRes.data?.credits_spent);
+    if (Number.isFinite(spentActual) && totalCredits > 0 && spentActual === 0) {
+      console.error('[submitRentalBooking] silent zero-spend — booking had credits_used=0. Rolling back.', holdRes.data);
+      await supabase.from('bookings').delete().eq('id', inserted.id);
+      setRentalSubmitting(false);
+      setRentalError("Something's wrong with the rental price. Please refresh and try again.");
+      return;
+    }
     // Fire the venue notification (mint accept/decline tokens + email
     // the venue). Failure is non-blocking — the booking row already
     // exists; the partner will still see it in Requests. Auto-decline
@@ -2021,7 +2210,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     setRentalSubmitting(false);
     setRentalSuccessFor(openRentalIdx);
     onBookingsChanged?.();
-    showToast?.("Rental request sent. The venue has 48 hours to confirm.", "info", 4200);
+    showToast?.(`Rental request sent — ◈ ${totalCredits} held. The venue has 48 hours to confirm.`, "info", 4200);
   }
   const _todayIso = new Date().toISOString().slice(0, 10);
   const _tomorrow = new Date(); _tomorrow.setDate(_tomorrow.getDate() + 1);
@@ -2224,8 +2413,9 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                 // Same tile-price rule as the marketplace grid: uniform slot
                 // credits render bare, mixed-price partners show "from ◈ N".
                 // Falls back to biz.cr for slotless listings.
-                const { prefix, value } = tilePriceLabel(biz);
-                return <span style={{background:"rgba(255,255,255,0.15)",backdropFilter:"blur(4px)",borderRadius:999,padding:"3px 10px",fontFamily:F2,fontSize:11,fontWeight:700,color:"#fff"}}>{prefix}◈ {value} per person</span>;
+                const { prefix, value, suffix } = tilePriceLabel(biz);
+                const perLabel = suffix ? '' : ' per person';
+                return <span style={{background:"rgba(255,255,255,0.15)",backdropFilter:"blur(4px)",borderRadius:999,padding:"3px 10px",fontFamily:F2,fontSize:11,fontWeight:700,color:"#fff"}}>{prefix}◈ {value}{suffix || perLabel}</span>;
               })()}
             </div>
           </div>
@@ -2802,7 +2992,6 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                           </div>
                           <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 6px"}}>
                             {minD === maxD ? `${minD} day${minD===1?'':'s'}` : `${minD}–${maxD} days`}
-                            {depo > 0 && ` · €${depo} deposit`}
                           </p>
                           {addons.length > 0 && (
                             <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.55}}>
@@ -2829,13 +3018,19 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                         </div>
                       )}
                       {openRentalIdx === i && rentalSuccessFor !== i && (() => {
+                        // Calendar-day model — matches submitRentalBooking.
+                        // Same-day pickup+drop = 1; each extra calendar
+                        // day adds one to the count and to the total.
                         const daysCount = /^\d{4}-\d{2}-\d{2}$/.test(rentalStart) && /^\d{4}-\d{2}-\d{2}$/.test(rentalEnd)
                           ? Math.max(1, Math.round((new Date(rentalEnd + 'T00:00:00') - new Date(rentalStart + 'T00:00:00')) / 86400000) + 1)
                           : 0;
                         const useWeekly = weekly && daysCount >= 7;
                         const rentalCost = useWeekly ? weekly * Math.ceil(daysCount / 7) : perDay * daysCount;
                         const addonsCost = addons.reduce((s, a, ai) => s + (rentalAddonPicks.has(ai) ? (Number(a.price_eur) || 0) : 0), 0);
-                        const total = rentalCost + addonsCost + depo;
+                        // Deposit is not held by Wello — customer settles
+                        // it directly with the venue on arrival. Total
+                        // held (in credits) = rental + add-ons only.
+                        const total = rentalCost + addonsCost;
                         const canAfford = Number(credits) >= total;
                         return (
                         <div style={{marginTop:14,padding:"14px 14px",background:"#fff",border:"1px solid rgba(195,200,188,0.5)",borderRadius:10}}>
@@ -2844,20 +3039,75 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                             Pick your dates and any add-ons. The venue has 48 hours to confirm. Credits are held from your balance while the request is pending and returned in full if the venue can't fulfil it.
                           </p>
                           <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                            <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
-                              <label style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase",flex:"1 1 140px"}}>
-                                Start date <span style={{color:"#C46A4D"}}>*</span>
-                                <input type="date" value={rentalStart} min={_minReqDate}
-                                  onChange={e=>setRentalStart(e.target.value)}
-                                  style={{display:"block",marginTop:4,padding:"9px 12px",border:"1px solid rgba(195,200,188,0.6)",borderRadius:8,fontFamily:F2,fontSize:13,background:"#fff",color:"#1B1C19",width:"100%",boxSizing:"border-box"}}/>
-                              </label>
-                              <label style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase",flex:"1 1 140px"}}>
-                                End date <span style={{color:"#C46A4D"}}>*</span>
-                                <input type="date" value={rentalEnd} min={rentalStart || _minReqDate}
-                                  onChange={e=>setRentalEnd(e.target.value)}
-                                  style={{display:"block",marginTop:4,padding:"9px 12px",border:"1px solid rgba(195,200,188,0.6)",borderRadius:8,fontFamily:F2,fontSize:13,background:"#fff",color:"#1B1C19",width:"100%",boxSizing:"border-box"}}/>
-                              </label>
-                            </div>
+                            {(() => {
+                              // Pickup-time selector — only offer times
+                              // that clear the offering's lead-hour window
+                              // from *now*, so the customer can never pick
+                              // a slot the submit check would reject.
+                              const leadHrs = Number.isFinite(Number(r?.min_lead_hours)) && r.min_lead_hours >= 0 ? Number(r.min_lead_hours) : 48;
+                              const PICKUP_HOURS = ['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'];
+                              const isValidTime = (t) => {
+                                if (!/^\d{4}-\d{2}-\d{2}$/.test(rentalStart)) return true;
+                                const ms = new Date(`${rentalStart}T${t}:00`).getTime();
+                                return ms - Date.now() >= leadHrs * 60 * 60 * 1000;
+                              };
+                              const validTimes = PICKUP_HOURS.filter(isValidTime);
+                              const noneValid = /^\d{4}-\d{2}-\d{2}$/.test(rentalStart) && validTimes.length === 0;
+                              return (<>
+                                <div style={{display:"flex",flexWrap:"wrap",gap:10}}>
+                                  <label style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase",flex:"1 1 130px"}}>
+                                    Start date <span style={{color:"#C46A4D"}}>*</span>
+                                    <input type="date" value={rentalStart} min={_minReqDate}
+                                      onChange={e=>{
+                                        setRentalStart(e.target.value);
+                                        // Bump the time to the earliest valid one for
+                                        // the new date so the picker never sits on an
+                                        // invalid time silently.
+                                        const nextValid = PICKUP_HOURS.filter(t => {
+                                          const ms = new Date(`${e.target.value}T${t}:00`).getTime();
+                                          return ms - Date.now() >= leadHrs * 60 * 60 * 1000;
+                                        });
+                                        if (nextValid.length && !nextValid.includes(rentalStartTime)) setRentalStartTime(nextValid[0]);
+                                      }}
+                                      style={{display:"block",marginTop:4,padding:"9px 12px",border:"1px solid rgba(195,200,188,0.6)",borderRadius:8,fontFamily:F2,fontSize:13,background:"#fff",color:"#1B1C19",width:"100%",boxSizing:"border-box"}}/>
+                                  </label>
+                                  <label style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase",flex:"1 1 110px"}}>
+                                    Pickup time <span style={{color:"#C46A4D"}}>*</span>
+                                    <select value={rentalStartTime}
+                                      onChange={e=>setRentalStartTime(e.target.value)}
+                                      disabled={noneValid}
+                                      style={{display:"block",marginTop:4,padding:"9px 12px",border:"1px solid rgba(195,200,188,0.6)",borderRadius:8,fontFamily:F2,fontSize:13,background:"#fff",color:"#1B1C19",width:"100%",boxSizing:"border-box"}}>
+                                      {noneValid
+                                        ? <option value="">— pick a later date —</option>
+                                        : validTimes.map(t => <option key={t} value={t}>{t}</option>)}
+                                    </select>
+                                  </label>
+                                  <label style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase",flex:"1 1 130px"}}>
+                                    Return date <span style={{color:"#C46A4D"}}>*</span>
+                                    {/* Calendar-day model — same-date pickup
+                                        and return is a valid 1-day rental. */}
+                                    <input type="date" value={rentalEnd} min={rentalStart || _minReqDate}
+                                      onChange={e=>setRentalEnd(e.target.value)}
+                                      style={{display:"block",marginTop:4,padding:"9px 12px",border:"1px solid rgba(195,200,188,0.6)",borderRadius:8,fontFamily:F2,fontSize:13,background:"#fff",color:"#1B1C19",width:"100%",boxSizing:"border-box"}}/>
+                                  </label>
+                                </div>
+                                {noneValid && (
+                                  <p style={{fontFamily:F2,fontSize:11,color:"#C46A4D",margin:"-4px 0 0",lineHeight:1.5}}>
+                                    This date is inside the {leadHrs}-hour notice window. Pick the next day or later.
+                                  </p>
+                                )}
+                                {rentalRemainingStock === 0 && (
+                                  <p style={{fontFamily:F2,fontSize:11,color:"#C46A4D",margin:"-4px 0 0",lineHeight:1.5}}>
+                                    Sold out for these dates — every {r?.type || 'unit'} is already booked. Try different dates.
+                                  </p>
+                                )}
+                                {rentalRemainingStock !== null && rentalRemainingStock > 0 && rentalRemainingStock < 3 && (
+                                  <p style={{fontFamily:F2,fontSize:11,color:"#B8925C",margin:"-4px 0 0",lineHeight:1.5}}>
+                                    Only {rentalRemainingStock} left for these dates.
+                                  </p>
+                                )}
+                              </>);
+                            })()}
 
                             {addons.length > 0 && (
                               <div>
@@ -2896,18 +3146,17 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                                   <span style={{fontWeight:700,color:"#213C18"}}>+ ◈ {addonsCost}</span>
                                 </div>
                               )}
-                              {depo > 0 && (
-                                <div style={{display:"flex",justifyContent:"space-between",fontFamily:F2,fontSize:12,marginBottom:4}}>
-                                  <span style={{color:"#54584F"}}>Deposit (held, refunded on return)</span>
-                                  <span style={{fontWeight:700,color:"#213C18"}}>+ ◈ {depo}</span>
-                                </div>
-                              )}
                               <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid rgba(195,200,188,0.4)",paddingTop:6,marginTop:4}}>
-                                <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#54584F"}}>Total held</span>
+                                <span style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#54584F"}}>Total held in credits</span>
                                 <span style={{fontFamily:F2,fontSize:13,fontWeight:800,color:"#213C18"}}>◈ {total}</span>
                               </div>
+                              {depo > 0 && (
+                                <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"6px 0 0",lineHeight:1.5}}>
+                                  A deposit will be collected by the venue on pickup.
+                                </p>
+                              )}
                               {!canAfford && (
-                                <p style={{fontFamily:F2,fontSize:11,color:"#C46A4D",margin:"6px 0 0"}}>Not enough credits for this booking — top up your balance to continue.</p>
+                                <p style={{fontFamily:F2,fontSize:11,color:"#C46A4D",margin:"6px 0 0"}}>Not enough credits for this booking — top up below to continue.</p>
                               )}
                             </div>
 
@@ -2922,16 +3171,69 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                               <input type="checkbox" checked={rentalHealthAck} onChange={e=>setRentalHealthAck(e.target.checked)}
                                 style={{marginTop:3,width:16,height:16,accentColor:"#213C18",cursor:"pointer",flexShrink:0}}/>
                               <span style={{fontFamily:F2,fontSize:12,color:"#1B1C19",lineHeight:1.55}}>
-                                I'll use the {r?.type || 'rental'} safely and return it in the condition I received it. Any damage may reduce the deposit refund.
+                                I understand the venue's rental terms apply at pickup.
                               </span>
                             </label>
 
-                            <div style={{display:"flex",justifyContent:"flex-end"}}>
+                            {!canAfford && (() => {
+                              // Inline mini-buy so the customer doesn't lose
+                              // their date/addon picks. Stashes the current
+                              // form to sessionStorage + kicks off Stripe;
+                              // return-landing rehydrates from stash so the
+                              // Send-request button is one tap away.
+                              const shortfall = Math.max(1, total - Number(credits));
+                              const effQty = topUpQty > 0 ? topUpQty : shortfall;
+                              const feeEur = Math.min(effQty * 0.10, 2.5);
+                              const grand  = effQty + feeEur;
+                              const step = (delta) => setTopUpQty(v => Math.max(1, (v > 0 ? v : shortfall) + delta));
+                              return (
+                                <div style={{padding:"12px 12px",background:"#F5F3EE",border:"1px solid rgba(195,200,188,0.6)",borderRadius:10,display:"flex",flexDirection:"column",gap:8}}>
+                                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.2px",textTransform:"uppercase",margin:0}}>Top up credits</p>
+                                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.55}}>You need <b>◈ {shortfall}</b> more to hold this rental. Buy below and we'll bring you straight back to this booking.</p>
+                                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                                    <div style={{display:"inline-flex",alignItems:"center",gap:4,background:"#fff",border:"1px solid rgba(195,200,188,0.6)",borderRadius:999,padding:"2px 4px"}}>
+                                      <button type="button" onClick={()=>step(-1)} disabled={topUpBusy}
+                                        style={{width:28,height:28,borderRadius:"50%",border:"none",background:"transparent",cursor:topUpBusy?"not-allowed":"pointer",fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18"}}>−</button>
+                                      <input type="number" min={1} value={effQty}
+                                        onFocus={e => e.target.select()}
+                                        onChange={e => { const n = parseInt(e.target.value, 10); setTopUpQty(Number.isFinite(n) && n > 0 ? n : 0); }}
+                                        style={{width:52,textAlign:"center",border:"none",outline:"none",fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",background:"transparent"}}/>
+                                      <button type="button" onClick={()=>step(1)} disabled={topUpBusy}
+                                        style={{width:28,height:28,borderRadius:"50%",border:"none",background:"transparent",cursor:topUpBusy?"not-allowed":"pointer",fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18"}}>+</button>
+                                    </div>
+                                    <span style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>credits · €{effQty.toFixed(2)} + €{feeEur.toFixed(2)} fee</span>
+                                    <button type="button"
+                                      disabled={topUpBusy}
+                                      onClick={async () => {
+                                        setTopUpBusy(true);
+                                        try {
+                                          await onTopUpAndResume?.({
+                                            quantity: effQty,
+                                            resume: {
+                                              bizId: biz.id,
+                                              offType: r?.type,
+                                              rentalStart, rentalStartTime, rentalEnd,
+                                              rentalAddonPicks: Array.from(rentalAddonPicks),
+                                              rentalHealthAck,
+                                            },
+                                          });
+                                        } finally { setTopUpBusy(false); }
+                                      }}
+                                      style={{marginLeft:"auto",padding:"9px 18px",background:topUpBusy?"#E4E2DD":"#213C18",color:topUpBusy?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:topUpBusy?"wait":"pointer"}}>
+                                      {topUpBusy ? "Opening checkout…" : `Buy · €${grand.toFixed(2)}`}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
+                            <div style={{display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap"}}>
                               <button type="button" onClick={()=>submitRentalBooking(r)}
-                                disabled={rentalSubmitting || !rentalHealthAck || !canAfford}
-                                style={{padding:"10px 20px",background:(rentalHealthAck && canAfford) ? "#213C18" : "#E4E2DD",color:(rentalHealthAck && canAfford) ? "#fff" : "#54584F",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:(rentalSubmitting || !rentalHealthAck || !canAfford) ? "not-allowed" : "pointer",opacity:rentalSubmitting?0.6:1}}>
+                                disabled={rentalSubmitting || !rentalHealthAck || !canAfford || rentalRemainingStock === 0}
+                                style={{padding:"10px 20px",background:(rentalHealthAck && canAfford && rentalRemainingStock !== 0) ? "#213C18" : "#E4E2DD",color:(rentalHealthAck && canAfford && rentalRemainingStock !== 0) ? "#fff" : "#54584F",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:(rentalSubmitting || !rentalHealthAck || !canAfford || rentalRemainingStock === 0) ? "not-allowed" : "pointer",opacity:rentalSubmitting?0.6:1}}>
                                 {rentalSubmitting ? "Sending…"
-                                  : !canAfford ? "Not enough credits"
+                                  : rentalRemainingStock === 0 ? "Sold out for these dates"
+                                  : !canAfford ? `Send request · need ◈ ${total - Number(credits)} more`
                                   : !rentalHealthAck ? "Tick the acknowledgement to continue"
                                   : `Send request · ◈ ${total} held`}
                               </button>
@@ -2962,24 +3264,48 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
 
 // ─── Listing Card ─────────────────────────────────────────────────────────────
 // Tile price label — headline number for a marketplace card.
-//   - No slot rows        → falls back to biz.cr (headline default).
-//   - All slots same price → shows that number bare.
-//   - Mixed prices        → shows "from ◈ min" (Noor: from ◈ 15).
-// Kept outside Card so the same rule can be used from the compact
-// carousel Card and any future tile variants without duplication.
+//   - Rental-only  → "from ◈ N / day" (min per-day across rental offerings).
+//   - No slot rows → falls back to biz.cr (headline default).
+//   - Single price → bare number.
+//   - Mixed        → "from ◈ min".
+// Rental-only comes first because a bike-rental business shouldn't be
+// priced against the biz.cr class-rate fallback. Returns { prefix,
+// value, suffix } — suffix is empty for classes and "/ day" for rentals.
 function tilePriceLabel(biz) {
+  const offs = Array.isArray(biz?.session_offerings) ? biz.session_offerings : [];
+  const rentalPrices = offs
+    .filter(o => o?.kind === 'rental')
+    .map(o => Number(o?.price_eur))
+    .filter(n => Number.isFinite(n) && n > 0);
+  const nonRentalOffs = offs.filter(o => o?.kind !== 'rental');
+  // Rental-only if all listed offerings are rentals. Ignore residual
+  // biz.slots — a partner who removed their classes and set up a rental
+  // shouldn't have the tile fall back to class-rate pricing just because
+  // the slot rows haven't been cleaned up yet.
+  const rentalOnly = rentalPrices.length > 0 && nonRentalOffs.length === 0;
+  if (rentalOnly) {
+    const min = Math.min(...rentalPrices);
+    const max = Math.max(...rentalPrices);
+    return { prefix: min === max ? '' : 'from ', value: min, suffix: ' / day' };
+  }
   const prices = (Array.isArray(biz?.slots) ? biz.slots : [])
     .map(s => Number(s?.credits))
     .filter(n => Number.isFinite(n) && n > 0);
-  if (prices.length === 0) return { prefix: '', value: Number(biz?.cr) || 0 };
+  if (prices.length === 0) return { prefix: '', value: Number(biz?.cr) || 0, suffix: '' };
   const min = Math.min(...prices);
   const max = Math.max(...prices);
-  return { prefix: min === max ? '' : 'from ', value: min };
+  return { prefix: min === max ? '' : 'from ', value: min, suffix: '' };
 }
 
 function Card({ biz, onSelect, syncing, saved, onToggleSave, compact = false }) {
-  // Defensive: a fresh listing with no slots yet would crash this find().
-  const next = (biz.slots || []).find(s => s.booked < s.spots);
+  // Rental-only businesses (all offerings are rentals) don't have a
+  // "next slot" — show the rental headline instead. Stale slot rows
+  // from an earlier class setup are ignored so the tile doesn't
+  // resurrect a "3 spots left · 09:00" from a class that no longer
+  // exists on the offering list.
+  const _offs = Array.isArray(biz?.session_offerings) ? biz.session_offerings : [];
+  const _rentalOnly = _offs.length > 0 && _offs.every(o => o?.kind === 'rental');
+  const next = _rentalOnly ? null : (biz.slots || []).find(s => s.booked < s.spots);
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   // Compact = denser cards for the carousel rows; standard = full-bleed grid cards.
   const s = compact ? {
@@ -3008,8 +3334,8 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave, compact = false }) 
           onMouseLeave={e=>e.target.style.transform="scale(1)"}/>
         <div style={{position:"absolute",top:s.badgeT,right:s.badgeR,background:"rgba(255,255,255,0.92)",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",borderRadius:999,padding:s.badgePad}}>
           {(() => {
-            const { prefix, value } = tilePriceLabel(biz);
-            return <span style={{fontFamily:F2,fontSize:s.badgeFont,fontWeight:800,color:"#213C18"}}>{prefix}◈ {value}</span>;
+            const { prefix, value, suffix } = tilePriceLabel(biz);
+            return <span style={{fontFamily:F2,fontSize:s.badgeFont,fontWeight:800,color:"#213C18"}}>{prefix}◈ {value}{suffix || ''}</span>;
           })()}
         </div>
         <button onClick={e=>{e.stopPropagation();onToggleSave(biz.id);}}
@@ -3045,9 +3371,11 @@ function Card({ biz, onSelect, syncing, saved, onToggleSave, compact = false }) 
             <span key={t} style={{fontFamily:F2,fontSize:s.pillFont,fontWeight:500,color:"#54584F",background:"rgba(228,226,221,0.6)",padding:s.pillPad,borderRadius:999}}>{t}</span>
           ))}
         </div>
-        {next
-          ? <p style={{fontFamily:F2,fontSize:s.slotFont,color:"#213C18",fontWeight:600,margin:0}}>{next.spots-next.booked} spots left · {next.time}</p>
-          : <p style={{fontFamily:F2,fontSize:s.slotFont,color:"#54584F",margin:0}}>Fully booked · check back soon</p>
+        {_rentalOnly
+          ? <p style={{fontFamily:F2,fontSize:s.slotFont,color:"#213C18",fontWeight:600,margin:0}}>Daily rentals · request to book</p>
+          : next
+            ? <p style={{fontFamily:F2,fontSize:s.slotFont,color:"#213C18",fontWeight:600,margin:0}}>{next.spots-next.booked} spots left · {next.time}</p>
+            : <p style={{fontFamily:F2,fontSize:s.slotFont,color:"#54584F",margin:0}}>Fully booked · check back soon</p>
         }
       </div>
     </div>
@@ -3862,7 +4190,7 @@ function InterestsModal({ initial = [], onCancel, onSave, busy = false }) {
   );
 }
 
-function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, profile, authSession, onSaveInterests }) {
+function ExplorePage({ listings, listingsLoading, onSelect, savedIds, onToggleSave, syncingIds, profile, authSession, onSaveInterests }) {
   const [search,setSearch]=useState("");
   const [activeCat,setActiveCat]=useState("All");
   const [activeLoc,setActiveLoc]=useState("All Mallorca");
@@ -3937,7 +4265,14 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
     // up on both the Yoga filter (primary) and the Sound Bath filter
     // (per-session override) without changing the marketplace card's
     // theme.
+    // "Rental" is a virtual category — matches any business with at
+    // least one rental offering, regardless of businesses.category.
+    // Otherwise: match on primary category or the per-session override
+    // set (session_categories) — a yoga studio that also runs sound
+    // baths shows up on both Yoga and Sound Bath filters.
+    const rentalOffs = Array.isArray(b.session_offerings) ? b.session_offerings.filter(o => o?.kind === 'rental') : [];
     const mC = activeCat === "All"
+      || (activeCat === "Rental" && rentalOffs.length > 0)
       || b.cat === activeCat
       || (Array.isArray(b.session_categories) && b.session_categories.includes(activeCat));
     const isPrivate = b.cat === "Private Instructor";
@@ -4163,8 +4498,22 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
           // Build a section per unique active category in the pool. Order
           // by number of venues (densest categories first). Each section
           // contains all of that category's matching venues.
+          // Rentals get their own virtual "Rental" section: any business
+          // with a rental offering appears there. Rental-only businesses
+          // ONLY appear in Rental (their stored b.cat is stale from a
+          // previous class-shape and would otherwise land them under
+          // whatever they used to run, e.g. Yoga).
           const catCounts = {};
+          const rentalBizIds = new Set();
           for (const b of pool) {
+            const offs = Array.isArray(b.session_offerings) ? b.session_offerings : [];
+            const hasR = offs.some(o => o?.kind === 'rental');
+            const rentalOnly = offs.length > 0 && offs.every(o => o?.kind === 'rental');
+            if (hasR) {
+              rentalBizIds.add(b.id);
+              catCounts["Rental"] = (catCounts["Rental"] || 0) + 1;
+            }
+            if (rentalOnly) continue;
             if (!b.cat) continue;
             catCounts[b.cat] = (catCounts[b.cat] || 0) + 1;
           }
@@ -4187,6 +4536,7 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
             "Hiking":         "Tramuntana trails",
             "Running":        "Path and shoreline",
             "Meditation":     "Stillness and breath",
+            "Rental":         "Bikes, boards and gear",
           };
           // Every category rail uses the same scoring pass as For You. That
           // way a saved venue floats to the top of its category rail (not
@@ -4204,13 +4554,22 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
           }
           const dynamicSections = Object.entries(catCounts)
             .sort((a,b) => b[1] - a[1])
-            .map(([cat]) => ({
-              key: cat,
-              name: catLabel(cat),
-              cat,
-              blurb: BLURBS[cat] || "Discover local picks",
-              items: sortWithinCategory(pool.filter(b => b.cat === cat)),
-            }));
+            .map(([cat]) => {
+              const items = cat === "Rental"
+                ? sortWithinCategory(pool.filter(b => rentalBizIds.has(b.id)))
+                : sortWithinCategory(pool.filter(b => {
+                    const offs = Array.isArray(b.session_offerings) ? b.session_offerings : [];
+                    const rentalOnly = offs.length > 0 && offs.every(o => o?.kind === 'rental');
+                    return !rentalOnly && b.cat === cat;
+                  }));
+              return {
+                key: cat,
+                name: cat === "Rental" ? "Rentals" : catLabel(cat),
+                cat,
+                blurb: BLURBS[cat] || "Discover local picks",
+                items,
+              };
+            });
 
           // Final ordered rail list — For You first, then dynamic categories.
           const sections = [];
@@ -4231,6 +4590,19 @@ function ExplorePage({ listings, onSelect, savedIds, onToggleSave, syncingIds, p
           for (const s of dynamicSections) sections.push(s);
 
           if (sections.length === 0) {
+            // Distinguish "still loading" from "genuinely empty" — the
+            // marketplace fetch can take a beat on first load and the
+            // empty filtered list would otherwise flash "No results"
+            // before venues arrive.
+            if (listingsLoading) {
+              return (
+                <div style={{textAlign:"center",padding:"96px 20px"}}>
+                  <div style={{fontSize:36,marginBottom:12,color:"#C3C8BC"}}>◈</div>
+                  <h3 style={{fontFamily:F2,fontSize:20,color:"#213C18",fontWeight:700,marginBottom:8}}>Loading venues…</h3>
+                  <p style={{fontFamily:F2,color:"#54584F",fontSize:14}}>One second.</p>
+                </div>
+              );
+            }
             return (
               <div style={{textAlign:"center",padding:"96px 20px"}}>
                 <div style={{fontSize:36,marginBottom:12,color:"#C3C8BC"}}>∅</div>
@@ -4400,7 +4772,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, creditSplit = { pu
     if (!authSession?.user?.id) { setRemoteBookings(null); return; }
     let cancelled = false;
     supabase.from('bookings')
-      .select('id, business_id, slot_id, booking_date, start_time, duration, credits_used, status, offering_type, acuity_appointment_id, created_at')
+      .select('id, business_id, slot_id, booking_date, end_date, start_time, duration, credits_used, status, offering_type, rental_addons, acuity_appointment_id, created_at')
       .eq('user_id', authSession.user.id)
       .order('booking_date', { ascending: false })
       .then(({ data }) => { if (!cancelled) setRemoteBookings(data || []); });
@@ -4516,9 +4888,17 @@ function ProfilePage({ bookings, savedIds, listings, credits, creditSplit = { pu
               // asked for.
               sessionName: bk.offering_type || l.name || "Session",
               date: bk.booking_date,
+              endDate: bk.end_date || null,
               time: bk.start_time,
               cost: bk.credits_used ?? 0,
               status: bk.status,
+              rentalAddons: Array.isArray(bk.rental_addons) ? bk.rental_addons : [],
+              isRental: !!bk.end_date,
+              // Distinguishes slot-based (class) from offering-based
+              // (appointment). Cancel policy differs: classes keep
+              // post-confirmation self-cancel; rentals + appointments
+              // don't — they route the customer to the venue directly.
+              isSlotBased: !!bk.slot_id,
             };
           }
           // Sort every booking by session time, then split into upcoming
@@ -4529,21 +4909,27 @@ function ProfilePage({ bookings, savedIds, listings, credits, creditSplit = { pu
           const cutoff = new Date();
           cutoff.setHours(0, 0, 0, 0);
           const normalised = shownBookings.map(normalize);
+          // Rentals lack a start_time; anchor their "did it pass?" check
+          // on end_date so a rental that finished yesterday drops into
+          // Past even though sessionDateTime(bookingDate, null) is null.
+          const bookingAnchor = (b) => b.isRental && b.endDate
+            ? new Date(`${b.endDate}T23:59:59`)
+            : sessionDateTime(b.date, b.time);
           const upcomingItems = normalised
             .filter(b => b.status !== 'cancelled' && b.status !== 'declined')
             .filter(b => {
-              const dt = sessionDateTime(b.date, b.time);
+              const dt = bookingAnchor(b);
               return dt ? dt >= cutoff : true;
             })
-            .sort((a, z) => (sessionDateTime(a.date, a.time)?.getTime() || 0) - (sessionDateTime(z.date, z.time)?.getTime() || 0));
+            .sort((a, z) => (bookingAnchor(a)?.getTime() || 0) - (bookingAnchor(z)?.getTime() || 0));
           const pastItems = normalised
             .filter(b => {
-              const dt = sessionDateTime(b.date, b.time);
+              const dt = bookingAnchor(b);
               const isPast = dt ? dt < cutoff : false;
               const isCancelled = b.status === 'cancelled' || b.status === 'declined';
               return isPast || isCancelled;
             })
-            .sort((a, z) => (sessionDateTime(z.date, z.time)?.getTime() || 0) - (sessionDateTime(a.date, a.time)?.getTime() || 0));
+            .sort((a, z) => (bookingAnchor(z)?.getTime() || 0) - (bookingAnchor(a)?.getTime() || 0));
           const items = resTab === "upcoming" ? upcomingItems : pastItems;
           const subTabs = [["upcoming", "Upcoming", upcomingItems.length], ["past", "Past", pastItems.length]];
           const subTabNav = (
@@ -4580,17 +4966,32 @@ function ProfilePage({ bookings, savedIds, listings, credits, creditSplit = { pu
               {subTabNav}
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 {items.map(bk=>{
-                  const cancelState = cancelStatusFor({ booking_date: bk.date, start_time: bk.time }, bk.biz);
+                  // Rentals lack start_time — cancel-booking edge fn
+                  // anchors the window on booking_date @ 09:00, so mirror
+                  // that here to keep UI + server in sync.
+                  const cancelState = cancelStatusFor({ booking_date: bk.date, start_time: bk.isRental ? '09:00' : bk.time }, bk.biz);
                   // Pending requests (instructor or venue) can be cancelled
                   // by the customer at any time for a full credit return —
-                  // no window enforcement here, credits were never
-                  // deducted so nothing to refund on cancel.
+                  // credits held via spend-booking-credits are reversed via
+                  // refund_by_booking.
                   const isPendingReq = bk.status === 'pending_instructor' || bk.status === 'pending_venue';
-                  const canCancel = resTab === "upcoming" && bk.dbId && bk.status !== 'cancelled' && (isPendingReq || cancelState.canCancel);
+                  // Post-confirmation self-cancel is a slot-based (class)
+                  // privilege only. Rentals + appointments (both offering-
+                  // based, no slot_id) route the customer to the venue
+                  // directly — see [[end-user-ux-on-policy-changes]].
+                  const isClassBooking = bk.isSlotBased && !bk.isRental;
+                  const canCancel = resTab === "upcoming"
+                    && bk.dbId
+                    && bk.status !== 'cancelled'
+                    && (isPendingReq || (isClassBooking && cancelState.canCancel));
+                  const needsVenueContact = resTab === "upcoming"
+                    && bk.dbId
+                    && bk.status === 'confirmed'
+                    && !isClassBooking; // rental or appointment
                   // Status label + colour differs for past bookings and
                   // pending requests.
                   const isCancelled = bk.status === 'cancelled' || bk.status === 'declined';
-                  const isPastDate  = (sessionDateTime(bk.date, bk.time)?.getTime() || 0) < Date.now();
+                  const isPastDate  = (bookingAnchor(bk)?.getTime() || 0) < Date.now();
                   const statusLabel = isCancelled
                     ? "Cancelled"
                     : isPendingReq
@@ -4605,10 +5006,19 @@ function ProfilePage({ bookings, savedIds, listings, credits, creditSplit = { pu
                       </div>
                       <div style={{flex:1,padding:"20px 24px",display:"flex",flexWrap:"wrap",justifyContent:"space-between",alignItems:"center",gap:16}}>
                         <div>
-                          <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#6F5B44",letterSpacing:"2px",textTransform:"uppercase",display:"block",marginBottom:6}}>{bk.biz?.cat}</span>
+                          <span style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#6F5B44",letterSpacing:"2px",textTransform:"uppercase",display:"block",marginBottom:6}}>{bk.isRental ? "Rental" : bk.biz?.cat}</span>
                           <h3 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>{bk.sessionName}</h3>
-                          <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 4px"}}>📅 {fd(bk.date)} · {bk.time}</p>
+                          {bk.isRental ? (
+                            <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 4px"}}>📅 {fd(bk.date)} → {fd(bk.endDate)}</p>
+                          ) : (
+                            <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:"0 0 4px"}}>📅 {fd(bk.date)} · {bk.time}</p>
+                          )}
                           <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:0}}>📍 {bk.biz?.name}{bk.biz?.loc ? `, ${bk.biz.loc}` : ""}</p>
+                          {bk.isRental && bk.rentalAddons.length > 0 && (
+                            <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"6px 0 0",fontStyle:"italic"}}>
+                              + {bk.rentalAddons.map(a => a?.label || a?.name || String(a)).join(", ")}
+                            </p>
+                          )}
                         </div>
                         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:10}}>
                           <span style={{display:"flex",alignItems:"center",gap:6,background:statusBg,color:statusFg,padding:"6px 14px",borderRadius:999,fontSize:11,fontWeight:700}}>
@@ -4629,6 +5039,35 @@ function ProfilePage({ bookings, savedIds, listings, credits, creditSplit = { pu
                                 style={{background:"transparent",border:"1px solid rgba(196,106,77,0.6)",color:"#C46A4D",padding:"6px 14px",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:"0.3px"}}>
                                 {isPendingReq ? "Cancel request" : "Cancel booking"}
                               </button>
+                            ) : needsVenueContact ? (
+                              // Rental / appointment — customer can't self-
+                              // cancel once the venue has confirmed. Surface
+                              // the venue's contact details so they have a
+                              // clear next action instead of a dead button.
+                              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,maxWidth:240}}>
+                                <span style={{fontFamily:F2,fontSize:10,color:"#54584F",fontStyle:"italic",textAlign:"right",lineHeight:1.4}}>
+                                  {bk.isRental
+                                    ? "Confirmed rentals can't be cancelled here — contact the venue to change."
+                                    : "Confirmed appointments can't be cancelled here — contact the venue to change."}
+                                </span>
+                                <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                                  {bk.biz?.phone && (
+                                    <a href={`tel:${String(bk.biz.phone).replace(/\s+/g,'')}`}
+                                      style={{background:"transparent",border:"1px solid rgba(33,60,24,0.35)",color:"#213C18",padding:"5px 12px",borderRadius:999,fontFamily:F2,fontSize:10,fontWeight:700,cursor:"pointer",letterSpacing:"0.3px",textDecoration:"none"}}>
+                                      📞 Call
+                                    </a>
+                                  )}
+                                  {(bk.biz?.email || bk.biz?.businesses?.email) && (
+                                    <a href={`mailto:${bk.biz.email || bk.biz?.businesses?.email}?subject=${encodeURIComponent('Wello booking: ' + bk.sessionName)}`}
+                                      style={{background:"transparent",border:"1px solid rgba(33,60,24,0.35)",color:"#213C18",padding:"5px 12px",borderRadius:999,fontFamily:F2,fontSize:10,fontWeight:700,cursor:"pointer",letterSpacing:"0.3px",textDecoration:"none"}}>
+                                      ✉ Email
+                                    </a>
+                                  )}
+                                  {!bk.biz?.phone && !bk.biz?.email && !bk.biz?.businesses?.email && (
+                                    <span style={{fontFamily:F2,fontSize:10,color:"#A3B18A",fontStyle:"italic"}}>Venue contact details not on file</span>
+                                  )}
+                                </div>
+                              </div>
                             ) : (
                               <span style={{fontFamily:F2,fontSize:10,color:"#A3B18A",fontStyle:"italic"}}>Cancellation window closed</span>
                             )
@@ -5998,7 +6437,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       const legacy = localStorage.getItem("wello_dash_tab");
       if (legacy && allowed.includes(legacy)) return legacy;
     } catch { /* fall through */ }
-    return dashSupportsRequests ? "requests" : "schedule";
+    // Every partner defaults to Bookings — it's the primary daily action.
+    return "requests";
   });
   useEffect(() => {
     try { localStorage.setItem("wello_dash_subtab", manageSubTab); } catch { /* non-critical */ }
@@ -6056,6 +6496,15 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     // the Coverage & travel-zone editor for this partner. Private-instructor
     // businesses have this implicitly via business_type and don't need to set it.
     offers_at_customer: !!bizData.offers_at_customer,
+    // Notification opt-ins — email always fires, SMS + WhatsApp only when
+    // the partner has switched them on. Rate-limited channels (Twilio +
+    // WhatsApp both have per-month limits), so we default off.
+    notify_sms_enabled:      !!bizData.notify_sms_enabled,
+    notify_whatsapp_enabled: !!bizData.notify_whatsapp_enabled,
+    // Per-business Booqable credentials. Nullable — partners without
+    // Booqable leave both blank and the sync fns silently no-op.
+    booqable_subdomain: bizData.booqable_subdomain || "",
+    booqable_api_key:   bizData.booqable_api_key   || "",
   });
   const [saving, setSaving]       = useState(false);
   const [saveMsg, setSaveMsg]     = useState({ kind:"", text:"" }); // { kind:"settings"|"listing"|"golive"|"err", text }
@@ -6068,12 +6517,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const [dbSlots, setDbSlots]     = useState(null); // null = loading | [] = empty | [...] = loaded
   const [statusLive, setStatusLive] = useState(bizData.status === 'approved' || bizData.status === 'submitted');
 
-  // Keep the Manage sub-tab valid when the venue type flips. Requests only
-  // exists for private instructors, so a non-private venue stuck on Requests
-  // would render an empty pane.
-  useEffect(() => {
-    if (!dashSupportsRequests && manageSubTab === "requests") setManageSubTab("schedule");
-  }, [dashSupportsRequests, manageSubTab]);
+  // Bookings sub-tab is available to every partner now, so no need to
+  // force-redirect away from it when the venue type flips. Left this
+  // hook in place (as a no-op) in case future guards are added.
 
   // Private-instructor specific editable state. We hydrate from bizData on
   // mount and the dashboard's key={activeVenueId} prop ensures these reset
@@ -6581,11 +7027,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     return () => { cancelled = true; };
   }, [isPreview, bizData?.id]);
 
-  // Private-instructor only: load pending booking requests for this venue so
-  // the Requests tab has something to render. Re-runs whenever requestsTick
-  // bumps (after a confirm/decline).
+  // Load pending booking requests for this venue so the Bookings tab
+  // has something to render. Fires for every business type — every
+  // partner can now receive pending_venue requests (rental accept,
+  // request-mode class, PI booking) and needs to see them in one place.
   useEffect(() => {
-    if (isPreview || !bizData?.id || !dashSupportsRequests) { setPendingRequests([]); return; }
+    if (isPreview || !bizData?.id) { setPendingRequests([]); return; }
     let cancelled = false;
     (async () => {
       const { data: rows, error } = await supabase
@@ -6611,7 +7058,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       if (!cancelled) setPendingRequests(enriched);
     })();
     return () => { cancelled = true; };
-  }, [isPreview, bizData?.id, dashSupportsRequests, requestsTick]);
+  }, [isPreview, bizData?.id, requestsTick]);
 
   // Confirmed-and-upcoming bookings for this venue. Re-runs on requestsTick
   // bumps so a just-confirmed request flows straight into the Upcoming list.
@@ -6658,6 +7105,31 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     })();
     return () => { cancelled = true; };
   }, [isPreview, bizData?.id, requestsTick]);
+
+  // Refresh pending + confirmed bookings when the partner opens the
+  // Bookings sub-tab or when the browser tab regains focus. Without
+  // this, a booking made in another tab (or by a customer while the
+  // partner was staring at Bookings) doesn't appear until the partner
+  // manually reloads. Bumping requestsTick reuses the existing fetch
+  // effects — no duplicate query code.
+  useEffect(() => {
+    if (tab === 'manage' && manageSubTab === 'requests') {
+      setRequestsTick(t => t + 1);
+    }
+  }, [tab, manageSubTab]);
+  useEffect(() => {
+    const onFocus = () => {
+      if (tab === 'manage' && manageSubTab === 'requests') {
+        setRequestsTick(t => t + 1);
+      }
+    };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [tab, manageSubTab]);
 
   async function respondToRequest(bookingId, action, status) {
     if (!bookingId || respondingId) return;
@@ -6708,6 +7180,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       bookings_whatsapp: settingsForm.bookings_whatsapp.trim() || null,
       cancellation_window_hours: cwhNum,
       offers_at_customer: !!settingsForm.offers_at_customer,
+      notify_sms_enabled:      !!settingsForm.notify_sms_enabled,
+      notify_whatsapp_enabled: !!settingsForm.notify_whatsapp_enabled,
+      booqable_subdomain: settingsForm.booqable_subdomain.trim() || null,
+      booqable_api_key:   settingsForm.booqable_api_key.trim()   || null,
     };
     const { error } = await supabase.from('businesses').update(payload).eq('id', bizData.id);
     if (!error) {
@@ -7656,9 +8132,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // Sub-tabs inside Manage. Private instructors + venues with appointment
   // offerings get the Requests tab (they receive pending_venue requests
   // through the same panel).
-  const MANAGE_SUBTABS = dashSupportsRequests
-    ? [["requests","Requests"],["schedule","Schedule"],["listing","My Listing"]]
-    : [["schedule","Schedule"],["listing","My Listing"]];
+  // Every partner sees Bookings first — it's the primary reason to
+  // open the dashboard. Internal key stays "requests" so we don't need
+  // to migrate any references, but the label is "Bookings".
+  const MANAGE_SUBTABS = [["requests","Bookings"],["schedule","Schedule"],["listing","My Listing"]];
 
   const WEEK_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   // Compute the current Mon→Sun week as "14 Apr"-style labels — always live so dates never go stale.
@@ -7850,7 +8327,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             {TABS.map(([k,l])=>{
               // Show a pill badge on Manage with the count of pending booking
               // requests so partners see "you've got work" the moment they sign in.
-              const showBadge = k === "manage" && dashSupportsRequests
+              const showBadge = k === "manage"
                 && Array.isArray(pendingRequests) && pendingRequests.length > 0;
               return (
                 <button key={k} onClick={()=>{ setTab(k); if (k==="manage" && showBadge) setManageSubTab("requests"); }}
@@ -8071,13 +8548,16 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           </div>
         )}
 
-        {/* ── REQUESTS (private instructors + venues with offerings) ── */}
-        {tab==="manage" && manageSubTab==="requests" && dashSupportsRequests && (
+        {/* ── BOOKINGS (all partners) — pending + confirmed in one place ── */}
+        {tab==="manage" && manageSubTab==="requests" && (
           <div>
             <div style={{marginBottom:18}}>
-              <h2 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#1B1C19",margin:"0 0 4px"}}>Pending requests</h2>
-              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0}}>Bookings waiting for your response. You have 48 hours to confirm or decline before the system declines on your behalf.</p>
+              <h2 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#1B1C19",margin:"0 0 4px"}}>Bookings</h2>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0}}>Requests waiting for your response show up top. Confirmed bookings sit below, sorted by soonest first.</p>
             </div>
+            <h3 style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",letterSpacing:"1.2px",textTransform:"uppercase",margin:"0 0 10px"}}>
+              Pending {Array.isArray(pendingRequests) && pendingRequests.length > 0 && <span style={{marginLeft:6,padding:"2px 8px",borderRadius:999,background:"#C46A4D",color:"#fff",fontSize:11,fontWeight:800}}>{pendingRequests.length}</span>}
+            </h3>
             {pendingRequests === null && (
               <p style={{fontFamily:F2,fontSize:12,color:"#54584F",fontWeight:300}}>Loading…</p>
             )}
@@ -8202,6 +8682,76 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 })}
               </div>
             )}
+
+            {/* ── Confirmed bookings under the pending section — same
+                shape/data as Overview's "Your live bookings" panel but
+                positioned here so partners have a single source of
+                truth for anything booking-related. ── */}
+            <h3 style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18",letterSpacing:"1.2px",textTransform:"uppercase",margin:"28px 0 10px"}}>
+              Confirmed {Array.isArray(upcomingBookings) && upcomingBookings.length > 0 && <span style={{marginLeft:6,padding:"2px 8px",borderRadius:999,background:"#CAECBA",color:"#213C18",fontSize:11,fontWeight:800}}>{upcomingBookings.length}</span>}
+            </h3>
+            {upcomingBookings === null && (
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",fontWeight:300}}>Loading…</p>
+            )}
+            {upcomingBookings && upcomingBookings.length === 0 && (
+              <div style={{padding:"40px 24px",background:"#fff",border:"1px solid #E4E2DD",borderRadius:8,textAlign:"center"}}>
+                <p style={{fontFamily:F2,fontSize:13,color:"#54584F",fontWeight:300,margin:0}}>No confirmed bookings yet. Once you accept a request — or a customer books an instant-book session — it'll appear here.</p>
+              </div>
+            )}
+            {upcomingBookings && upcomingBookings.length > 0 && (() => {
+              const byDate = {};
+              for (const b of upcomingBookings) {
+                if (!byDate[b.booking_date]) byDate[b.booking_date] = [];
+                byDate[b.booking_date].push(b);
+              }
+              const dates = Object.keys(byDate).sort();
+              return (
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {dates.map(date => (
+                    <div key={date} style={{padding:"12px 14px",background:"#fff",border:"1px solid #E4E2DD",borderRadius:8}}>
+                      <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 8px"}}>
+                        {new Date(date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}
+                        <span style={{marginLeft:8,fontWeight:400,color:"#A3B18A"}}>{byDate[date].length} booking{byDate[date].length===1?"":"s"}</span>
+                      </p>
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        {byDate[date].sort((a,b)=>(a.start_time||"").localeCompare(b.start_time||"")).map(b => {
+                          const customerName  = b._customer?.full_name || b._customer?.email || "Customer";
+                          const customerEmail = b._customer?.email || "";
+                          const sessionName   = b._slot_name || b.offering_type || b.duration || "Session";
+                          const peopleCount   = Number(b.people_count) || 1;
+                          const isRental      = !!b.end_date;
+                          return (
+                            <div key={b.id} style={{display:"flex",alignItems:"flex-start",gap:12,padding:"8px 10px",borderRadius:6,background:"#F5F3EE"}}>
+                              <div style={{textAlign:"center",minWidth:44,paddingTop:2}}>
+                                <div style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#213C18"}}>{(b.start_time||"").slice(0,5)}</div>
+                                <div style={{fontFamily:F2,fontSize:9,color:"#A3B18A",fontWeight:300}}>{b.duration || ""}</div>
+                              </div>
+                              <div style={{width:1,background:"#E4E2DD",alignSelf:"stretch"}}/>
+                              <div style={{flex:1,minWidth:0}}>
+                                <p style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#1B1C19",margin:"0 0 2px"}}>
+                                  {customerName}
+                                  {customerEmail && <span style={{color:"#54584F",fontWeight:400,fontSize:11,marginLeft:6}}>· {customerEmail}</span>}
+                                </p>
+                                {b._customer?.phone && (
+                                  <p style={{fontFamily:F2,fontSize:11,margin:"0 0 2px"}}>
+                                    <a href={`tel:${b._customer.phone.replace(/\s+/g,'')}`} style={{color:"#213C18",fontWeight:600,textDecoration:"none"}}>📞 {b._customer.phone}</a>
+                                  </p>
+                                )}
+                                <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 2px"}}>
+                                  {isRental ? `${sessionName} · rental` : sessionName}
+                                  {peopleCount > 1 ? ` · 👥 ${peopleCount} people` : ""}
+                                </p>
+                              </div>
+                              <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:700,whiteSpace:"nowrap",alignSelf:"center"}}>◈ {b.credits_used}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -8246,6 +8796,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                       // until Save, so Cancel discards cleanly.
                       const locs = editBuffer?.locations || [];
                       const hasLocs = locs.length > 0;
+                      const isRentalKind = (editBuffer?.kind || '') === 'rental';
                       return (
                         <div key={idx} style={{padding:"14px 16px",background:"#F5F3EE",borderRadius:10,border:"1px solid rgba(33,60,24,0.18)"}}>
                           <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 10px"}}>Editing offering</p>
@@ -8270,11 +8821,115 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                 style={{...INP,paddingLeft:22,marginBottom:0,width:"100%",opacity:hasLocs?0.55:1}}/>
                             </div>
                           </div>
-                          {hasLocs && (
+                          {hasLocs && !isRentalKind && (
                             <p style={{fontFamily:F2,fontSize:11,color:"#766149",margin:"0 0 12px"}}>Base price ignored — per-location prices below drive booking cost.</p>
                           )}
 
+                          {isRentalKind && (
+                            <div style={{marginBottom:14,padding:"12px 14px",background:"#fff",border:"1px solid rgba(195,200,188,0.5)",borderRadius:10}}>
+                              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.2px",textTransform:"uppercase",margin:"0 0 10px"}}>Rental settings</p>
+                              <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:12}}>
+                                <label style={{fontFamily:F2,fontSize:11,color:"#54584F",display:"flex",flexDirection:"column",gap:4,flex:"1 1 110px",minWidth:90}}>
+                                  Inventory
+                                  <input type="number" min="1" value={editBuffer?.inventory ?? ''}
+                                    onChange={e=>bufferUpdate({ inventory: e.target.value })}
+                                    onFocus={e=>e.target.select()}
+                                    placeholder="e.g. 5"
+                                    title="How many of this item you have available."
+                                    style={{...INP,marginBottom:0,width:"100%"}}/>
+                                </label>
+                                <label style={{fontFamily:F2,fontSize:11,color:"#54584F",display:"flex",flexDirection:"column",gap:4,flex:"1 1 130px",minWidth:100}}>
+                                  Weekly discount <span style={{color:"#A3B18A",fontWeight:400}}>(7+ days)</span>
+                                  <div style={{position:"relative"}}>
+                                    <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontSize:12,fontWeight:600,pointerEvents:"none"}}>€</span>
+                                    <input type="number" min="0" value={editBuffer?.weekly_price_eur ?? ''}
+                                      onChange={e=>bufferUpdate({ weekly_price_eur: e.target.value })}
+                                      onFocus={e=>e.target.select()}
+                                      placeholder="optional"
+                                      title="Weekly rate replaces the daily rate when a booking is 7+ days. Leave blank to always charge daily."
+                                      style={{...INP,paddingLeft:20,marginBottom:0,width:"100%"}}/>
+                                  </div>
+                                </label>
+                                <label style={{fontFamily:F2,fontSize:11,color:"#54584F",display:"flex",flexDirection:"column",gap:4,flex:"1 1 130px",minWidth:100}}>
+                                  Deposit <span style={{color:"#A3B18A",fontWeight:400}}>(you collect on pickup)</span>
+                                  <div style={{position:"relative"}}>
+                                    <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontSize:12,fontWeight:600,pointerEvents:"none"}}>€</span>
+                                    <input type="number" min="0" value={editBuffer?.deposit_eur ?? ''}
+                                      onChange={e=>bufferUpdate({ deposit_eur: e.target.value })}
+                                      onFocus={e=>e.target.select()}
+                                      placeholder="optional"
+                                      title="Informational only. Wello does not hold or process deposits — you take it at pickup and refund on return."
+                                      style={{...INP,paddingLeft:20,marginBottom:0,width:"100%"}}/>
+                                  </div>
+                                </label>
+                              </div>
+                              <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:12}}>
+                                <label style={{fontFamily:F2,fontSize:11,color:"#54584F",display:"flex",flexDirection:"column",gap:4,flex:"1 1 90px",minWidth:80}}>
+                                  Min days
+                                  <input type="number" min="1" value={editBuffer?.min_days ?? 1}
+                                    onChange={e=>bufferUpdate({ min_days: e.target.value })}
+                                    onFocus={e=>e.target.select()}
+                                    style={{...INP,marginBottom:0,width:"100%"}}/>
+                                </label>
+                                <label style={{fontFamily:F2,fontSize:11,color:"#54584F",display:"flex",flexDirection:"column",gap:4,flex:"1 1 90px",minWidth:80}}>
+                                  Max days
+                                  <input type="number" min="1" value={editBuffer?.max_days ?? 14}
+                                    onChange={e=>bufferUpdate({ max_days: e.target.value })}
+                                    onFocus={e=>e.target.select()}
+                                    style={{...INP,marginBottom:0,width:"100%"}}/>
+                                </label>
+                                <label style={{fontFamily:F2,fontSize:11,color:"#54584F",display:"flex",flexDirection:"column",gap:4,flex:"1 1 130px",minWidth:100}}>
+                                  Min notice <span style={{color:"#A3B18A",fontWeight:400}}>(hours)</span>
+                                  <input type="number" min="0" value={editBuffer?.min_lead_hours ?? ''}
+                                    onChange={e=>bufferUpdate({ min_lead_hours: e.target.value })}
+                                    onFocus={e=>e.target.select()}
+                                    placeholder="48"
+                                    title="Minimum booking notice in hours. Default 48."
+                                    style={{...INP,marginBottom:0,width:"100%"}}/>
+                                </label>
+                                <label style={{fontFamily:F2,fontSize:11,color:"#54584F",display:"flex",flexDirection:"column",gap:4,flex:"2 1 180px",minWidth:140}}>
+                                  Booqable product ID <span style={{color:"#A3B18A",fontWeight:400}}>(optional)</span>
+                                  <input type="text" value={editBuffer?.booqable_product_id ?? ''}
+                                    onChange={e=>bufferUpdate({ booqable_product_id: e.target.value })}
+                                    placeholder="leave blank if not using Booqable"
+                                    title="When set, Wello syncs accepted bookings into your Booqable calendar."
+                                    style={{...INP,marginBottom:0,width:"100%"}}/>
+                                </label>
+                              </div>
+                              <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Add-ons</p>
+                              {(editBuffer?.addons || []).length > 0 && (
+                                <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:8}}>
+                                  {(editBuffer.addons || []).map((a, ai) => (
+                                    <div key={ai} style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",padding:"8px 10px",background:"#F5F3EE",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8}}>
+                                      <input value={a.label}
+                                        onChange={e=>bufferUpdateAddon(ai, { label: e.target.value })}
+                                        placeholder="Label (e.g. Helmet)"
+                                        style={{...INP,marginBottom:0,flex:"2 1 160px",minWidth:0}}/>
+                                      <div style={{position:"relative",flex:"1 1 100px",minWidth:80}}>
+                                        <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
+                                        <input type="number" min="0" value={a.price_eur}
+                                          onChange={e=>bufferUpdateAddon(ai, { price_eur: e.target.value })}
+                                          onFocus={e=>e.target.select()}
+                                          placeholder="0 = free"
+                                          style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
+                                      </div>
+                                      <button type="button" onClick={()=>bufferRemoveAddon(ai)} aria-label="Remove add-on"
+                                        style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 9px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
+                                        Remove
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <button type="button" onClick={bufferAddAddon}
+                                style={{background:"transparent",border:"1px dashed rgba(33,60,24,0.4)",color:"#213C18",fontFamily:F2,fontSize:11,fontWeight:600,padding:"7px 14px",borderRadius:999,cursor:"pointer"}}>
+                                + Add add-on
+                              </button>
+                            </div>
+                          )}
+
                           {/* Group pricing */}
+                          {!isRentalKind && (<>
                           <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Group pricing (optional)</p>
                           <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:14}}>
                             <div style={{position:"relative",flex:"1 1 160px",minWidth:120}}>
@@ -8515,6 +9170,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                               + Add location
                             </button>
                           </div>
+                          </>)}
 
                           <div style={{display:"flex",gap:8,justifyContent:"space-between",flexWrap:"wrap"}}>
                             <button type="button" onClick={()=>dashRemoveOffering(idx)}
@@ -8813,13 +9469,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                 style={{...INP,paddingLeft:20,marginBottom:0,width:110}}/>
                             </span>
                           </label>
-                          <label style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>Deposit
+                          <label style={{fontFamily:F2,fontSize:11,color:"#54584F"}}>Deposit <span style={{color:"#A3B18A",fontWeight:400}}>(you collect on pickup)</span>
                             <span style={{position:"relative",display:"inline-block",marginLeft:6}}>
                               <span style={{position:"absolute",left:8,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontSize:12,fontWeight:600,pointerEvents:"none"}}>€</span>
                               <input type="number" min="0" value={newOff.deposit_eur}
                                 onChange={e=>setNewOff(p=>({...p,deposit_eur:e.target.value}))}
                                 onFocus={e=>e.target.select()}
                                 placeholder="optional"
+                                title="Informational only. Wello does not hold or process deposits — you take it at pickup and refund on return."
                                 style={{...INP,paddingLeft:20,marginBottom:0,width:110}}/>
                             </span>
                           </label>
@@ -8989,7 +9646,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             {dashSessionOfferings.length > 0 && (
               <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:14}}>
                 <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>Offering photos <span style={{fontWeight:500,textTransform:"none",letterSpacing:0,fontSize:11,color:"#A3B18A",marginLeft:6}}>Optional</span></p>
-                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Attach a photo to each request-based offering (private sessions, treatments). Shows on the offering row inside your venue popup. Does not change your main marketplace card — that stays your primary venue photo.</p>
+                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Attach a photo to each offering — private sessions, treatments and rentals. Shows on the offering row inside your venue popup (rentals especially benefit: customers want to see the actual bike, board, kayak, etc.). Does not change your main marketplace card — that stays your primary venue photo.</p>
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>
                   {dashSessionOfferings.map((off, idx) => {
                     const thumb = off?.img || null;
@@ -9010,7 +9667,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                         <div style={{flex:1,minWidth:0}}>
                           <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:"0 0 2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{off.type}</p>
                           <p style={{fontFamily:F2,fontSize:11,color:pending?"#7A5C32":"#54584F",margin:0,fontStyle:pending?"italic":"normal"}}>
-                            {pending ? "New photo selected — click Save to upload." : `${off.length_min} min · €${off.price_eur}`}
+                            {pending ? "New photo selected — click Save to upload." : (off.kind === 'rental' ? `€${off.price_eur} / day` : `${off.length_min} min · €${off.price_eur}`)}
                           </p>
                         </div>
                         <div style={{display:"flex",gap:6,flexShrink:0}}>
@@ -10171,8 +10828,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 16px",lineHeight:1.6}}>Connect your existing booking system so your schedule stays in sync automatically.</p>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {[
-                  {id:"acuity", name:"Acuity Scheduling",desc:"Auto-sync your classes from Acuity", icon:"📅"},
-                  {id:"manual", name:"Manage manually",  desc:"Add & edit slots directly in Wello", icon:"✏️"},
+                  {id:"acuity",   name:"Acuity Scheduling", desc:"Auto-sync your classes from Acuity",                         icon:"📅"},
+                  {id:"booqable", name:"Booqable",          desc:"Sync your rental inventory + auto-create bookings in Booqable", icon:"🚲"},
+                  {id:"manual",   name:"Manage manually",   desc:"Add & edit slots directly in Wello",                          icon:"✏️"},
                 ].map(item=>(
                   <div key={item.id} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:integration===item.id?"rgba(33,60,24,0.05)":"#F5F3EE",borderRadius:10,border:integration===item.id?"1px solid rgba(33,60,24,0.2)":"1px solid transparent",transition:"all .15s",cursor:"pointer"}}
                     onClick={()=>setIntegration(item.id)}>
@@ -10197,6 +10855,74 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.6}}>Add & edit slots directly in the Schedule tab.</p>
                 </div>
               )}
+              {integration==="booqable"&&(
+                <div style={{marginTop:14,padding:"14px 16px",background:"#F5F3EE",borderRadius:10}}>
+                  <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Booqable</p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 14px",lineHeight:1.6}}>Connect your Booqable rental account. Once wired, Wello can pull your bike list into your offerings and every booking Wello confirms will land in your Booqable calendar automatically.</p>
+
+                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Booqable subdomain</label>
+                  <input value={isPreview ? "reynescycling" : (settingsForm.booqable_subdomain || "")}
+                    onChange={e=>!isPreview && setSettingsForm(p=>({...p,booqable_subdomain:e.target.value}))}
+                    placeholder="reynescycling"
+                    style={{...INP}}
+                    onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:300,margin:"6px 0 12px",lineHeight:1.5}}>The part before <b>.booqable.com</b> in the URL you use to sign in. If yours is <i>reynescycling.booqable.com</i>, paste <b>reynescycling</b>.</p>
+
+                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Booqable API key</label>
+                  <input value={isPreview ? "•••••••••" : (settingsForm.booqable_api_key || "")}
+                    type="password"
+                    autoComplete="off"
+                    onChange={e=>!isPreview && setSettingsForm(p=>({...p,booqable_api_key:e.target.value}))}
+                    placeholder="paste your API key"
+                    style={{...INP}}
+                    onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:300,margin:"6px 0 14px",lineHeight:1.5}}>Generate one in Booqable at <b>Settings → Company → API</b>. Give it read + write access.</p>
+
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    <button onClick={saveSettings} disabled={saving||isPreview}
+                      style={{padding:"10px 20px",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer"}}>
+                      {saving ? "Saving" : "Save Booqable settings"}
+                    </button>
+                    <button onClick={async () => {
+                      if (isPreview) return;
+                      setSaveMsg({ kind: "settings", text: "Testing Booqable connection…" });
+                      const { data, error } = await supabase.functions.invoke('booqable-sync', {
+                        body: { op: 'test_connection', business_id: bizData.id },
+                      });
+                      if (error) { setSaveMsg({ kind: "err", text: `Test failed: ${error.message}` }); return; }
+                      if (data?.ok && data?.connected) {
+                        setSaveMsg({ kind: "settings", text: `Connected — found ${data.product_count ?? 0} products in your Booqable.` });
+                      } else {
+                        setSaveMsg({ kind: "err", text: `Test failed: ${data?.error || data?.reason || 'unknown'}` });
+                      }
+                    }}
+                      disabled={isPreview || !settingsForm.booqable_api_key || !settingsForm.booqable_subdomain}
+                      style={{padding:"10px 20px",background:"transparent",color:"#213C18",border:"1px solid rgba(33,60,24,0.35)",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(isPreview || !settingsForm.booqable_api_key || !settingsForm.booqable_subdomain)?"not-allowed":"pointer",opacity:(isPreview || !settingsForm.booqable_api_key || !settingsForm.booqable_subdomain)?0.6:1}}>
+                      Test connection
+                    </button>
+                    <button onClick={async () => {
+                      if (isPreview) return;
+                      setSaveMsg({ kind: "settings", text: "Syncing catalog from Booqable…" });
+                      const { data, error } = await supabase.functions.invoke('booqable-sync', {
+                        body: { op: 'sync_catalog', business_id: bizData.id },
+                      });
+                      if (error) { setSaveMsg({ kind: "err", text: `Sync failed: ${error.message}` }); return; }
+                      if (data?.ok) {
+                        setSaveMsg({ kind: "settings", text: `Synced ${data.product_count} products (${data.created} new, ${data.updated} updated). Refresh the page to see them under Offerings.` });
+                      } else {
+                        setSaveMsg({ kind: "err", text: `Sync failed: ${data?.error || data?.reason || 'unknown'}` });
+                      }
+                    }}
+                      disabled={isPreview || !settingsForm.booqable_api_key || !settingsForm.booqable_subdomain}
+                      style={{padding:"10px 20px",background:"transparent",color:"#213C18",border:"1px solid rgba(33,60,24,0.35)",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(isPreview || !settingsForm.booqable_api_key || !settingsForm.booqable_subdomain)?"not-allowed":"pointer",opacity:(isPreview || !settingsForm.booqable_api_key || !settingsForm.booqable_subdomain)?0.6:1}}>
+                      Sync catalog
+                    </button>
+                  </div>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"10px 0 0",lineHeight:1.5}}>
+                    <b>Sync catalog</b> pulls your Booqable bike list, prices, images and stock counts into Wello's offerings. Safe to re-run: refreshes prices and stock without touching any tweaks you've made (min days, deposit, weekly rate, add-ons).
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* WhatsApp bookings — pragmatic alternative for partners who
@@ -10217,6 +10943,66 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 {saving ? "Saving" : "Save WhatsApp number"}
               </button>
             </div>
+
+            {/* Notification preferences — email is always on; SMS +
+                WhatsApp are opt-in per business because both channels
+                have per-month cost/rate limits. Toggle state persists
+                to businesses.notify_sms_enabled / notify_whatsapp_enabled;
+                notify-venue-* fns check the flag before firing. */}
+            <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
+              <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Notification preferences</h3>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 16px",lineHeight:1.6}}>Email always fires on a new booking. Turn on the extras below if you want a nudge on your phone too — useful if you don't check email straight away.</p>
+
+              {/* Email — always on, shown as a locked toggle for
+                  reassurance ("yes, you're covered by default"). */}
+              <div style={{display:"flex",alignItems:"flex-start",gap:12,padding:"12px 14px",background:"#F5F3EE",borderRadius:10,marginBottom:8}}>
+                <span style={{fontSize:20,flexShrink:0,marginTop:2}}>✉️</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:"0 0 3px",lineHeight:1.4}}>Email <span style={{color:"#A3B18A",fontWeight:500,fontSize:11,marginLeft:4}}>Always on</span></p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.55}}>Booking requests always land in your inbox at <b>{settingsForm.email || bizData.email || 'your venue email'}</b>. Accept or decline from the buttons in the email.</p>
+                </div>
+              </div>
+
+              {/* SMS toggle — requires phone on file. */}
+              <label style={{display:"flex",gap:12,alignItems:"flex-start",padding:"12px 14px",background:"#F5F3EE",border:`1px solid ${settingsForm.notify_sms_enabled ? "rgba(33,60,24,0.35)" : "rgba(195,200,188,0.5)"}`,borderRadius:10,cursor:isPreview?"not-allowed":"pointer",marginBottom:8}}>
+                <input type="checkbox"
+                  checked={!!settingsForm.notify_sms_enabled}
+                  onChange={e=>!isPreview && setSettingsForm(p=>({...p,notify_sms_enabled:e.target.checked}))}
+                  disabled={isPreview}
+                  style={{marginTop:3,width:16,height:16,accentColor:"#213C18",cursor:isPreview?"not-allowed":"pointer",flexShrink:0}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:"0 0 3px",lineHeight:1.4}}>📱 SMS text alerts</p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.55}}>
+                    When on, we text <b>{settingsForm.phone || bizData.phone || 'your business phone'}</b> as soon as a new booking request lands.
+                    {!(settingsForm.phone || bizData.phone) && <span style={{color:"#C46A4D",fontWeight:600}}> Add a phone number above to enable.</span>}
+                  </p>
+                </div>
+              </label>
+
+              {/* WhatsApp toggle — requires whatsapp number on file. */}
+              <label style={{display:"flex",gap:12,alignItems:"flex-start",padding:"12px 14px",background:"#F5F3EE",border:`1px solid ${settingsForm.notify_whatsapp_enabled ? "rgba(33,60,24,0.35)" : "rgba(195,200,188,0.5)"}`,borderRadius:10,cursor:isPreview?"not-allowed":"pointer"}}>
+                <input type="checkbox"
+                  checked={!!settingsForm.notify_whatsapp_enabled}
+                  onChange={e=>!isPreview && setSettingsForm(p=>({...p,notify_whatsapp_enabled:e.target.checked}))}
+                  disabled={isPreview}
+                  style={{marginTop:3,width:16,height:16,accentColor:"#213C18",cursor:isPreview?"not-allowed":"pointer",flexShrink:0}}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:"0 0 3px",lineHeight:1.4}}>💬 WhatsApp alerts</p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.55}}>
+                    When on, we WhatsApp <b>{settingsForm.bookings_whatsapp || 'your WhatsApp number'}</b> when a booking lands.
+                    {!settingsForm.bookings_whatsapp && <span style={{color:"#C46A4D",fontWeight:600}}> Add a WhatsApp number above to enable.</span>}
+                  </p>
+                </div>
+              </label>
+
+              <button onClick={saveSettings} disabled={saving||isPreview}
+                style={{marginTop:14,padding:"10px 20px",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer"}}>
+                {saving ? "Saving" : "Save preferences"}
+              </button>
+              {saveMsg.kind === "settings" && <p style={{fontFamily:F2,fontSize:12,color:"#213C18",margin:"6px 0 0"}}>{saveMsg.text}</p>}
+              {saveMsg.kind === "err"      && <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:"6px 0 0"}}>{saveMsg.text}</p>}
+            </div>
+
             </div>
             )}
 
@@ -14778,6 +15564,12 @@ export default function App() {
         const { data } = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle();
         if (data) setProfile(data);
       }, 1500);
+      // Resume a rental booking form if one was stashed pre-redirect.
+      // Actual re-opening happens once listings load (effect below).
+      try {
+        const stashed = JSON.parse(sessionStorage.getItem('wello_pending_rental_resume') || 'null');
+        if (stashed?.bizId) setPendingRentalResume(stashed);
+      } catch { /* noop */ }
     }
 
     const {data:{subscription}} = supabase.auth.onAuthStateChange((event, session)=>{
@@ -14887,24 +15679,73 @@ export default function App() {
   //
   // Also runs a best-effort cleanup on any legacy caches sitting in
   // localStorage so returning users get a clean slate.
+  //
+  // In-flight guard prevents concurrent calls from contending for
+  // Supabase's NavigatorLock. Without it, view flips + auth state
+  // changes + focus events can each fire fetchListings at once, and
+  // the SDK's per-tab auth lock times out with
+  // "Lock ... was released because another request stole it" — which
+  // spams the console and returns empty data. The guard queues a
+  // single re-fetch if one comes in while another's mid-flight, so
+  // we don't miss legitimate refresh signals.
+  const fetchInFlightRef = useRef(false);
+  const fetchQueuedRef   = useRef(false);
   const fetchListings = useCallback(async () => {
+    if (fetchInFlightRef.current) {
+      fetchQueuedRef.current = true;
+      return;
+    }
+    fetchInFlightRef.current = true;
+    // Everything below runs inside try/finally so a thrown error
+    // (auth-lock timeout, network blip, etc.) still releases the
+    // in-flight ref and clears listingsLoading — otherwise the UI
+    // gets stuck on "Loading venues…" forever.
     try {
-      localStorage.removeItem("wello_listings");
-      localStorage.removeItem("wello_listings_v2");
-    } catch { /* non-critical */ }
-    // Pull parent business fields (address, contact, email) via the
-    // business_id FK so the customer venue-details page can show the full
-    // address without needing us to mirror every column into listings.
-    // Also lets us tell demo seed rows apart from real partner signups
-    // (real partners never have a demo- prefixed email).
-    const { data: listingRows, error } = await supabase
-      .from("listings")
-      .select("*, slots(*), businesses(address, phone, website, instagram, email, gallery, session_offerings, travel_areas, cancellation_safety_window, cancellation_window_hours, lat, lng)")
-      .eq("status","active")
-      .order("id");
+      try {
+        localStorage.removeItem("wello_listings");
+        localStorage.removeItem("wello_listings_v2");
+      } catch { /* non-critical */ }
+      // Pull parent business fields (address, contact, email) via the
+      // business_id FK so the customer venue-details page can show the full
+      // address without needing us to mirror every column into listings.
+      // Also lets us tell demo seed rows apart from real partner signups
+      // (real partners never have a demo- prefixed email).
+      // Do the fetch. Retries once with a short delay on auth-lock
+      // timeouts because those are almost always transient — the SDK's
+      // NavigatorLock frees up in milliseconds once whichever concurrent
+      // call was in-flight finishes.
+      async function doFetch() {
+        try {
+          const res = await supabase
+            .from("listings")
+            .select("*, slots(*), businesses(name, address, phone, website, instagram, email, gallery, session_offerings, travel_areas, cancellation_safety_window, cancellation_window_hours, lat, lng)")
+            .eq("status","active")
+            .order("id");
+          return { data: res.data, error: res.error };
+        } catch (thrown) {
+          return { data: null, error: { message: (thrown && thrown.message) || String(thrown) } };
+        }
+      }
+      let { data: listingRows, error } = await doFetch();
+      // Single retry on auth-lock — one delay is enough because the
+      // stealing request typically completes in <100ms.
+      if (error && String(error.message || '').match(/lock|Lock/)) {
+        await new Promise(r => setTimeout(r, 250));
+        const retry = await doFetch();
+        listingRows = retry.data;
+        error = retry.error;
+      }
     if (error) {
-      console.error("Error fetching listings:", error);
-      setListings(LISTINGS);
+      // NavigatorLockAcquireTimeoutError happens when the SDK's auth
+      // lock times out mid-request. Not fatal — the queued re-fetch
+      // below picks up. Log at warn to reduce console noise.
+      const msg = String(error?.message || '');
+      if (msg.includes('lock') || msg.includes('Lock')) {
+        console.warn('fetchListings: auth lock timeout, will retry via queue');
+      } else {
+        console.error("Error fetching listings:", error);
+        setListings(LISTINGS);
+      }
     } else if (listingRows && listingRows.length > 0) {
       // Collision filter: for partners generating multiple durations
       // from the same daily window, sibling slots overlap in time
@@ -14925,7 +15766,11 @@ export default function App() {
       const transformed = listingRows.map(row => ({
         id: row.id,
         business_id: row.business_id || null,
-        name: row.name,
+        // Prefer businesses.name so a partner edit (or a direct edit in
+        // the businesses table) propagates without needing a separate
+        // listings.name update. Falls back to the denormalised
+        // listings.name for legacy rows where the join is missing.
+        name: row.businesses?.name || row.name,
         cat: row.category || row.cat || "Other",
         cat2: row.cat2 || null,
         loc: row.location || row.loc || "",
@@ -14995,10 +15840,14 @@ export default function App() {
             credits: s.credits,
             acuity_type_id: s.acuity_type_id ?? null,
             booking_mode: s.booking_mode || 'instant',
-            // Where the session physically happens. Defaults to 'customer'
-            // to preserve pre-migration behaviour for private-instructor
-            // slots that predate the venue_side column.
-            venue_side: s.venue_side || 'customer',
+            // Where the session physically happens. Defaults are
+            // category-based: Private Instructor slots default to
+            // 'customer' (preserves the pre-migration PI behaviour);
+            // every other category defaults to 'instructor' (at
+            // venue) so a fresh studio's slots don't incorrectly
+            // show "at your home" just because the venue_side column
+            // wasn't stamped at insert time.
+            venue_side: s.venue_side || ((row.businesses?.category || row.category) === 'Private Instructor' ? 'customer' : 'instructor'),
           }))
       }));
       // Ordering: real partners first, demo seeds last. Real partners are
@@ -15013,10 +15862,22 @@ export default function App() {
         return (b.id || 0) - (a.id || 0);
       });
       setListings(sorted);
-    } else {
-      setListings(LISTINGS);
+      } else {
+        setListings(LISTINGS);
+      }
+    } finally {
+      // Always release, even if an unexpected error slipped past the
+      // inner catch — otherwise the UI hangs on "Loading venues…".
+      setListingsLoading(false);
+      fetchInFlightRef.current = false;
+      // Drain any refresh that was queued while we were in-flight —
+      // covers the case where a view flip fired mid-fetch and would
+      // otherwise be dropped.
+      if (fetchQueuedRef.current) {
+        fetchQueuedRef.current = false;
+        setTimeout(() => { fetchListings(); }, 0);
+      }
     }
-    setListingsLoading(false);
   }, []);
   // Initial mount fetch.
   useEffect(() => { fetchListings(); }, [fetchListings]);
@@ -15066,6 +15927,34 @@ export default function App() {
     }
     window.location.href = data.url;
   }, []);
+
+  // Rental-scoped top-up: stashes the in-flight rental booking form to
+  // sessionStorage before redirecting to Stripe. When Stripe returns
+  // (?credits=added) the app reads the stash and re-opens the BizPanel
+  // with the same offering + dates + add-ons + health-ack still populated
+  // so the customer is one tap away from Send request.
+  const topUpAndResume = useCallback(async ({ quantity, resume }) => {
+    if (!authSession) { setAuthModal({ mode: 'signin' }); return; }
+    try {
+      sessionStorage.setItem('wello_pending_rental_resume', JSON.stringify(resume || {}));
+    } catch { /* sessionStorage disabled — non-fatal, checkout still proceeds */ }
+    await doCheckout(quantity);
+  }, [authSession, doCheckout]);
+  // Pending rental resume — populated on ?credits=added if sessionStorage
+  // has a stashed rental booking form. Consumed by BizPanel once it mounts
+  // on the matching business.
+  const [pendingRentalResume, setPendingRentalResume] = useState(null);
+  // Once listings have loaded and the resume points at a real business,
+  // open the biz panel. BizPanel then consumes `resumeRental` to seed
+  // the rental form. Explore view so the BizPanel modal has a valid host.
+  useEffect(() => {
+    if (!pendingRentalResume?.bizId) return;
+    if (!Array.isArray(listings) || listings.length === 0) return;
+    const biz = listings.find(l => String(l.id ?? l.business_id) === String(pendingRentalResume.bizId));
+    if (!biz) return;
+    setView('explore');
+    setSelBiz(biz);
+  }, [pendingRentalResume, listings]);
   // If a guest clicked Buy, we stashed their quantity and opened the sign-up
   // modal. As soon as the session lands, resume the checkout automatically
   // so they never have to click Buy twice.
@@ -15299,39 +16188,52 @@ export default function App() {
         body: { booking_id: inserted.id, source: effectiveRequest ? 'booking_hold' : 'booking' },
       });
       if (spendRes.error || spendRes.data?.error) {
-        const err = spendRes.error?.message || spendRes.data?.error || 'spend failed';
+        // Pull the STRUCTURED error code from data first — Supabase's
+        // functions.invoke wraps 4xx/5xx into a generic "non-2xx" error
+        // whose message doesn't carry our specific code (slot_full,
+        // slot_collision, insufficient_credits). The body of the
+        // response does carry it, and lives on data.error.
+        const err = spendRes.data?.error || spendRes.error?.message || 'spend failed';
         console.error('[onConfirm] spend-booking-credits failed:', err);
         // Server has already deleted the booking (or attempted to).
         // Revert optimistic decrement locally so the balance snaps back.
         setCredits(c => c + cost);
         setBookings(p => p.filter(bk => bk.id !== inserted.id && bk.status !== bookingStatus));
+        // Un-bump the optimistic slots.booked so the customer sees an
+        // accurate remaining count when they try again.
+        if (!isPrivateBooking) {
+          setListings(p=>p.map(b=>b.id!==biz.id?b:{...b,slots:b.slots.map(s=>s.id!==slot.id?s:{...s,booked:Math.max(0,(s.booked||0)-form.guests)})}));
+        }
         if (err === 'insufficient_credits') {
           showToast("Not enough credits. Top up and try again.","error");
+        } else if (err === 'slot_full') {
+          showToast("That slot just filled up. Try a different time.","error");
+        } else if (err === 'slot_collision') {
+          showToast("Another booking just claimed that time. Try a different one.","error");
         } else {
           showToast("Couldn't hold your credits — booking was rolled back.","error");
         }
         return;
       }
-      // Trigger has refreshed profiles.credits authoritatively; pull it.
+      // Trigger has refreshed profiles.credits authoritatively. Use the
+      // new_balance the fn returned directly so we don't race the DB
+      // read — the fetch inside reconcileCredits can miss the freshly
+      // committed value on some connection pool paths. reconcileCredits
+      // still fires below to refresh the purchased/bonus split.
+      const returnedBalance = Number(spendRes.data?.new_balance);
+      if (Number.isFinite(returnedBalance)) {
+        setCredits(() => returnedBalance);
+      }
       reconcileCredits();
 
       // Tick the bookings refresh counter so ProfilePage refetches and the
       // new row shows up immediately (it was rendered from a fetched list).
       setBookingsVersion(v => v + 1);
 
-      // Bump slots.booked so the slot disappears from the marketplace for
-      // everyone else. For private instructors with spots=1 this means once
-      // one customer requests a time, no one else can request the same one.
-      // If the instructor later declines, instructor-booking-response
-      // decrements this back so the slot reopens.
-      try {
-        const newBooked = (slot.booked || 0) + (form.guests || 1);
-        const { error: slotUpdErr } = await supabase
-          .from('slots').update({ booked: newBooked }).eq('id', slot.id);
-        if (slotUpdErr) console.warn('[onConfirm] slots.booked bump failed:', slotUpdErr.message);
-      } catch (e) {
-        console.warn('[onConfirm] slots.booked bump exception:', e?.message);
-      }
+      // slots.booked bump used to run here on the client — now it
+      // happens atomically inside try_reserve_slot (called from
+      // spend-booking-credits above) so we can't oversell a class by
+      // racing two customers on the last seat. Nothing to do here.
 
       // 3. Fire-and-forget downstream signals — three modes:
       //   - request + private instructor → SMS the instructor.
@@ -15355,6 +16257,16 @@ export default function App() {
           else console.log('[notify-venue-slot-request] result:', data);
         });
       } else {
+        // Instant-book: fire Acuity sync AND fire the venue/customer
+        // notification email (email + opt-in SMS + opt-in WhatsApp).
+        // Both are fire-and-forget so the customer's success toast
+        // isn't gated on downstream network calls.
+        supabase.functions.invoke('notify-venue-instant-booking', {
+          body: { booking_id: inserted.id },
+        }).then(({ data, error }) => {
+          if (error) console.warn('[notify-venue-instant-booking] invoke failed:', error.message);
+          else console.log('[notify-venue-instant-booking] result:', data);
+        });
         supabase.functions.invoke('bookings-sync', {
           body: {
             booking_id: inserted.id,
@@ -15541,7 +16453,7 @@ export default function App() {
         {/* PAGES — padded for fixed banner+nav */}
         <div style={{paddingTop:headerH}}>
           {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds} onGotoCredits={gotoCredits}/>}
-          {view==="explore"    &&<ExplorePage listings={listings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds} profile={profile} authSession={authSession} onSaveInterests={saveInterests}/>}
+          {view==="explore"    &&<ExplorePage listings={listings} listingsLoading={listingsLoading} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds} profile={profile} authSession={authSession} onSaveInterests={saveInterests}/>}
           {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} creditSplit={creditSplit} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion} onSaveInterests={saveInterests} onCancelBooking={cancelBooking} onProfilePatch={(patch)=>setProfile(p => p ? { ...p, ...patch } : { id: authSession?.user?.id, ...patch })}/>}
           {/* Keep-mounted-once BusinessPortal. First navigation to biz-portal
               mounts the component; subsequent navigations away hide it via
@@ -15674,7 +16586,10 @@ export default function App() {
                      authSession={authSession} credits={credits}
                      onOpenSignIn={()=>{setSelBiz(null);setAuthModal({mode:"signin"});}}
                      onGotoCredits={()=>{setSelBiz(null);setView("credits");}}
-                     onBookingsChanged={()=>setBookingsVersion(v=>v+1)}
+                     onTopUpAndResume={topUpAndResume}
+                     resumeRental={pendingRentalResume}
+                     onRentalResumeConsumed={()=>{ setPendingRentalResume(null); try { sessionStorage.removeItem('wello_pending_rental_resume'); } catch { /* noop */ } }}
+                     onBookingsChanged={()=>{ setBookingsVersion(v=>v+1); reconcileCredits(); }}
                      showToast={showToast}/>}
       {bkData   &&<BookingModal biz={bkData.biz} slot={bkData.slot} onClose={()=>setBkData(null)} onConfirm={onConfirm} credits={credits} onBuyCredits={()=>{setBkData(null);setView("credits");}} profile={profile} authSession={authSession} onOpenSignIn={()=>{setBkData(null);setAuthModal({mode:"signin"});}}/>}
       {authModal&&<AuthModal initialMode={authModal.mode} onClose={()=>setAuthModal(null)} onSuccess={()=>setAuthModal(null)} onOpenTerms={()=>{setAuthModal(null);setView("terms");}}/>}

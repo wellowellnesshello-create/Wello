@@ -23,6 +23,32 @@ const PRIVATE_WINDOW_HOURS  = 48
 // (session_offerings[i].rental_cancellation_hours) — respected below.
 const RENTAL_WINDOW_HOURS   = 24
 
+// Wello operates in Mallorca. booking_date / start_time are stored as
+// local wall-clock strings; convert them into a UTC Date via the
+// Europe/Madrid tz offset (DST-aware via Intl) so hoursLeft comparisons
+// are correct regardless of where this function runs.
+const VENUE_TZ = 'Europe/Madrid'
+function tzOffsetMinutes(date: Date, tz: string): number {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  })
+  const parts = Object.fromEntries(dtf.formatToParts(date).map(p => [p.type, p.value] as const)) as Record<string, string>
+  const asUTC = Date.UTC(
+    Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+    Number(parts.hour === '24' ? '00' : parts.hour), Number(parts.minute), Number(parts.second),
+  )
+  return (asUTC - date.getTime()) / 60000
+}
+function localToUtc(dateStr: string, timeStr: string, tz: string): Date {
+  const naive = new Date(`${dateStr}T${timeStr}:00Z`)
+  const off1 = tzOffsetMinutes(naive, tz)
+  const first = new Date(naive.getTime() - off1 * 60000)
+  const off2 = tzOffsetMinutes(first, tz)
+  return new Date(naive.getTime() - off2 * 60000)
+}
+
 // Fire-and-forget Booqable release call. Only fires for rentals with
 // a booqable_product_id set; booqable-sync no-ops otherwise.
 function fireBooqableRelease(bookingId: string) {
@@ -67,7 +93,7 @@ serve(async (req) => {
     // still in a cancellable state.
     const { data: booking, error: bookingErr } = await supabase
       .from('bookings')
-      .select('id, user_id, business_id, slot_id, booking_date, end_date, start_time, credits_used, status, offering_type')
+      .select('id, user_id, business_id, slot_id, booking_date, end_date, start_time, credits_used, status, offering_type, notes')
       .eq('id', booking_id)
       .maybeSingle()
     if (bookingErr) {
@@ -139,6 +165,21 @@ serve(async (req) => {
     // rental_cancellation_hours override; classes fall back to the
     // Private Instructor split (48h) vs standard (24h).
     const isRental = !!booking.end_date
+    // Post-confirmation self-cancel is a slot-based (class) privilege
+    // only — rentals + appointments (offering-based, no slot_id) require
+    // the customer to contact the venue directly. This mirrors the
+    // client-side gate; the server enforcement stops a crafted request
+    // from bypassing it. Pending states are always cancellable (handled
+    // above), so this only bites once status='confirmed'.
+    const isClassBooking = !!booking.slot_id && !isRental
+    if (!isClassBooking) {
+      return json({
+        error: isRental
+          ? 'Confirmed rentals can only be changed by contacting the venue directly.'
+          : 'Confirmed appointments can only be changed by contacting the venue directly.',
+        contact_venue: true,
+      }, 403)
+    }
     const { data: business, error: bizErr } = await supabase
       .from('businesses')
       .select('category, session_offerings')
@@ -156,11 +197,15 @@ serve(async (req) => {
     }
 
     // 3. Enforce the cancellation window.
-    // Rentals: window is measured against booking_date at 09:00 (assumed
-    // pickup start). Classes: against booking_date + start_time.
+    // Rentals: window is measured against the customer-picked pickup
+    // time on booking.start_time (persisted by try_reserve_rental).
+    // Legacy rentals with no start_time fall back to 09:00. Classes:
+    // against booking_date + start_time as before. Both are interpreted
+    // as Europe/Madrid local so DST transitions don't shift the
+    // effective cancellation deadline by an hour.
     const sessionStart = isRental
-      ? new Date(`${booking.booking_date}T09:00:00`)
-      : new Date(`${booking.booking_date}T${(booking.start_time || '00:00').slice(0, 5)}:00`)
+      ? localToUtc(booking.booking_date, String(booking.start_time || '09:00').slice(0, 5), VENUE_TZ)
+      : localToUtc(booking.booking_date, String(booking.start_time || '00:00').slice(0, 5), VENUE_TZ)
     const hoursLeft = (sessionStart.getTime() - Date.now()) / (1000 * 60 * 60)
     if (!Number.isFinite(hoursLeft)) return json({ error: 'Could not determine session start time.' }, 500)
     if (hoursLeft < windowHours) {

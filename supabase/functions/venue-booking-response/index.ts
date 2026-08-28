@@ -130,7 +130,7 @@ async function loadContext(supabase: ReturnType<typeof createClient>, bookingId:
     .maybeSingle()
   if (bookErr || !booking) return { ok: false as const, error: 'Booking not found' }
   const { data: business } = await supabase
-    .from('businesses').select('id, name, category, location, email, cancellation_window_hours').eq('id', booking.business_id).maybeSingle()
+    .from('businesses').select('id, user_id, name, category, location, email, cancellation_window_hours').eq('id', booking.business_id).maybeSingle()
   const { data: customer } = await supabase
     .from('profiles').select('id, full_name, email, credits').eq('id', booking.user_id).maybeSingle()
   return { ok: true as const, booking, business, customer }

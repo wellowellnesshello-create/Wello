@@ -88,10 +88,30 @@ verify_jwt = false
 # the booking's user_id — the gateway JWT check is redundant.
 verify_jwt = false
 
+[functions.notify-venue-instant-booking]
+# Fired from the customer's signed-in browser after an instant-book
+# class confirms. Same auth pattern as the rental/slot notify fns —
+# getUser(token) verifies the caller owns the booking.
+verify_jwt = false
+
 [functions.booqable-sync]
 # Server-to-server only (venue-booking-response, and eventually a
 # cron for reconciliation). Requires the caller to hold the service-
 # role key; explicit Bearer check inside. Not user-callable.
+verify_jwt = false
+
+[functions.send-booking-reminders]
+# Called hourly by pg_cron via pg_net with an X-Cron-Token header. Same
+# reason as auto-decline-stale-bookings — the gateway rejects
+# sb_secret_ tokens, so the platform JWT check is bypassed and the
+# function enforces its own shared-secret gate against
+# CRON_INVOKE_SECRET.
+verify_jwt = false
+
+[functions.send-setup-reminders]
+# Called daily by pg_cron via pg_net with an X-Cron-Token header. Same
+# reason as the other cron-invoked fns — sb_secret_ rejection at the
+# gateway. The fn enforces its own shared-secret gate.
 verify_jwt = false
 
 # extract-sessions intentionally has NO override here — it keeps the platform

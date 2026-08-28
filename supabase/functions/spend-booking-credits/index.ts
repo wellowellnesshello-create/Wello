@@ -103,6 +103,26 @@ serve(async (req) => {
     return json({ error: msg }, 500)
   }
 
+  // Atomic slot capacity check + increment. Guards against the
+  // "customer books past spots" case that the client-side stale-cache
+  // filter can't. Raises 'slot_full' when the slot is at capacity —
+  // we then roll back the booking so the ledger stays clean.
+  // No-op for slot-less bookings (rentals) because they're already
+  // capacity-checked at insert by try_reserve_rental.
+  const { error: capErr } = await supabase.rpc('try_reserve_slot', {
+    p_booking_id: bookingId,
+  })
+  if (capErr) {
+    const msg = capErr.message || ''
+    if (msg.includes('slot_full')) {
+      await supabase.from('bookings').delete().eq('id', bookingId)
+      return json({ error: 'slot_full' }, 409)
+    }
+    console.error('spend-booking-credits: capacity check failed', msg)
+    await supabase.from('bookings').delete().eq('id', bookingId)
+    return json({ error: msg }, 500)
+  }
+
   const { error: spendErr } = await supabase.rpc('spend_credits', {
     p_user_id:    userId,
     p_amount:     cost,

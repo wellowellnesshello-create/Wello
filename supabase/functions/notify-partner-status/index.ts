@@ -307,6 +307,10 @@ serve(async (req) => {
                   credits: off.price_eur,
                   acuity_type_id: null,
                   category: off.category || record.category || null,
+                  // PI slots travel to the customer; explicit stamp
+                  // overrides the slots.venue_side DB default which
+                  // is 'customer' for legacy reasons.
+                  venue_side: 'customer',
                 })
               }
             }
@@ -344,6 +348,10 @@ serve(async (req) => {
                 // multi-modality studios (Yoga Del Mar shows on Sound
                 // Bath filter because its sound-healing slot is tagged).
                 category: (sl.category && String(sl.category).trim()) || record.category || null,
+                // Non-PI = customer travels to the studio. Explicit stamp
+                // overrides the slots.venue_side DB default of 'customer'
+                // which was set for legacy PI-only tables.
+                venue_side: 'instructor',
               })
             }
           }
