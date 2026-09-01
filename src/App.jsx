@@ -14726,6 +14726,41 @@ function AdminSetupPage() {
               </div>
             );
           })()}
+
+          {/* Availability-sync health surface. Two things I need to see
+              before the partner does: (a) sessions the orchestrator
+              pulled but couldn't price — hidden inventory; (b) sync
+              failures older than 24h — the timetable is showing last
+              known state, not the current one. */}
+          {(() => {
+            const unpriced = businesses.filter(b => Number(b.sync_needs_price_count) > 0);
+            const now = Date.now();
+            const staleErr = businesses.filter(b => {
+              if (!b.sync_last_error) return false;
+              if (!b.sync_last_ok_at) return true; // never succeeded
+              return (now - new Date(b.sync_last_ok_at).getTime()) > 24 * 3600 * 1000;
+            });
+            if (unpriced.length === 0 && staleErr.length === 0) return null;
+            return (
+              <div style={{ margin: '10px 0 0', padding: '10px 12px', background: '#FFF6E5', border: '1px solid #E4C97A', borderRadius: 6 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: '#5A4A18', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Availability sync</p>
+                {unpriced.length > 0 && (
+                  <p style={{ fontSize: 11, color: '#5A4A18', margin: '0 0 4px', lineHeight: 1.55 }}>
+                    <strong>{unpriced.length}</strong> partner{unpriced.length===1?'':'s'} with unpriced sync'd sessions:
+                    {' '}{unpriced.slice(0, 5).map(b => `${b.name} (${b.sync_needs_price_count})`).join(', ')}
+                    {unpriced.length > 5 ? ` +${unpriced.length - 5} more` : ''}
+                  </p>
+                )}
+                {staleErr.length > 0 && (
+                  <p style={{ fontSize: 11, color: '#7A2E12', margin: 0, lineHeight: 1.55 }}>
+                    <strong>{staleErr.length}</strong> partner{staleErr.length===1?'':'s'} with sync failing &gt;24h:
+                    {' '}{staleErr.slice(0, 5).map(b => `${b.name} (${(b.sync_last_error || '').slice(0, 60)})`).join('; ')}
+                    {staleErr.length > 5 ? ` +${staleErr.length - 5} more` : ''}
+                  </p>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         <div style={{ marginBottom: 12 }}>

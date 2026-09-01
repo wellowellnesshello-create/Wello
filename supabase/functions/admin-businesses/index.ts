@@ -112,12 +112,33 @@ serve(async (req) => {
     // stripe_account_id / stripe_account_status added so the admin
     // dropdown can tell overlapping test rows apart (one with an active
     // connected account vs one still pending, etc).
+    // sync_source / sync_last_ok_at / sync_last_error added so the admin
+    // panel can flag partners with stale sync failures. needs_price
+    // counts are pulled in via a companion aggregate query below —
+    // simpler than a joined view.
     const { data, error } = await supabase
       .from('businesses')
-      .select('id, name, business_type, category, status, cr, slots, session_offerings, description, address, img, gallery, tags, email, contact_name, stripe_account_id, stripe_account_status, geocode_failed, geocoded_from, lat, lng')
+      .select('id, name, business_type, category, status, cr, slots, session_offerings, description, address, img, gallery, tags, email, contact_name, stripe_account_id, stripe_account_status, geocode_failed, geocoded_from, lat, lng, sync_source, sync_last_ok_at, sync_last_error')
       .order('name', { ascending: true })
     if (error) return respond(500, { error: error.message })
-    return respond(200, { businesses: data || [] })
+    const businesses = data || []
+
+    // needs_price counts per business — join slots→listings so we can
+    // attribute per business_id. Only pulls sync'd rows in needs_price
+    // status, so the count is what the admin actually cares about.
+    const { data: needsRows } = await supabase
+      .from('slots')
+      .select('listing_id, listings!inner(business_id)')
+      .eq('sync_status', 'needs_price')
+    const needsByBiz = new Map<number, number>()
+    for (const r of (needsRows || []) as Array<{ listings?: { business_id?: number } }>) {
+      const bid = r.listings?.business_id
+      if (bid != null) needsByBiz.set(Number(bid), (needsByBiz.get(Number(bid)) || 0) + 1)
+    }
+    for (const b of businesses as Array<{ id: number; sync_needs_price_count?: number }>) {
+      b.sync_needs_price_count = needsByBiz.get(Number(b.id)) || 0
+    }
+    return respond(200, { businesses })
   }
 
   // ── op: find_by_stripe_account ───────────────────────────────────────
