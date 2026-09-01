@@ -2026,13 +2026,29 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
       const bqProductId = off?.booqable_product_id;
       if (bqProductId) {
         const pickupTime = /^\d{2}:\d{2}$/.test(rentalStartTime) ? rentalStartTime : '09:00';
+        // Customer picks pickup/return in Madrid local time; Booqable
+        // stores UTC. Convert so overlap detection lines up with the
+        // partner's own Booqable calendar.
+        const madridLocalToUtcIso = (d, t) => {
+          const naive = new Date(`${d}T${t}:00Z`);
+          const off = (x) => {
+            const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+              timeZone: 'Europe/Madrid', hour12: false,
+              year: 'numeric', month: '2-digit', day: '2-digit',
+              hour: '2-digit', minute: '2-digit', second: '2-digit',
+            }).formatToParts(x).map(k => [k.type, k.value]));
+            return (Date.UTC(+p.year, +p.month - 1, +p.day, +(p.hour === '24' ? '00' : p.hour), +p.minute, +p.second) - x.getTime()) / 60000;
+          };
+          const first = new Date(naive.getTime() - off(naive) * 60000);
+          return new Date(naive.getTime() - off(first) * 60000).toISOString();
+        };
         const { data: bqData, error: bqErr } = await supabase.functions.invoke('booqable-sync', {
           body: {
             op: 'check_availability',
             business_id: biz.business_id ?? biz.id,
             product_id: bqProductId,
-            starts_at: `${rentalStart}T${pickupTime}:00Z`,
-            stops_at:  `${rentalEnd}T18:00:00Z`,
+            starts_at: madridLocalToUtcIso(rentalStart, pickupTime),
+            stops_at:  madridLocalToUtcIso(rentalEnd, '18:00'),
           },
         });
         if (cancelled) return;
@@ -11687,8 +11703,9 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
     if (!newSlot.name.trim() || !newSlot.days.length) return;
     const cr = newSlot.cr === "" ? null : Math.max(1, parseInt(newSlot.cr) || catAvg);
     // Private instructors are always 1-to-1 — force spots to 1 regardless of
-    // whatever was in the (disabled) input.
-    const spots = isPrivateInstructor ? 1 : newSlot.spots;
+    // whatever was in the (disabled) input. Coerce the raw input string to
+    // an integer (post number-input sweep) so slots.spots persists as int.
+    const spots = isPrivateInstructor ? 1 : Math.max(1, parseInt(newSlot.spots, 10) || 1);
     // Category defaults to venue category — only persisted when the partner
     // explicitly overrides so we can distinguish "no override" from "same
     // as venue" and the marketplace filter picks up multi-cat studios.
@@ -12314,8 +12331,8 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
                    // is stored as absence rather than an empty override.
                    const offeringsClean = sessionOfferings.map(o => ({
                      type: o.type,
-                     length_min: o.length_min,
-                     price_eur: o.price_eur,
+                     length_min: Number.isFinite(+o.length_min) ? parseInt(o.length_min, 10) : null,
+                     price_eur: Number.isFinite(+o.price_eur) ? parseInt(o.price_eur, 10) : null,
                      category: (o.category && String(o.category).trim()) || null,
                      img: (typeof o.img === 'string' && o.img) || null,
                    }));
@@ -15716,10 +15733,12 @@ export default function App() {
       // call was in-flight finishes.
       async function doFetch() {
         try {
+          const todayIso = new Date().toISOString().slice(0, 10);
           const res = await supabase
             .from("listings")
-            .select("*, slots(*), businesses(name, address, phone, website, instagram, email, gallery, session_offerings, travel_areas, cancellation_safety_window, cancellation_window_hours, lat, lng)")
+            .select("*, slots(id, listing_id, name, date, time, dur, spots, booked, credits, acuity_type_id, booking_mode, venue_side), businesses(name, address, phone, website, instagram, email, gallery, session_offerings, travel_areas, cancellation_safety_window, cancellation_window_hours, lat, lng)")
             .eq("status","active")
+            .gte("slots.date", todayIso)
             .order("id");
           return { data: res.data, error: res.error };
         } catch (thrown) {

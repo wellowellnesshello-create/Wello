@@ -132,8 +132,22 @@ serve(async (req) => {
 
   const now = new Date()
   // Scan window: today + next 2 days (covers 48h even if this run drifts).
-  const today = new Date(now.getTime()).toISOString().slice(0, 10)
-  const twoDaysOut = new Date(now.getTime() + 2 * 86400000).toISOString().slice(0, 10)
+  // `booking_date` is stored as a Madrid-local calendar date, so compute
+  // the window bounds in Madrid tz rather than UTC — a run near the UTC
+  // day boundary (23:05 UTC = 01:05 Madrid CEST) would otherwise use the
+  // previous UTC day and miss the earliest morning-of window on the far
+  // edge of the two-day scan.
+  const madridDateStr = (d: Date) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).formatToParts(d)
+    const y = parts.find(p => p.type === 'year')!.value
+    const m = parts.find(p => p.type === 'month')!.value
+    const day = parts.find(p => p.type === 'day')!.value
+    return `${y}-${m}-${day}`
+  }
+  const today = madridDateStr(now)
+  const twoDaysOut = madridDateStr(new Date(now.getTime() + 2 * 86400000))
 
   const { data: candidates, error } = await supabase
     .from('bookings')

@@ -268,6 +268,8 @@ serve(async (req) => {
   // Reassures the customer that the request landed and sets
   // expectations on the 48h SLA. Silently skips when no Resend key
   // or the customer has no email on file. Sender is Wello.
+  let customerEmailResult: 'sent' | 'failed' | 'no_customer_email' | 'no_resend_key' =
+    !RESEND_API_KEY ? 'no_resend_key' : (!profile?.email ? 'no_customer_email' : 'failed')
   if (RESEND_API_KEY && profile?.email) {
     const customerHtml = `
       <div style="font-family:Manrope,Arial,sans-serif;max-width:540px;margin:0 auto;padding:24px;color:#1B1C19;background:#FBF9F4;">
@@ -282,16 +284,26 @@ serve(async (req) => {
         <p style="margin:0 0 8px;font-size:12px;color:#54584F;line-height:1.55;">We'll email you the moment the venue accepts. If they can't fulfil the request, your credits are returned in full.</p>
         <p style="margin:0;font-size:12px;color:#54584F;line-height:1.55;">Manage your rentals in your <a href="${PUBLIC_ORIGIN}/profile" style="color:#213C18;font-weight:600;">Wello reservations</a>.</p>
       </div>`
-    await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: 'Wello <hello@wello-wellness.com>',
-        to: profile.email,
-        subject: `Rental request received — ${rentalName} · ${startHuman}`,
-        html: customerHtml,
-      }),
-    }).catch(e => console.error('Customer email error:', e))
+    try {
+      const cr = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: 'Wello <hello@wello-wellness.com>',
+          to: profile.email,
+          subject: `Rental request received — ${rentalName} · ${startHuman}`,
+          html: customerHtml,
+        }),
+      })
+      customerEmailResult = cr.ok ? 'sent' : 'failed'
+      if (!cr.ok) {
+        const txt = await cr.text().catch(() => '')
+        console.error('notify-venue-rental-request: customer email failed', cr.status, txt.slice(0, 200))
+      }
+    } catch (e) {
+      customerEmailResult = 'failed'
+      console.error('notify-venue-rental-request: customer email error', (e as Error).message)
+    }
   }
 
   return json({
@@ -299,7 +311,7 @@ serve(async (req) => {
     sent: !!emailRes?.ok,
     sms: smsResult,
     whatsapp: whatsappResult,
-    customer_email: RESEND_API_KEY && profile?.email ? 'sent' : (RESEND_API_KEY ? 'no_customer_email' : 'no_resend_key'),
+    customer_email: customerEmailResult,
     accept_url: acceptUrl,
     decline_url: declineUrl,
     public_origin: PUBLIC_ORIGIN,

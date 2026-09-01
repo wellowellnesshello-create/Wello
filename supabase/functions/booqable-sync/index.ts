@@ -45,6 +45,32 @@ const CORS = {
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...CORS, 'Content-Type': 'application/json' } })
 
+// Convert a Madrid-local (Y-M-D + HH:MM) to a UTC ISO string. Booqable
+// stores order start/stop in UTC; the customer picks a local pickup
+// time. Iterate once for DST correctness (same pattern as the reminder
+// cron's localToUtc helper).
+const TZ = 'Europe/Madrid'
+function tzOffsetMinutes(date: Date, tz: string): number {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  })
+  const parts = Object.fromEntries(dtf.formatToParts(date).map(p => [p.type, p.value] as const)) as Record<string, string>
+  const asUTC = Date.UTC(
+    Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+    Number(parts.hour === '24' ? '00' : parts.hour), Number(parts.minute), Number(parts.second),
+  )
+  return (asUTC - date.getTime()) / 60000
+}
+function localToUtcIso(dateStr: string, timeStr: string): string {
+  const naive = new Date(`${dateStr}T${timeStr}:00Z`)
+  const off1 = tzOffsetMinutes(naive, TZ)
+  const first = new Date(naive.getTime() - off1 * 60000)
+  const off2 = tzOffsetMinutes(first, TZ)
+  return new Date(naive.getTime() - off2 * 60000).toISOString()
+}
+
 // Load a business row (id, subdomain, api key) with strict auth:
 //   - service_role bearer → allowed for any biz (server-to-server callers)
 //   - user JWT           → allowed only for the biz the user owns
@@ -201,10 +227,12 @@ serve(async (req) => {
           // Existing — refresh Booqable-owned fields only. Leaves
           // partner-configured fields (min_days, deposit, weekly rate,
           // addons, lead time) alone so re-syncs don't stomp on tweaks.
+          // Preserve `type` on rename — it's the join key for
+          // bookings.offering_type, so overwriting orphans every
+          // historical booking's cancel/refund lookup.
           const cur = next[idx]
           next[idx] = {
             ...cur,
-            type: name,
             price_eur: priceEur || cur.price_eur,
             inventory,
             img: img || cur.img,
@@ -371,10 +399,12 @@ serve(async (req) => {
 
     // Booqable orders take starts_at / stops_at datetimes. Anchor
     // pickup on the customer-picked start_time (falls back to 09:00
-    // for legacy rentals) and return at 18:00 on the end date.
+    // for legacy rentals) and return at 18:00 on the end date. The
+    // customer picks these times in Madrid tz; convert to UTC so
+    // Booqable's calendar aligns with the partner's own view.
     const pickupTime = String(booking.start_time || '09:00').slice(0, 5)
-    const startsAt = `${booking.booking_date}T${pickupTime}:00Z`
-    const stopsAt  = `${booking.end_date}T18:00:00Z`
+    const startsAt = localToUtcIso(booking.booking_date, pickupTime)
+    const stopsAt  = localToUtcIso(booking.end_date, '18:00')
 
     try {
       const r = await booqableFetch(biz.booqable_subdomain, biz.booqable_api_key, '/api/1/orders', {

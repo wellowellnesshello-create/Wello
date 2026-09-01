@@ -79,47 +79,23 @@ serve(async (req) => {
     return json({ ok: true, credits_spent: cost, already: true })
   }
 
-  // Collision gate. Runs under an advisory lock on (business_id,
-  // booking_date) inside assert_no_slot_collision, so two concurrent
-  // bookings for the same day at the same partner serialize on the
-  // check — the second one sees the first's row and raises. This
-  // covers the sibling-overlap case that the slot's own spots/booked
-  // count can't (e.g. 13:00·30min and 13:00·45min are separate rows
-  // and booking one doesn't touch the other's booked count).
-  const { error: collisionErr } = await supabase.rpc('assert_no_slot_collision', {
+  // Collision + capacity in one transaction. reserve_slot_atomic takes
+  // the (business_id, booking_date) advisory lock once, runs the
+  // sibling-slot collision check, then bumps slots.booked guarded by
+  // spots. Previously these were two RPCs (assert_no_slot_collision +
+  // try_reserve_slot), each in its own transaction — a concurrent
+  // booking could slip between them and defeat the collision guard.
+  // No-op for slot-less bookings (rentals) — capacity is enforced at
+  // insert by try_reserve_rental.
+  const { error: reserveErr } = await supabase.rpc('reserve_slot_atomic', {
     p_booking_id: bookingId,
   })
-  if (collisionErr) {
-    const msg = collisionErr.message || ''
-    if (msg.includes('slot_collision')) {
-      // Another booking beat us to the same time range. Roll the
-      // client-inserted booking back so the user can retry a
-      // different slot.
-      await supabase.from('bookings').delete().eq('id', bookingId)
-      return json({ error: 'slot_collision' }, 409)
-    }
-    console.error('spend-booking-credits: collision check failed', msg)
+  if (reserveErr) {
+    const msg = reserveErr.message || ''
     await supabase.from('bookings').delete().eq('id', bookingId)
-    return json({ error: msg }, 500)
-  }
-
-  // Atomic slot capacity check + increment. Guards against the
-  // "customer books past spots" case that the client-side stale-cache
-  // filter can't. Raises 'slot_full' when the slot is at capacity —
-  // we then roll back the booking so the ledger stays clean.
-  // No-op for slot-less bookings (rentals) because they're already
-  // capacity-checked at insert by try_reserve_rental.
-  const { error: capErr } = await supabase.rpc('try_reserve_slot', {
-    p_booking_id: bookingId,
-  })
-  if (capErr) {
-    const msg = capErr.message || ''
-    if (msg.includes('slot_full')) {
-      await supabase.from('bookings').delete().eq('id', bookingId)
-      return json({ error: 'slot_full' }, 409)
-    }
-    console.error('spend-booking-credits: capacity check failed', msg)
-    await supabase.from('bookings').delete().eq('id', bookingId)
+    if (msg.includes('slot_collision')) return json({ error: 'slot_collision' }, 409)
+    if (msg.includes('slot_full'))      return json({ error: 'slot_full' }, 409)
+    console.error('spend-booking-credits: reserve failed', msg)
     return json({ error: msg }, 500)
   }
 
