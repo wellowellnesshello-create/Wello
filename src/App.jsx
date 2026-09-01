@@ -8787,6 +8787,30 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               </p>
             </div>
 
+            {/* Needs-price banner: sync'd rows that came in without a
+                matching Wello offering have credits=NULL and were held
+                back from the marketplace. Show a partner-actionable
+                count so they can add pricing in Session Offerings. */}
+            {(() => {
+              const needsPrice = (dbSlots || []).filter(s => s.sync_status === 'needs_price');
+              if (needsPrice.length === 0) return null;
+              const uniqueTitles = Array.from(new Set(needsPrice.map(s => s.name))).slice(0, 3);
+              const suffix = needsPrice.length > uniqueTitles.length ? ` and ${needsPrice.length - uniqueTitles.length} more` : '';
+              return (
+                <div style={{marginBottom:14,padding:"14px 16px",background:"#FFF6E5",border:"1px solid #E4C97A",borderRadius:10,display:"flex",gap:12,alignItems:"flex-start"}}>
+                  <div style={{fontSize:18,lineHeight:1}}>◐</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#5A4A18",margin:"0 0 4px"}}>
+                      {needsPrice.length} synced {needsPrice.length === 1 ? 'session needs' : 'sessions need'} a price before they go live
+                    </p>
+                    <p style={{fontFamily:F2,fontSize:12,color:"#766149",margin:0,lineHeight:1.55}}>
+                      We pulled {uniqueTitles.map(t => `"${t}"`).join(', ')}{suffix} from your connected schedule but couldn't match {needsPrice.length === 1 ? 'it' : 'them'} to a Wello offering. Add a matching offering above (same name) with a credit price to make {needsPrice.length === 1 ? 'it' : 'them'} bookable.
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* Business-level "When you're taking bookings" panel removed —
                 each offering now carries its own How long / When it runs
                 inside the offering card. saveAvailability still reads the
@@ -15736,7 +15760,7 @@ export default function App() {
           const todayIso = new Date().toISOString().slice(0, 10);
           const res = await supabase
             .from("listings")
-            .select("*, slots(id, listing_id, name, date, time, dur, spots, booked, credits, acuity_type_id, booking_mode, venue_side), businesses(name, address, phone, website, instagram, email, gallery, session_offerings, travel_areas, cancellation_safety_window, cancellation_window_hours, lat, lng)")
+            .select("*, slots(id, listing_id, name, date, time, dur, spots, booked, credits, acuity_type_id, booking_mode, venue_side, sync_status), businesses(name, address, phone, website, instagram, email, gallery, session_offerings, travel_areas, cancellation_safety_window, cancellation_window_hours, lat, lng)")
             .eq("status","active")
             .gte("slots.date", todayIso)
             .order("id");
@@ -15843,6 +15867,14 @@ export default function App() {
           : null,
         slots: (row.slots || [])
           .filter(s => !blockedSlotIds.has(String(s.id)))
+          // Hide sync'd rows the orchestrator flagged: 'cancelled'
+          // (dropped upstream) or 'needs_price' (no matching offering,
+          // credits is NULL). Unpriced or cancelled slots must never
+          // surface to customers.
+          .filter(s => s.sync_status == null || (s.sync_status !== 'cancelled' && s.sync_status !== 'needs_price'))
+          // Belt-and-braces: a slot with null credits is unpriced and
+          // must never render, regardless of sync_status.
+          .filter(s => s.credits != null)
           .filter(s => {
             if (!row.businesses?.cancellation_safety_window) return true;
             const start = new Date(`${s.date}T${(s.time || '00:00').slice(0,5)}:00`);
