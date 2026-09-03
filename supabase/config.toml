@@ -128,6 +128,29 @@ verify_jwt = false
 # other cron fns.
 verify_jwt = false
 
+[functions.notify-partner-registration]
+# Fired by AFTER INSERT trigger on businesses (see the trigger def in
+# 20260101000000_remote_baseline.sql). The trigger's hard-coded
+# Authorization header is a LEGACY service_role JWT which was
+# disabled on 2026-07-24, so with the default verify_jwt=true the
+# platform gate rejected every insert-triggered call → no
+# registrant/admin emails since July. The fn body doesn't inspect
+# incoming auth (it uses its own env SUPABASE_SERVICE_ROLE_KEY to
+# talk back), so disabling the gate is safe and correct.
+verify_jwt = false
+
+[functions.notify-partner-status]
+# Same story — fired by AFTER UPDATE trigger on businesses with the
+# same legacy JWT. Approve/reject emails + magic-link generation for
+# newly-approved partners have been silently failing since 2026-07-24.
+verify_jwt = false
+
+[functions.booking-webhook]
+# Same story — fired by AFTER INSERT trigger on bookings with the
+# same legacy JWT. Customer booking notifications + Make webhook
+# fan-out have been silently failing since 2026-07-24.
+verify_jwt = false
+
 # extract-sessions intentionally has NO override here — it keeps the platform
 # default (verify_jwt = true). The admin timetable-upload tool is gated
 # client-side by VITE_ADMIN_SETUP_ENABLED + a ?admin=setup URL param, and the
