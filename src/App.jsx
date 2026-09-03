@@ -6658,7 +6658,6 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         }))
       : []
   );
-  const DASH_LENGTH_OPTIONS = [30, 45, 60, 75, 90, 120];
   // Inline "add new offering" form state — opens under the chip row when
   // partner taps "+ Add offering". Avoids the dense table layout entirely.
   // Whether the inline add forms are open. Default closed so the Schedule
@@ -8845,11 +8844,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                               onChange={e=>bufferUpdate({ type: e.target.value })}
                               placeholder="Class type (e.g. Yoga)"
                               style={{...INP,marginBottom:0,flex:"2 1 180px",minWidth:0}}/>
-                            <select value={editBuffer?.length_min ?? 60}
-                              onChange={e=>bufferUpdate({ length_min: parseInt(e.target.value, 10) })}
-                              style={{...INP,marginBottom:0,flex:"1 1 110px",minWidth:90}}>
-                              {DASH_LENGTH_OPTIONS.map(m => <option key={m} value={m}>{m} min</option>)}
-                            </select>
+                            <div style={{position:"relative",flex:"1 1 110px",minWidth:90}}>
+                              <input type="number" min="1" step="5" value={editBuffer?.length_min ?? ''}
+                                onChange={e=>bufferUpdate({ length_min: e.target.value })}
+                                onFocus={e=>e.target.select()}
+                                placeholder="mins"
+                                style={{...INP,paddingRight:34,marginBottom:0,width:"100%"}}/>
+                              <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:12,fontWeight:500,pointerEvents:"none"}}>min</span>
+                            </div>
                             <div style={{position:"relative",flex:"1 1 110px",minWidth:90}}>
                               <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
                               <input type="number" min="0" value={editBuffer?.price_eur ?? ''}
@@ -9467,11 +9469,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                         autoFocus
                         style={{...INP,marginBottom:0,flex:"2 1 200px",minWidth:0}}/>
                       {!isRental && (
-                        <select value={newOff.length_min}
-                          onChange={e=>setNewOff(p=>({...p,length_min:parseInt(e.target.value,10)}))}
-                          style={{...INP,marginBottom:0,flex:"1 1 110px",minWidth:90}}>
-                          {DASH_LENGTH_OPTIONS.map(m => <option key={m} value={m}>{m} min</option>)}
-                        </select>
+                        <div style={{position:"relative",flex:"1 1 110px",minWidth:90}}>
+                          <input type="number" min="1" step="5" value={newOff.length_min ?? ''}
+                            onChange={e=>setNewOff(p=>({...p,length_min:e.target.value}))}
+                            onFocus={e=>e.target.select()}
+                            placeholder="mins"
+                            style={{...INP,paddingRight:34,marginBottom:0,width:"100%"}}/>
+                          <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:12,fontWeight:500,pointerEvents:"none"}}>min</span>
+                        </div>
                       )}
                       <div style={{position:"relative",flex:"1 1 150px",minWidth:120}}>
                         <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
@@ -11529,7 +11534,6 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
         }))
       : []
   );
-  const LENGTH_OPTIONS = [30, 45, 60, 75, 90, 120];
   function addOffering() {
     setSessionOfferings(prev => [...prev, {
       type: bizData.category || "Yoga",
@@ -12355,7 +12359,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
                    // is stored as absence rather than an empty override.
                    const offeringsClean = sessionOfferings.map(o => ({
                      type: o.type,
-                     length_min: Number.isFinite(+o.length_min) ? parseInt(o.length_min, 10) : null,
+                     length_min: parseInt(o.length_min, 10) > 0 ? parseInt(o.length_min, 10) : null,
                      price_eur: Number.isFinite(+o.price_eur) ? parseInt(o.price_eur, 10) : null,
                      category: (o.category && String(o.category).trim()) || null,
                      img: (typeof o.img === 'string' && o.img) || null,
@@ -12513,10 +12517,14 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
                 <input value={off.type} onChange={e=>updateOffering(idx,{type:e.target.value})}
                   placeholder="e.g. Yoga"
                   style={{...INP,marginBottom:0}} onFocus={onFi} onBlur={onBl}/>
-                <select value={off.length_min} onChange={e=>updateOffering(idx,{length_min:parseInt(e.target.value,10)})}
-                  style={{...INP,marginBottom:0}} onFocus={onFi} onBlur={onBl}>
-                  {LENGTH_OPTIONS.map(m => <option key={m} value={m}>{m} min</option>)}
-                </select>
+                <div style={{position:"relative"}}>
+                  <input type="number" min="1" step="5" value={off.length_min ?? ''}
+                    onChange={e=>updateOffering(idx,{length_min:e.target.value})}
+                    onFocus={e=>{ onFi(e); e.target.select(); }} onBlur={onBl}
+                    placeholder="mins"
+                    style={{...INP,paddingRight:34,marginBottom:0}}/>
+                  <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:T.stone,fontFamily:F.body,fontSize:12,fontWeight:500,pointerEvents:"none"}}>min</span>
+                </div>
                 <div style={{position:"relative"}}>
                   <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:T.stone,fontFamily:F.body,fontSize:12,fontWeight:600,pointerEvents:"none"}}>€</span>
                   <input type="number" min="1" value={off.price_eur}
