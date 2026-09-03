@@ -63,13 +63,12 @@ interface OfferingLite {
 }
 
 async function loadToken(supabase: SupabaseClient, name: string): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('vault.decrypted_secrets')
-    .select('decrypted_secret')
-    .eq('name', name)
-    .maybeSingle()
+  // vault.decrypted_secrets isn't exposed to PostgREST (only public + graphql_public
+  // schemas are reachable via REST — PGRST106 otherwise). Go through the
+  // public.get_vault_secret RPC which is security-definer + service-role gated.
+  const { data, error } = await supabase.rpc('get_vault_secret', { secret_name: name })
   if (error || !data) return null
-  return (data as { decrypted_secret?: string }).decrypted_secret || null
+  return String(data) || null
 }
 
 // Credits reconciliation. Returns null when no match — orchestrator

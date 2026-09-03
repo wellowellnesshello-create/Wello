@@ -114,6 +114,20 @@ verify_jwt = false
 # gateway. The fn enforces its own shared-secret gate.
 verify_jwt = false
 
+[functions.availability-sync]
+# Called by pg_cron via pg_net with an X-Cron-Token header (hourly +
+# 15-min urgent — see 20260901030000_schedule_availability_sync.sql).
+# Same reason as the other cron-invoked fns — the gateway rejects the
+# header-less request, so we disable the platform check and enforce
+# CRON_INVOKE_SECRET inside.
+verify_jwt = false
+
+[functions.send-sync-price-reminders]
+# Called daily by pg_cron via pg_net with an X-Cron-Token header (see
+# 20260901040001_schedule_sync_price_digest.sql). Same pattern as the
+# other cron fns.
+verify_jwt = false
+
 # extract-sessions intentionally has NO override here — it keeps the platform
 # default (verify_jwt = true). The admin timetable-upload tool is gated
 # client-side by VITE_ADMIN_SETUP_ENABLED + a ?admin=setup URL param, and the
