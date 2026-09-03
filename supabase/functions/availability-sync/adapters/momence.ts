@@ -71,16 +71,21 @@ export const momenceAdapter: AvailabilityAdapter = {
       if (e.id == null || !e.dateTime) continue
       const cancelled = !!(e.isCancelled || e.isDeleted)
       rows.push({
-        external_id:   String(e.id),
-        partner_id:    partnerId,
-        kind:          'session',
-        title:         String(e.title || 'Untitled'),
-        start_at:      new Date(e.dateTime).toISOString(),
-        end_at:        null,
-        duration_min:  Number.isFinite(e.duration) ? Number(e.duration) : null,
-        available_qty: Math.max(0, Number(e.spotsRemaining ?? 0)),
-        capacity:      Number.isFinite(e.capacity) ? Number(e.capacity) : null,
-        status:        cancelled ? 'cancelled' : 'active',
+        external_id:      String(e.id),
+        partner_id:       partnerId,
+        kind:             'session',
+        title:            String(e.title || 'Untitled'),
+        start_at:         new Date(e.dateTime).toISOString(),
+        end_at:           null,
+        duration_min:     Number.isFinite(e.duration) ? Number(e.duration) : null,
+        available_qty:    Math.max(0, Number(e.spotsRemaining ?? 0)),
+        capacity:         Number.isFinite(e.capacity) ? Number(e.capacity) : null,
+        status:           cancelled ? 'cancelled' : 'active',
+        // Momence's per-event drop-in price. See adapter_price_eur doc
+        // in availability_types.ts + creditsFor / upsert logic in the
+        // orchestrator — used as a fallback when the partner hasn't
+        // defined a matching session_offerings entry.
+        adapter_price_eur: Number.isFinite(e.fixedPrice) ? Number(e.fixedPrice) : null,
         meta: {
           teacher:     e.teacher ?? null,
           teacher_id:  e.teacherId ?? null,
@@ -89,14 +94,6 @@ export const momenceAdapter: AvailabilityAdapter = {
           link:        e.link ?? null,
           type:        e.type ?? null,
           tags:        e.tags ?? null,
-          // Momence's own price for the event. Captured for visibility
-          // (admin can surface it as a suggested price), but NEVER used
-          // to set slots.credits — see the "Noor silent-reprice" rule
-          // in availability-sync/index.ts: credits are only ever set by
-          // the partner-defined session_offerings match, never by an
-          // adapter, so a partner's Momence price change can't silently
-          // reprice their Wello listings.
-          fixed_price: Number.isFinite(e.fixedPrice) ? Number(e.fixedPrice) : null,
         },
       })
     }

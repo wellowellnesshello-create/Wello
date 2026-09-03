@@ -22,6 +22,14 @@ export interface AvailabilityRow {
   capacity: number | null         // max total, informational
   status: 'active' | 'cancelled' | 'paused'
 
+  // Optional price hint from the source system, in EUR. Orchestrator uses
+  // it as a FALLBACK when the partner hasn't defined a matching
+  // session_offerings entry — but only on INSERT and on UPDATE-of-a-still-
+  // unpriced row. Never overwrites an already-set slots.credits (Noor rule:
+  // a partner's source-system price tweak must not silently reprice an
+  // active Wello slot). Null when the source doesn't expose a price.
+  adapter_price_eur?: number | null
+
   // Passthrough for adapter-specific extras (teacher, room, image, ...)
   meta: Record<string, unknown>
 }

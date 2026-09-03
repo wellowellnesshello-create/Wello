@@ -22,13 +22,21 @@ import { booqableAdapter } from './adapters/booqable.ts'
 //                                                   session starting in
 //                                                   the next 90 min)
 //
-// Credits reconciliation: adapter output has no price. For each row we
-// look for a matching entry in businesses.session_offerings (Momence:
-// case-insensitive title == offering.type; Booqable: meta.product_id ==
-// offering.booqable_product_id). If matched we set slots.credits from
-// offering.price_eur. If NOT matched we leave slots.credits alone on
-// UPDATE and set it to NULL + sync_status='needs_price' on INSERT —
-// per user directive after the Noor silent-reprice incident.
+// Credits reconciliation:
+//   1. Partner-defined session_offerings match wins (Momence: case-
+//      insensitive title == offering.type; Booqable: meta.product_id ==
+//      offering.booqable_product_id). If matched we set slots.credits
+//      from offering.price_eur — even on UPDATE (this is an explicit
+//      partner choice, not a silent adapter change).
+//   2. If no offering match, fall back to the adapter-provided
+//      row.adapter_price_eur (e.g. Momence fixedPrice) — but ONLY on
+//      INSERT and on UPDATE-of-a-still-unpriced row (existing credits
+//      is null). Never overwrite an already-set slots.credits from
+//      the adapter — that's the "Noor silent-reprice" rule: a
+//      partner's source-system price tweak must not surprise
+//      customers who saw a different Wello price.
+//   3. If neither, credits stay null / sync_status stays
+//      'needs_price' and the daily digest nudges the partner.
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -192,38 +200,51 @@ async function syncPartner(supabase: SupabaseClient, biz: BizRow): Promise<SyncP
     const booked = capacity != null ? Math.max(0, capacity - r.available_qty) : 0
 
     const priceMatch = creditsFor(r, offerings)
+    const adapterPrice = Number.isFinite(r.adapter_price_eur) ? Number(r.adapter_price_eur) : null
     const existingRow = existingByExtId.get(r.external_id)
 
     if (existingRow) {
-      // UPDATE — never overwrite credits when there's no offering match.
+      // UPDATE.
+      // 1. Partner offering match always wins.
+      // 2. Otherwise, if the row is still unpriced (credits null) and the
+      //    adapter gave us a price, seed it — safe because nothing has
+      //    been quoted to a customer yet.
+      // 3. Otherwise leave credits alone (Noor: never re-price an active
+      //    slot from adapter drift).
+      let nextCredits: number | null = null
+      if (priceMatch != null)                                        nextCredits = priceMatch
+      else if (existingRow.credits == null && adapterPrice != null)  nextCredits = adapterPrice
+      else                                                            nextCredits = existingRow.credits
+
       const patch: Record<string, unknown> = {
         name: r.title,
         date, time, dur,
         spots, booked,
-        sync_status: r.status === 'cancelled' ? 'cancelled' : (priceMatch == null && existingRow.credits == null ? 'needs_price' : 'active'),
+        sync_status: r.status === 'cancelled' ? 'cancelled' : (nextCredits == null ? 'needs_price' : 'active'),
         synced_at: nowIso,
       }
-      if (priceMatch != null) patch.credits = priceMatch
+      if (nextCredits !== existingRow.credits) patch.credits = nextCredits
       const { error: uErr } = await supabase.from('slots').update(patch).eq('id', existingRow.id)
       if (uErr) {
         console.error(`[sync partner=${biz.id}] update slot ${existingRow.id} failed:`, uErr.message)
       } else {
         upserted++
-        if (priceMatch == null && existingRow.credits == null) needsPrice++
+        if (nextCredits == null) needsPrice++
       }
       existingByExtId.delete(r.external_id) // mark handled
     } else {
       // INSERT — skip if cancelled (nothing to preserve).
       if (r.status === 'cancelled') continue
+      const seedCredits = priceMatch ?? adapterPrice
       const insertRow: Record<string, unknown> = {
         listing_id: listingId,
         name: r.title,
         date, time, dur,
         spots, booked,
-        credits: priceMatch, // NULL if no match
+        credits: seedCredits, // partner offering > adapter price > NULL
         source,
         external_id: r.external_id,
-        sync_status: priceMatch == null ? 'needs_price' : 'active',
+        sync_status: seedCredits == null ? 'needs_price' : 'active',
         synced_at: nowIso,
       }
       const { error: iErr } = await supabase.from('slots').insert(insertRow)
@@ -231,9 +252,9 @@ async function syncPartner(supabase: SupabaseClient, biz: BizRow): Promise<SyncP
         console.error(`[sync partner=${biz.id}] insert slot ${r.external_id} failed:`, iErr.message)
       } else {
         upserted++
-        if (priceMatch == null) {
+        if (seedCredits == null) {
           needsPrice++
-          console.warn(`[sync partner=${biz.id} source=${source}] no offering match for '${r.title}' (external_id=${r.external_id}) — inserted with credits=NULL`)
+          console.warn(`[sync partner=${biz.id} source=${source}] no price for '${r.title}' (external_id=${r.external_id}) — inserted with credits=NULL`)
         }
       }
     }
