@@ -10875,6 +10875,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 {[
                   {id:"acuity",   name:"Acuity Scheduling", desc:"Auto-sync your classes from Acuity",                         icon:"📅"},
                   {id:"booqable", name:"Booqable",          desc:"Sync your rental inventory + auto-create bookings in Booqable", icon:"🚲"},
+                  {id:"momence",  name:"Momence",           desc:"Sync your Momence class schedule into Wello (Legacy API)",     icon:"🌀"},
                   {id:"manual",   name:"Manage manually",   desc:"Add & edit slots directly in Wello",                          icon:"✏️"},
                 ].map(item=>(
                   <div key={item.id} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:integration===item.id?"rgba(33,60,24,0.05)":"#F5F3EE",borderRadius:10,border:integration===item.id?"1px solid rgba(33,60,24,0.2)":"1px solid transparent",transition:"all .15s",cursor:"pointer"}}
@@ -10898,6 +10899,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 <div style={{marginTop:14,padding:"14px 16px",background:"#F5F3EE",borderRadius:10}}>
                   <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Manual mode</p>
                   <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.6}}>Add & edit slots directly in the Schedule tab.</p>
+                </div>
+              )}
+              {integration==="momence"&&(
+                <div style={{marginTop:14,padding:"14px 16px",background:"#F5F3EE",borderRadius:10}}>
+                  <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Momence (Legacy API)</p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 10px",lineHeight:1.6}}>Available on request — we'll wire your studio manually (we need your Momence <b>hostId</b> and API token). Once connected, your classes sync into Wello every hour. Set a price against each class type in your offerings and Wello slots reprice on the next sync.</p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.6}}>Email <a href="mailto:hello@wello-wellness.com?subject=Momence%20sync%20request" style={{color:"#213C18",fontWeight:600}}>hello@wello-wellness.com</a> to get set up.</p>
                 </div>
               )}
               {integration==="booqable"&&(

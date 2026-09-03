@@ -28,6 +28,7 @@ interface MomenceEvent {
   link?: string
   type?: string
   tags?: unknown
+  fixedPrice?: number
 }
 
 export const momenceAdapter: AvailabilityAdapter = {
@@ -88,6 +89,14 @@ export const momenceAdapter: AvailabilityAdapter = {
           link:        e.link ?? null,
           type:        e.type ?? null,
           tags:        e.tags ?? null,
+          // Momence's own price for the event. Captured for visibility
+          // (admin can surface it as a suggested price), but NEVER used
+          // to set slots.credits — see the "Noor silent-reprice" rule
+          // in availability-sync/index.ts: credits are only ever set by
+          // the partner-defined session_offerings match, never by an
+          // adapter, so a partner's Momence price change can't silently
+          // reprice their Wello listings.
+          fixed_price: Number.isFinite(e.fixedPrice) ? Number(e.fixedPrice) : null,
         },
       })
     }
