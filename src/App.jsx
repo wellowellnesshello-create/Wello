@@ -6521,6 +6521,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     // Booqable leave both blank and the sync fns silently no-op.
     booqable_subdomain: bizData.booqable_subdomain || "",
     booqable_api_key:   bizData.booqable_api_key   || "",
+    // Per-business Momence credentials — same pattern. The trigger
+    // mirror_momence_creds_to_vault hashes the api_key into Vault and
+    // populates sync_source / sync_config on write.
+    momence_host_id:  bizData.momence_host_id != null ? String(bizData.momence_host_id) : "",
+    momence_api_key:  bizData.momence_api_key || "",
   });
   const [saving, setSaving]       = useState(false);
   const [saveMsg, setSaveMsg]     = useState({ kind:"", text:"" }); // { kind:"settings"|"listing"|"golive"|"err", text }
@@ -7199,6 +7204,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       notify_whatsapp_enabled: !!settingsForm.notify_whatsapp_enabled,
       booqable_subdomain: settingsForm.booqable_subdomain.trim() || null,
       booqable_api_key:   settingsForm.booqable_api_key.trim()   || null,
+      momence_host_id:    (parseInt(settingsForm.momence_host_id, 10) > 0) ? parseInt(settingsForm.momence_host_id, 10) : null,
+      momence_api_key:    settingsForm.momence_api_key.trim() || null,
     };
     const { error } = await supabase.from('businesses').update(payload).eq('id', bizData.id);
     if (!error) {
@@ -10904,8 +10911,35 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               {integration==="momence"&&(
                 <div style={{marginTop:14,padding:"14px 16px",background:"#F5F3EE",borderRadius:10}}>
                   <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Momence (Legacy API)</p>
-                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 10px",lineHeight:1.6}}>Available on request — we'll wire your studio manually (we need your Momence <b>hostId</b> and API token). Once connected, your classes sync into Wello every hour. Set a price against each class type in your offerings and Wello slots reprice on the next sync.</p>
-                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.6}}>Email <a href="mailto:hello@wello-wellness.com?subject=Momence%20sync%20request" style={{color:"#213C18",fontWeight:600}}>hello@wello-wellness.com</a> to get set up.</p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 14px",lineHeight:1.6}}>Connect your Momence account. Once wired, your classes sync into Wello every hour. Momence's per-event price is used automatically; set a price against a class type in your offerings if you want Wello to charge something different.</p>
+
+                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Momence host ID</label>
+                  <input type="number" min="1"
+                    value={isPreview ? "328124" : (settingsForm.momence_host_id || "")}
+                    onChange={e=>!isPreview && setSettingsForm(p=>({...p,momence_host_id:e.target.value}))}
+                    onFocus={e=>e.target.select()}
+                    placeholder="e.g. 328124"
+                    style={{...INP}}/>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:300,margin:"6px 0 12px",lineHeight:1.5}}>Numeric ID for your studio. Find it in the URL of your Momence host page, or in <b>Momence → Settings → API</b>.</p>
+
+                  <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Momence API token</label>
+                  <input value={isPreview ? "•••••••••" : (settingsForm.momence_api_key || "")}
+                    type="password"
+                    autoComplete="off"
+                    onChange={e=>!isPreview && setSettingsForm(p=>({...p,momence_api_key:e.target.value}))}
+                    placeholder="paste your API token"
+                    style={{...INP}}/>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:300,margin:"6px 0 14px",lineHeight:1.5}}>Generate one in <b>Momence → Settings → API</b>. Read access is enough — Wello only pulls availability.</p>
+
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                    <button onClick={saveSettings} disabled={saving||isPreview}
+                      style={{padding:"10px 20px",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer"}}>
+                      {saving ? "Saving" : "Save Momence settings"}
+                    </button>
+                  </div>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"10px 0 0",lineHeight:1.5}}>
+                    Your first sync fires within the hour. Watch the Schedule tab — synced classes appear with a <b>Synced from Momence</b> badge.
+                  </p>
                 </div>
               )}
               {integration==="booqable"&&(
