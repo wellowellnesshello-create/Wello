@@ -8648,7 +8648,15 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                     <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"3px 0 0",fontStyle:"italic"}}>📝 {customerNote}</p>
                                   )}
                                 </div>
-                                <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:700,whiteSpace:"nowrap",alignSelf:"center"}}>◈ {b.credits_used}</span>
+                                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,alignSelf:"center"}}>
+                                  <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:700,whiteSpace:"nowrap"}}>◈ {b.credits_used}</span>
+                                  <button onClick={()=>{ setCancelBookingTarget(b); setCancelReason("weather"); setCancelNote(""); setCancelErr(""); }}
+                                    style={{background:"transparent",border:"1px solid rgba(196,106,77,0.35)",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 10px",borderRadius:999,cursor:"pointer",letterSpacing:"0.6px",textTransform:"uppercase",whiteSpace:"nowrap",transition:"background .15s, border-color .15s"}}
+                                    onMouseEnter={e=>{e.currentTarget.style.background="rgba(196,106,77,0.08)";e.currentTarget.style.borderColor="rgba(196,106,77,0.6)";}}
+                                    onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.borderColor="rgba(196,106,77,0.35)";}}>
+                                    Cancel
+                                  </button>
+                                </div>
                               </div>
                             );
                           })}
@@ -8935,10 +8943,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                   {peopleCount > 1 ? ` · 👥 ${peopleCount} people` : ""}
                                 </p>
                               </div>
-                              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,alignSelf:"center"}}>
+                              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:6,alignSelf:"center"}}>
                                 <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:700,whiteSpace:"nowrap"}}>◈ {b.credits_used}</span>
                                 <button onClick={()=>{ setCancelBookingTarget(b); setCancelReason("weather"); setCancelNote(""); setCancelErr(""); }}
-                                  style={{background:"transparent",border:"none",color:"#C46A4D",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",padding:0,textDecoration:"underline",whiteSpace:"nowrap"}}>
+                                  style={{background:"transparent",border:"1px solid rgba(196,106,77,0.35)",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 10px",borderRadius:999,cursor:"pointer",letterSpacing:"0.6px",textTransform:"uppercase",whiteSpace:"nowrap",transition:"background .15s, border-color .15s"}}
+                                  onMouseEnter={e=>{e.currentTarget.style.background="rgba(196,106,77,0.08)";e.currentTarget.style.borderColor="rgba(196,106,77,0.6)";}}
+                                  onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.borderColor="rgba(196,106,77,0.35)";}}>
                                   Cancel
                                 </button>
                               </div>
