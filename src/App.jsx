@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js'
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 
 function useHasMoreBelow() {
   // True only while the user has meaningful content still below the viewport.
@@ -15455,6 +15455,147 @@ function AdminSetupPage() {
 // then redirects the browser to it. Shows a brief branded loading state so
 // the partner does not see a blank page mid-redirect.
 // ═══════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════
+// Safety-cancel page — reached from the WhatsApp cancel button.
+// The edge fn (studio-cancel-booking) 302-redirects the browser here
+// with ?cancel=<token>. This component fires the fn again (this time
+// via supabase.functions.invoke, so it gets an Authorization header
+// and returns a JSON result rather than 302'ing again). We then render
+// the outcome using Wello's design system — bypasses the platform-side
+// HTML sandbox that broke the direct-fn rendering on 2026-09-04.
+// ═══════════════════════════════════════════════════════════════
+function SafetyCancelPage() {
+  const [state, setState] = useState({ phase: 'working', data: null, error: null });
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('cancel') || '';
+    if (!token) { setState({ phase: 'error', data: null, error: { code: 'missing_token', message: "This link is missing its token." } }); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('studio-cancel-booking', { body: { token } });
+        if (cancelled) return;
+        if (error && !data) {
+          setState({ phase: 'error', data: null, error: { code: 'network', message: error.message || 'Network error — please try again in a minute.' } });
+          return;
+        }
+        if (data?.ok) {
+          setState({ phase: 'success', data, error: null });
+        } else {
+          setState({ phase: 'error', data: null, error: { code: data?.code || 'unknown', message: data?.message || 'Something went wrong.', extra: data } });
+        }
+      } catch (e) {
+        if (cancelled) return;
+        setState({ phase: 'error', data: null, error: { code: 'network', message: (e && e.message) || 'Network error.' } });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Shared shell styles matching the marketplace palette (F.body Manrope +
+  // Jost display, sage-green ink, cream backdrop).
+  const Shell = ({ badge, badgeVariant, title, children }) => {
+    const badgeBg =
+      badgeVariant === 'success' ? '#E8EFDF' :
+      badgeVariant === 'error'   ? '#F8E4D9' : '#F5F3EE';
+    const badgeFg =
+      badgeVariant === 'success' ? '#213C18' :
+      badgeVariant === 'error'   ? '#8B2F00' : '#54584F';
+    return (
+      <div style={{minHeight:'100dvh',background:'linear-gradient(180deg,#FBF9F4 0%,#F5F3EE 100%)',padding:24,display:'flex',flexDirection:'column',alignItems:'center'}}>
+        <header style={{width:'100%',maxWidth:520,padding:'8px 4px 24px'}}>
+          <a href="/" style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:'#213C18',letterSpacing:'-0.5px',textDecoration:'none'}}>wello</a>
+        </header>
+        <main style={{width:'100%',maxWidth:520}}>
+          <div style={{background:'#fff',borderRadius:16,padding:'32px 28px',boxShadow:'0 8px 32px rgba(33,60,24,0.10), 0 2px 6px rgba(33,60,24,0.05)'}}>
+            <div aria-hidden="true" style={{width:52,height:52,borderRadius:'50%',background:badgeBg,color:badgeFg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,fontWeight:700,marginBottom:18}}>{badge}</div>
+            <h1 style={{fontFamily:"'Jost',system-ui,sans-serif",color:'#213C18',fontSize:24,fontWeight:700,lineHeight:1.2,letterSpacing:'-0.4px',margin:'0 0 12px'}}>{title}</h1>
+            {children}
+          </div>
+        </main>
+        <footer style={{marginTop:32,padding:'12px 4px',fontFamily:'Manrope,sans-serif',fontSize:11,color:'#54584F',textAlign:'center'}}>
+          Need help? <a href="mailto:hello@wello-wellness.com" style={{color:'#54584F',textDecoration:'none',borderBottom:'1px solid rgba(84,88,79,0.3)'}}>hello@wello-wellness.com</a>
+        </footer>
+      </div>
+    );
+  };
+
+  const P = ({ children, muted }) => (
+    <p style={{color: muted ? '#54584F' : '#43483F', lineHeight:1.6, margin:'0 0 14px', fontSize: muted ? 13 : 15, fontWeight:400, fontFamily:'Manrope,sans-serif'}}>{children}</p>
+  );
+
+  const DL = ({ rows }) => (
+    <dl style={{display:'grid',gridTemplateColumns:'84px 1fr',gap:'10px 14px',margin:'20px 0 24px',padding:'16px 18px',background:'#F5F3EE',borderRadius:12,fontFamily:'Manrope,sans-serif'}}>
+      {rows.map(([k, v], i) => (
+        <Fragment key={i}>
+          <dt style={{color:'#54584F',fontSize:10,letterSpacing:'1.4px',textTransform:'uppercase',fontWeight:700,alignSelf:'center',margin:0}}>{k}</dt>
+          <dd style={{color:'#1B1C19',fontWeight:600,margin:0,fontSize:14,alignSelf:'center'}}>{v}</dd>
+        </Fragment>
+      ))}
+    </dl>
+  );
+
+  const Btn = ({ href, children }) => (
+    <a href={href} style={{display:'inline-flex',alignItems:'center',justifyContent:'center',padding:'12px 24px',background:'#213C18',color:'#FBF9F4',border:'none',borderRadius:999,fontFamily:'Manrope,sans-serif',fontWeight:700,fontSize:14,letterSpacing:'0.2px',cursor:'pointer',textDecoration:'none'}}>{children}</a>
+  );
+
+  if (state.phase === 'working') {
+    return (
+      <Shell badge="…" badgeVariant="info" title="Cancelling your booking">
+        <P>Just a moment — verifying the link and refunding the customer.</P>
+      </Shell>
+    );
+  }
+
+  if (state.phase === 'success') {
+    const d = state.data;
+    return (
+      <Shell badge="✓" badgeVariant="success" title="Booking cancelled">
+        <P>Thanks — we've handled the rest. {d.customer}'s {d.refunded > 0 ? `${d.refunded} credits have` : 'credits have'} been refunded automatically and we've emailed them a couple of alternative options.</P>
+        <DL rows={[
+          ['Session', d.session],
+          ['When', d.when],
+          ['Customer', d.customer],
+          ...(d.refunded > 0 ? [['Refunded', `◈ ${d.refunded}`]] : []),
+        ]}/>
+        <P muted>No further action is needed from your side.</P>
+        <div style={{marginTop:24}}><Btn href="/">Back to Wello</Btn></div>
+      </Shell>
+    );
+  }
+
+  // error branch
+  const e = state.error;
+  const errorTitle =
+    e.code === 'window_closed'      ? 'The cancel window has closed' :
+    e.code === 'already_cancelled'  ? "This one's already handled" :
+    e.code === 'not_found'          ? "We couldn't find that booking" :
+    e.code === 'not_confirmed'      ? 'Nothing to cancel' :
+    e.code === 'invalid_link'       ? "Link couldn't be verified" :
+    e.code === 'missing_token'      ? "Link isn't complete" :
+    e.code === 'refund_failed'      ? "Refund didn't go through" :
+                                       'Something went wrong';
+  const extra = e.extra;
+  return (
+    <Shell badge={e.code === 'already_cancelled' || e.code === 'window_closed' || e.code === 'not_confirmed' ? 'i' : '!'}
+           badgeVariant={e.code === 'already_cancelled' || e.code === 'window_closed' || e.code === 'not_confirmed' ? 'info' : 'error'}
+           title={errorTitle}>
+      <P>{e.message}</P>
+      {(extra?.session || extra?.when) && (
+        <DL rows={[
+          ...(extra.session ? [['Session', extra.session]] : []),
+          ...(extra.when ? [['When', extra.when]] : []),
+        ]}/>
+      )}
+      {e.code !== 'missing_token' && e.code !== 'invalid_link' && (
+        <P muted>If this looks wrong, email <a href="mailto:hello@wello-wellness.com" style={{color:'#54584F',fontWeight:600}}>hello@wello-wellness.com</a> and we'll investigate.</P>
+      )}
+      <div style={{marginTop:24}}><Btn href="/">Back to Wello</Btn></div>
+    </Shell>
+  );
+}
+// ═══════════════════════════════════════════════════════════════
 function PartnerInviteRedirect() {
   const [status, setStatus] = useState("redirecting"); // redirecting | error
   const [errorMsg, setErrorMsg] = useState("");
@@ -15541,6 +15682,11 @@ export default function App() {
     // via redeem-partner-invite, then the browser is redirected. Loading
     // UI lives in PartnerInviteRedirect.
     if(params.get("invite")) return "partnerInvite";
+    // ?cancel=<token> — partner tapped the WhatsApp cancel button. The
+    // edge fn 302-redirects here (bypasses Supabase's edge-fn HTML
+    // sandbox) so we can render the result page with our own design
+    // system. SafetyCancelPage fires the fn and displays the outcome.
+    if(params.get("cancel")) return "safetyCancel";
     return "home";
   });
   useEffect(() => { if (view === "biz-portal") setBizPortalMounted(true); }, [view]);
@@ -16674,6 +16820,7 @@ export default function App() {
           {view==="redeem"     &&<RedeemPage authSession={authSession} prefilledCode={prefilledClaimCode} onSetView={setView} onOpenSignIn={()=>setAuthModal({mode:"signin"})} onCreditsAdded={(newBal)=>{ setCredits(newBal); reconcileCredits(); try { const url = new URL(window.location.href); url.searchParams.delete("claim"); window.history.replaceState({}, "", url.toString()); } catch { /* noop */ } setPrefilledClaimCode(""); }}/>}
           {view==="adminSetup" &&<AdminSetupPage/>}
           {view==="partnerInvite" &&<PartnerInviteRedirect/>}
+          {view==="safetyCancel"  &&<SafetyCancelPage/>}
         </div>
 
         {/* FOOTER — Stitch linen style */}
