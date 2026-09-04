@@ -4052,7 +4052,7 @@ const PRIVACY_SECTIONS = [
   ["Cookies", "Wello uses essential cookies to keep you signed in and maintain your session. Our analytics (Vercel Analytics) is cookieless — it uses no persistent identifiers, sets no cookies, and does not track you across sites. We do not use advertising cookies and we do not sell cookie data."],
   ["International transfers", "Your data is primarily processed within the EU (Supabase EU region). Where processors operate outside the EU (for example Stripe, Vercel and Resend, which may process data in the US), transfers rely on the appropriate GDPR safeguards including Standard Contractual Clauses and the EU-US Data Privacy Framework."],
   ["Changes to this policy", "We may update this policy from time to time. Material changes will be communicated by email or via a notice on the platform. Continued use after changes take effect constitutes acceptance."],
-  ["Contact", "For any privacy questions, data requests, or complaints: hello@wello-wellness.com. Postal correspondence: Wello-Wellness Ltd, 71-75 Shelton Street, Covent Garden, London, WC2H 9JQ, United Kingdom. EU/EEA residents may also contact our appointed Article 27 representative Euverify Ltd (Cork, Ireland) at gdpr@euverify.com or via the DSAR portal above."],
+  ["Contact", "For any privacy questions, data requests, or complaints: hello@wello-wellness.com. Postal correspondence: Wello-Wellness Ltd, 9 Colville Gardens, Lightwater, GU18 5QQ, United Kingdom. EU/EEA residents may also contact our appointed Article 27 representative Euverify Ltd (Cork, Ireland) at gdpr@euverify.com or via the DSAR portal above."],
 ];
 
 function TermsPage() {
