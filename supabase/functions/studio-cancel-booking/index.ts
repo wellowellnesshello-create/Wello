@@ -98,8 +98,11 @@ function page(title: string, bodyHtml: string, opts?: { variant?: 'success' | 'i
     v === 'success' ? '#213C18' :
     v === 'error'   ? '#8B2F00' :
                       '#54584F'
+  // Use HTML entities for anything above ASCII so the page renders identically
+  // regardless of downstream encoding (some proxies, copy-tools, and older
+  // WhatsApp in-app browsers mangle multibyte UTF-8 into Latin-1 mojibake).
   const badge =
-    v === 'success' ? '<div class="badge badge-success" aria-hidden="true">✓</div>' :
+    v === 'success' ? '<div class="badge badge-success" aria-hidden="true">&check;</div>' :
     v === 'error'   ? '<div class="badge badge-error" aria-hidden="true">!</div>' :
                       '<div class="badge badge-info" aria-hidden="true">i</div>'
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -108,7 +111,7 @@ function page(title: string, bodyHtml: string, opts?: { variant?: 'success' | 'i
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;600;700&family=Manrope:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <title>${title} · Wello</title>
+    <title>${title} &middot; Wello</title>
     <style>
       *,*::before,*::after { box-sizing: border-box; }
       html, body { min-height: 100dvh; }
@@ -258,7 +261,7 @@ serve(async (req) => {
     return html(page('Already cancelled', `<h1>This one's already handled</h1><p>Looks like this booking was cancelled by someone else (or by tapping this link earlier). No further action needed on your side.</p><div class="actions"><a class="btn" href="https://wello-wellness.com">Back to Wello</a></div>`, { variant: 'info' }), 409)
   }
   if (booking.status !== 'confirmed') {
-    return html(page('Nothing to cancel', `<h1>Nothing to cancel</h1><p>This booking is currently <b>${booking.status}</b> — it can't be cancelled via this link.</p><div class="actions"><a class="btn" href="https://wello-wellness.com">Back to Wello</a></div>`, { variant: 'info' }), 409)
+    return html(page('Nothing to cancel', `<h1>Nothing to cancel</h1><p>This booking is currently <b>${booking.status}</b> &mdash; it can't be cancelled via this link.</p><div class="actions"><a class="btn" href="https://wello-wellness.com">Back to Wello</a></div>`, { variant: 'info' }), 409)
   }
 
   // ── Cancel immediately (GET or POST) ──────────────────────────────
@@ -284,7 +287,7 @@ serve(async (req) => {
     .maybeSingle()
   if (updErr) {
     console.error('studio-cancel: booking update failed', updErr.message)
-    return html(page('Error', `<h1>Something went wrong</h1><p>We couldn't cancel this booking — the request failed on our end. Please try again in a minute or email <a href="mailto:hello@wello-wellness.com">hello@wello-wellness.com</a> and we'll handle it manually.</p>`, { variant: 'error' }), 500)
+    return html(page('Error', `<h1>Something went wrong</h1><p>We couldn't cancel this booking &mdash; the request failed on our end. Please try again in a minute or email <a href="mailto:hello@wello-wellness.com">hello@wello-wellness.com</a> and we'll handle it manually.</p>`, { variant: 'error' }), 500)
   }
   if (!updated) {
     return html(page('Already cancelled', `<h1>This one's already handled</h1><p>Looks like this booking was cancelled by another action in the meantime. No further action needed on your side.</p><div class="actions"><a class="btn" href="https://wello-wellness.com">Back to Wello</a></div>`, { variant: 'info' }), 409)
@@ -302,7 +305,7 @@ serve(async (req) => {
     if (refundErr) {
       console.error('studio-cancel: refund_by_booking failed, rolling booking back', refundErr.message)
       await supabase.from('bookings').update({ status: 'confirmed', safety_cancelled_at: null, safety_cancel_token: sig }).eq('id', booking.id)
-      return html(page('Refund failed', `<h1>Refund didn't go through</h1><p>We couldn't return the customer's credits, so we've rolled the cancellation back — the booking is still active.</p><p class="muted">Please try tapping the cancel link again in a minute. If it keeps failing, email <a href="mailto:hello@wello-wellness.com">hello@wello-wellness.com</a> and we'll sort it.</p>`, { variant: 'error' }), 500)
+      return html(page('Refund failed', `<h1>Refund didn't go through</h1><p>We couldn't return the customer's credits, so we've rolled the cancellation back &mdash; the booking is still active.</p><p class="muted">Please try tapping the cancel link again in a minute. If it keeps failing, email <a href="mailto:hello@wello-wellness.com">hello@wello-wellness.com</a> and we'll sort it.</p>`, { variant: 'error' }), 500)
     }
   }
 
@@ -374,12 +377,12 @@ serve(async (req) => {
   const customerFirst = (customer?.full_name || customer?.email || 'the customer').split(/\s+/)[0]
   return html(page('Booking cancelled', `
     <h1>Booking cancelled</h1>
-    <p>Thanks — we've handled the rest. ${customerFirst}'s ${refund > 0 ? `${refund} credits have` : 'credits have'} been refunded automatically and we've emailed them a couple of alternative options.</p>
+    <p>Thanks &mdash; we've handled the rest. ${customerFirst}'s ${refund > 0 ? `${refund} credits have` : 'credits have'} been refunded automatically and we've emailed them a couple of alternative options.</p>
     <dl>
       <dt>Session</dt><dd>${sessionName}</dd>
       <dt>When</dt><dd>${dateStr} at ${timeStr}</dd>
       <dt>Customer</dt><dd>${customerFirst}</dd>
-      ${refund > 0 ? `<dt>Refunded</dt><dd>◈ ${refund}</dd>` : ''}
+      ${refund > 0 ? `<dt>Refunded</dt><dd>&#9672; ${refund}</dd>` : ''}
     </dl>
     <p class="muted">No further action is needed from your side.</p>
     <div class="actions">
