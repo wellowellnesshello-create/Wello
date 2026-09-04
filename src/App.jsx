@@ -4058,7 +4058,16 @@ const PRIVACY_SECTIONS = [
 function TermsPage() {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   return (
-    <div style={{background:"#FBF9F4",paddingTop:24,paddingBottom:"calc(80px + env(safe-area-inset-bottom))"}}>
+    <div style={{background:"#FBF9F4",paddingTop:0,paddingBottom:"calc(80px + env(safe-area-inset-bottom))",minHeight:"100vh"}}>
+      {/* Compact standalone-page nav. Renders on the /terms URL so a
+          Google visitor can get back to the app; harmless when rendered
+          in-app via setView("terms") since the SPA nav sits above. */}
+      <div style={{background:"#213C18",padding:"14px clamp(20px,4vw,32px)"}}>
+        <div style={{maxWidth:800,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <a href="/" style={{fontFamily:F2,fontSize:18,fontWeight:800,color:"#fff",letterSpacing:"-0.6px",textDecoration:"none"}}>wello</a>
+          <a href="/" style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#D6B47C",textDecoration:"none"}}>← Back to Wello</a>
+        </div>
+      </div>
       <div style={{maxWidth:800,margin:"0 auto",padding:"clamp(24px,5vw,48px) clamp(20px,4vw,32px)"}}>
         <header style={{marginBottom:"clamp(28px,4vw,44px)"}}>
           <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"4px",textTransform:"uppercase",color:"#54584F",margin:"0 0 10px"}}>Legal</p>
@@ -4093,7 +4102,14 @@ function TermsPage() {
 function PrivacyPage() {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   return (
-    <div style={{background:"#FBF9F4",paddingTop:24,paddingBottom:"calc(80px + env(safe-area-inset-bottom))",minHeight:"100vh"}}>
+    <div style={{background:"#FBF9F4",paddingTop:0,paddingBottom:"calc(80px + env(safe-area-inset-bottom))",minHeight:"100vh"}}>
+      {/* Compact standalone-page nav — see TermsPage for rationale. */}
+      <div style={{background:"#213C18",padding:"14px clamp(20px,4vw,32px)"}}>
+        <div style={{maxWidth:800,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <a href="/" style={{fontFamily:F2,fontSize:18,fontWeight:800,color:"#fff",letterSpacing:"-0.6px",textDecoration:"none"}}>wello</a>
+          <a href="/" style={{fontFamily:F2,fontSize:12,fontWeight:600,color:"#D6B47C",textDecoration:"none"}}>← Back to Wello</a>
+        </div>
+      </div>
       <div style={{maxWidth:800,margin:"0 auto",padding:"clamp(24px,5vw,48px) clamp(20px,4vw,32px)"}}>
         <header style={{marginBottom:"clamp(28px,4vw,44px)"}}>
           <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"4px",textTransform:"uppercase",color:"#54584F",margin:"0 0 10px"}}>Legal</p>
@@ -7127,6 +7143,31 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // soonest session is on top. null while loading, [] when empty.
   const [upcomingBookings, setUpcomingBookings] = useState(null);
   const [respondingId, setRespondingId] = useState(null); // booking id currently being confirmed/declined
+  // Partner cancel-confirmed-booking modal state. Available on confirmed
+  // bookings until 24h after session end; beyond that the partner emails
+  // hello@wello-wellness.com. Reason drives Partner terms 5.3 vs 5.5
+  // treatment on the cancel rate.
+  const [cancelBookingTarget, setCancelBookingTarget] = useState(null); // booking obj
+  const [cancelReason,       setCancelReason]         = useState("weather");
+  const [cancelNote,         setCancelNote]           = useState("");
+  const [cancelBusy,         setCancelBusy]           = useState(false);
+  const [cancelErr,          setCancelErr]            = useState("");
+  async function submitPartnerCancel() {
+    if (!cancelBookingTarget?.id) return;
+    setCancelBusy(true); setCancelErr("");
+    const { data, error } = await supabase.functions.invoke('partner-cancel-booking', {
+      body: { booking_id: cancelBookingTarget.id, reason: cancelReason, note: cancelNote || null },
+    });
+    setCancelBusy(false);
+    if (error || !data?.success) {
+      setCancelErr(data?.error || error?.message || "Couldn't cancel this booking.");
+      return;
+    }
+    // Drop from local upcoming list so the row disappears immediately.
+    setUpcomingBookings(prev => Array.isArray(prev) ? prev.filter(x => String(x.id) !== String(cancelBookingTarget.id)) : prev);
+    setCancelBookingTarget(null);
+    setCancelReason("weather"); setCancelNote("");
+  }
 
   // Map of which address has just been copied to clipboard. Booking id →
   // timestamp; we briefly flip the button from "Copy" → "Copied" so partners
@@ -8894,7 +8935,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                   {peopleCount > 1 ? ` · 👥 ${peopleCount} people` : ""}
                                 </p>
                               </div>
-                              <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:700,whiteSpace:"nowrap",alignSelf:"center"}}>◈ {b.credits_used}</span>
+                              <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4,alignSelf:"center"}}>
+                                <span style={{fontFamily:F2,fontSize:12,color:"#213C18",fontWeight:700,whiteSpace:"nowrap"}}>◈ {b.credits_used}</span>
+                                <button onClick={()=>{ setCancelBookingTarget(b); setCancelReason("weather"); setCancelNote(""); setCancelErr(""); }}
+                                  style={{background:"transparent",border:"none",color:"#C46A4D",fontFamily:F2,fontSize:11,fontWeight:600,cursor:"pointer",padding:0,textDecoration:"underline",whiteSpace:"nowrap"}}>
+                                  Cancel
+                                </button>
+                              </div>
                             </div>
                           );
                         })}
@@ -11307,6 +11354,61 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           </div>
         )}
       </div>
+
+      {/* Partner cancel-confirmed-booking modal. Opened from the Cancel
+          link on any confirmed booking row. Sends via the partner-cancel-
+          booking edge function, which refunds credits + emails the member
+          + BCCs Wello ops. Reason drives Partner terms 5.3 vs 5.5. */}
+      {cancelBookingTarget && (
+        <div style={{position:"fixed",inset:0,zIndex:3300,background:"rgba(27,28,25,0.75)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:"clamp(16px,4vw,24px)"}} onClick={()=>!cancelBusy && setCancelBookingTarget(null)}>
+          <div style={{background:"#fff",borderRadius:14,maxWidth:460,width:"100%",padding:"24px 26px",boxShadow:"0 24px 60px rgba(27,28,25,0.28)"}} onClick={e=>e.stopPropagation()}>
+            <h3 style={{fontFamily:F2,fontSize:17,fontWeight:700,color:"#213C18",margin:"0 0 4px",letterSpacing:"-0.3px"}}>Cancel this booking?</h3>
+            <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 16px",lineHeight:1.55}}>
+              {(cancelBookingTarget._customer?.full_name || 'the member')} on {new Date((cancelBookingTarget.booking_date||'')+'T00:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'})} at {String(cancelBookingTarget.start_time||'').slice(0,5)}. Their credits are returned in full. We'll email them straight away.
+            </p>
+
+            <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 8px"}}>Reason</p>
+            <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:14}}>
+              {[
+                { key:'weather',  label:'Weather / unsafe conditions',       help:'Rain, wind, sea state — outdoor session cannot go ahead safely.' },
+                { key:'illness',  label:'Instructor is unwell',              help:'Sick or injured, no cover available.' },
+                { key:'facility', label:'Facility issue',                    help:'Venue closure, equipment failure, plumbing, etc.' },
+                { key:'other',    label:'Other',                              help:'Anything else. This one may count against your cancel rate.' },
+              ].map(opt => (
+                <label key={opt.key} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"10px 12px",border:`1px solid ${cancelReason===opt.key?"#213C18":"rgba(195,200,188,0.6)"}`,borderRadius:8,cursor:"pointer",background:cancelReason===opt.key?"rgba(33,60,24,0.04)":"#fff"}}>
+                  <input type="radio" name="cancel-reason" checked={cancelReason===opt.key} onChange={()=>setCancelReason(opt.key)}
+                    style={{marginTop:3,width:14,height:14,accentColor:"#213C18",cursor:"pointer",flexShrink:0}}/>
+                  <div>
+                    <div style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#1B1C19"}}>{opt.label}</div>
+                    <div style={{fontFamily:F2,fontSize:11,color:"#54584F",lineHeight:1.5,marginTop:2}}>{opt.help}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+
+            <label style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:6}}>Note to Wello (optional)</label>
+            <textarea value={cancelNote} onChange={e=>setCancelNote(e.target.value.slice(0,500))} rows={3}
+              placeholder={cancelReason==='other' ? 'Tell us what happened so we know how to log this.' : 'Anything you want the customer to know? We\'ll include it if we can.'}
+              style={{width:"100%",padding:"9px 11px",border:"1px solid rgba(195,200,188,0.6)",borderRadius:6,fontFamily:F2,fontSize:13,color:"#1B1C19",background:"#FBF9F4",outline:"none",boxSizing:"border-box",resize:"vertical",marginBottom:8}}/>
+            <p style={{fontFamily:F2,fontSize:10,color:"#A3B18A",margin:"0 0 16px",textAlign:"right"}}>{cancelNote.length}/500</p>
+
+            {cancelErr && (
+              <p style={{fontFamily:F2,fontSize:12,color:"#C46A4D",margin:"0 0 12px"}}>{cancelErr}</p>
+            )}
+
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <button onClick={()=>!cancelBusy && setCancelBookingTarget(null)} disabled={cancelBusy}
+                style={{padding:"10px 16px",background:"transparent",color:"#54584F",border:"1px solid rgba(195,200,188,0.6)",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:600,cursor:cancelBusy?"not-allowed":"pointer"}}>
+                Keep booking
+              </button>
+              <button onClick={submitPartnerCancel} disabled={cancelBusy}
+                style={{padding:"10px 18px",background:cancelBusy?"#E4E2DD":"#C46A4D",color:cancelBusy?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:cancelBusy?"not-allowed":"pointer"}}>
+                {cancelBusy ? "Cancelling…" : "Cancel booking"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
