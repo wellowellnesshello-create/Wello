@@ -6556,7 +6556,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const [settingsSection, setSettingsSection] = useState(() => {
     try {
       const saved = localStorage.getItem("wello_dash_settings_section");
-      const allowed = ["profile", "channels", "account"];
+      const allowed = ["profile", "channels", "notifications", "account"];
       if (saved && allowed.includes(saved)) return saved;
     } catch { /* fall through */ }
     return 'profile';
@@ -10824,6 +10824,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 style={{padding:"10px 14px",fontFamily:F2,fontSize:14,fontWeight:600,color:"#1B1C19",background:"#fff",border:"1px solid rgba(27,28,25,0.15)",borderRadius:10,cursor:"pointer",minWidth:220}}>
                 <option value="profile">Business profile</option>
                 <option value="channels">Booking channels</option>
+                <option value="notifications">Notifications</option>
                 {!isPreview && <option value="account">Account</option>}
               </select>
             </div>
@@ -11042,9 +11043,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               )}
             </div>
 
-            {/* WhatsApp bookings — pragmatic alternative for partners who
-                don't run Acuity. New bookings ping this number and the
-                partner can confirm or reschedule right from WhatsApp. */}
+            </div>
+            )}
+
+            {/* ── Notifications section ── */}
+            {settingsSection === 'notifications' && (
+            <div style={{display:"flex",flexDirection:"column",gap:16}}>
+
+            {/* WhatsApp bookings — number input + opt-in activation. */}
             <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
               <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>Receive & manage bookings on WhatsApp</h3>
               <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 14px",lineHeight:1.6}}>Insert your number below and we'll message you on WhatsApp whenever a new booking comes in. You can confirm, reschedule or cancel straight from the chat.</p>
@@ -11059,6 +11065,24 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 style={{padding:"10px 20px",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer"}}>
                 {saving ? "Saving" : "Save WhatsApp number"}
               </button>
+
+              {/* Activation step — WhatsApp Business requires the recipient
+                  to initiate contact before we can send business-initiated
+                  templates. This wa.me link pre-fills the message; the
+                  partner just taps Send once. Opens a 24h session on Meta's
+                  side; without this, our first booking notification 63016's. */}
+              {settingsForm.bookings_whatsapp && (
+                <div style={{marginTop:16,padding:"14px 16px",background:"#F5F3EE",border:"1px solid rgba(195,200,188,0.6)",borderRadius:10}}>
+                  <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>One-off activation step</p>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>WhatsApp requires you to message us <b>once</b> from your phone before Wello can send you notifications. Tap the button below on the device where you use WhatsApp — it opens WhatsApp with the message pre-filled, all you need to do is hit Send.</p>
+                  <a href={`https://wa.me/447727302053?text=${encodeURIComponent(`Wello activate notifications for ${bizData?.name || 'my venue'}`)}`}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{display:"inline-block",padding:"10px 20px",background:"#25D366",color:"#fff",textDecoration:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700}}>
+                    💬 Activate WhatsApp notifications
+                  </a>
+                  <p style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:300,margin:"10px 0 0",lineHeight:1.55}}>You only need to do this once. If you go &gt; 24 hours without messaging us, you may need to tap the button again to re-activate.</p>
+                </div>
+              )}
             </div>
 
             {/* Notification preferences — email is always on; SMS +

@@ -182,26 +182,17 @@ serve(async (req) => {
     return html(page('Nothing to cancel', `<h1>Nothing to cancel</h1><p>This booking is currently ${booking.status}. It cannot be cancelled through this link.</p>`), 409)
   }
 
-  // ── GET: show the confirmation page ────────────────────────────────
-  if (req.method === 'GET') {
-    const details = `<dl>
-      <dt>Session</dt><dd>${sessionName}</dd>
-      <dt>When</dt><dd>${dateStr} at ${timeStr}</dd>
-      <dt>Customer</dt><dd>${(customer?.full_name || customer?.email || 'A Wello member').split(/\s+/)[0]}</dd>
-    </dl>`
-    return html(page('Cancel this booking?', `
-      <h1>Cancel this booking?</h1>
-      <p>You are about to cancel this booking under Wello's safety window. The customer's credits will be returned in full and they will be notified with alternative options.</p>
-      ${details}
-      <form method="POST" action="${url.pathname}${url.search}">
-        <button type="submit">Yes, cancel booking</button>
-        <a class="btn secondary" href="https://wello-wellness.com">Never mind</a>
-      </form>`))
+  // ── Cancel immediately (GET or POST) ──────────────────────────────
+  // Previously GET showed a confirmation form and POST did the work.
+  // Partners asked for "tap the WhatsApp button → done" — the WhatsApp
+  // client is the sole way this URL is served (never a public link in
+  // the message body, and WA button URLs are not pre-fetched by
+  // clients or previewers), so treating GET as the action is safe here.
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return html(page('Method not allowed', `<h1>Method not allowed</h1>`), 405)
   }
 
-  if (req.method !== 'POST') return html(page('Method not allowed', `<h1>Method not allowed</h1>`), 405)
-
-  // ── POST: do the cancellation ──────────────────────────────────────
+  // ── Do the cancellation ───────────────────────────────────────────
   // Update conditional on the current status + token so a concurrent call
   // can't double-cancel.
   const { data: updated, error: updErr } = await supabase
