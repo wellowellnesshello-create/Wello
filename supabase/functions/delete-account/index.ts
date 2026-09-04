@@ -66,7 +66,15 @@ serve(async (req) => {
     if (giftsErr) console.warn('delete-account: gift anonymise partial', giftsErr.message)
     results.gifts_anonymised = giftsCount ?? 0
 
-    // 3. Delete the profile row.
+    // 3a. Capture the email before we delete the profile row so we can
+    //     add it to the marketing suppression list. GDPR right-to-object
+    //     is durable — even if this email later comes back via a new
+    //     signup, no marketing campaign should target it.
+    const { data: profileRow } = await supabase
+      .from('profiles').select('email').eq('id', uid).maybeSingle()
+    const emailToSuppress = (profileRow?.email || user.email || '').trim().toLowerCase()
+
+    // 3b. Delete the profile row.
     const { error: profileErr } = await supabase
       .from('profiles').delete().eq('id', uid)
     if (profileErr) {
@@ -74,6 +82,18 @@ serve(async (req) => {
       return json({ error: 'Could not delete your profile. Please try again.' }, 500)
     }
     results.profile_deleted = true
+
+    // 3c. Persist the suppression — reason='user_unsubscribe' so a future
+    //     unsubscribe from a different flow doesn't overwrite this. Ignore
+    //     duplicates: if they'd previously unsubscribed we preserve the
+    //     earlier timestamp.
+    if (emailToSuppress && emailToSuppress.includes('@')) {
+      const { error: suppErr } = await supabase
+        .from('marketing_suppressions')
+        .upsert({ email: emailToSuppress, reason: 'user_unsubscribe' }, { onConflict: 'email', ignoreDuplicates: true })
+      if (suppErr) console.warn('delete-account: suppression insert failed', suppErr.message)
+      else results.email_suppressed = true
+    }
 
     // 4. Delete the auth user itself.
     const { error: authDelErr } = await supabase.auth.admin.deleteUser(uid)
