@@ -3,6 +3,58 @@
 Things that behave differently in Stripe live mode and can silently break
 if handled the same way as test mode. Add to this doc as bugs surface.
 
+## Status snapshot (2026-09-04 reconcile)
+
+**Already done (verified from code / env / DB):**
+- ✅ Email confirmation on partner registration — `notify-partner-registration`
+  is deployed and firing. Trigger was silently 401'ing since 2026-07-24 (legacy
+  service_role JWT baked into the trigger DDL got disabled); fixed today by
+  adding `verify_jwt=false` to `config.toml` for the three affected fns
+  (`1e5802a`). No orphan pending registrations in the DB from the outage
+  window — confirmed via `select ... from businesses where status='pending'`.
+- ✅ Both Stripe webhook secrets set — `STRIPE_WEBHOOK_SECRET` and
+  `STRIPE_WEBHOOK_SECRET_CONNECT` are both populated on the edge-fn env
+  (`supabase secrets list` confirms). Actual Dashboard endpoints still need
+  verification against live-mode keys — see § below.
+- ✅ Privacy policy — comprehensive modal in `src/App.jsx` triggered from
+  the cookie banner (`showPrivacy`). Covers GDPR sections, data retention,
+  third-party services, rights. Lawyer sign-off is a separate question, but
+  the surface exists.
+- ✅ `notify-partner-status` — approve/reject emails + magic-link generation.
+  Same silent 401 bug as above; also fixed in `1e5802a`.
+- ✅ `booking-webhook` — customer notifications + Make webhook fan-out on
+  every booking. Same fix in `1e5802a`.
+- ✅ SEO baseline — `public/robots.txt` + `public/sitemap.xml` shipped in
+  `<commit hash>`. Homepage carries canonical, robots-index, OG, Twitter
+  card meta.
+
+**Outstanding — need external access to verify:**
+- ⚠ Two Stripe webhook endpoints actually created in the **live** Dashboard
+  (env vars are set but endpoints may still point at test-mode URLs). See
+  § "Stripe: two webhook endpoints" below for the verify command.
+- ⚠ EUR settlement currency active on the live platform. See
+  § "Stripe: EUR settlement" below.
+- ⚠ Connect account `business_profile.url` populated on the first live
+  partner before their first payout. See § "Stripe Connect first-transfer".
+- ⚠ `STRIPE_SECRET_KEY` currently points at live-mode key (not test). Can't
+  distinguish from CLI (values shown as digests) — hit `stripe_diagnose` on
+  admin-businesses to see mode, or check the Stripe Dashboard header.
+- ⚠ WhatsApp business-initiated template delivery (63016 outside 24h session
+  — see `[[project_next_session_followups]]`). Twilio support ticket pending.
+- ⚠ SMS UK deliverability (21612 US→UK block on the current Twilio number).
+- ⚠ Google Search Console domain verification + sitemap submission — see
+  § "SEO / discoverability" below.
+
+**Known deferred:**
+- 🕒 Rewrite the three legacy-JWT `AFTER` triggers (booking-webhook,
+  notify-partner-*) to use `pg_net` + Vault-resolved shared secret so the
+  trigger DDL stops carrying a dead JWT string. See commit `1e5802a`
+  message for the plan. Not urgent — `verify_jwt=false` is a working
+  workaround.
+
+---
+
+
 ## Stripe: two webhook endpoints are required, not one
 
 Stripe delivers events in two distinct scopes:
@@ -130,3 +182,43 @@ before the first real payout.
   the capability to `active` immediately. Express hosted onboarding
   collects this; a Custom account wired up directly through the API
   needs it added explicitly.
+
+## SEO / discoverability
+
+**Diagnosed 2026-09-04:** wello-wellness.com did not appear in Google
+search results at all, even for exact-string queries. Investigation:
+
+- No `<meta name="robots" content="noindex">` in `index.html` or the SPA-
+  rendered head. Not blocked at meta level.
+- No `X-Robots-Tag` header on responses (verified via `curl -sI`).
+- No Vercel deployment protection / password.
+- Homepage returns proper `text/html; charset=utf-8` at the canonical
+  `www.wello-wellness.com` (apex 307s to www — expected).
+- **`public/robots.txt` was missing** — served 404. Google defaults to
+  "crawl everything" without one but the missing file is a red flag.
+- **`public/sitemap.xml` was missing** — served 404. Google relies on
+  link-crawling alone with no sitemap.
+
+**Fixes shipped:**
+- `public/robots.txt` with `Allow: /` and `Sitemap:` pointer.
+- `public/sitemap.xml` listing home + explore + credits + business pages.
+- `index.html` gained canonical link, `<meta robots="index, follow">`,
+  full Open Graph tags + Twitter card meta so WhatsApp / Facebook /
+  Twitter link previews now render properly instead of a bare URL.
+
+**Still owner action (can't be done from CLI):**
+1. Verify domain in **Google Search Console** — https://search.google.com/search-console
+   (either DNS TXT verification or upload an HTML meta tag to the site).
+2. Submit the sitemap URL there: `https://www.wello-wellness.com/sitemap.xml`
+3. Use GSC's **URL Inspection tool** on the homepage → click "Request
+   indexing" to nudge the first crawl instead of waiting for Google's
+   discovery engine.
+4. Repeat step 3 for the Explore + Business pages if you want them
+   indexed as first-tier landing pages.
+5. Backlink hygiene: get one or two inbound links from indexed sites
+   (Instagram bio, a partner venue's website, etc.). Google finds new
+   domains fastest via inbound links, not via sitemap alone.
+
+**Verify after the above:** `site:wello-wellness.com` on Google in
+~48-72 hours. Should return at least the homepage. If it doesn't after
+a week, check GSC → Coverage report for crawl errors.
