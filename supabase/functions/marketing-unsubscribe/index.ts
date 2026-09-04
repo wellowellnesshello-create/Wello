@@ -20,6 +20,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const UNSUB_SECRET              = Deno.env.get('MARKETING_UNSUBSCRIBE_SECRET') || ''
+const CRON_INVOKE_SECRET        = Deno.env.get('CRON_INVOKE_SECRET') || ''
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -103,6 +104,16 @@ serve(async (req) => {
     .from('marketing_suppressions')
     .upsert({ email, reason: 'user_unsubscribe' }, { onConflict: 'email', ignoreDuplicates: true })
   if (suppErr) console.error('marketing-unsubscribe suppression insert failed:', suppErr.message)
+
+  // Also remove them from the Resend Broadcasts audience so no queued
+  // campaign fires against them. Server-to-server via X-Cron-Token.
+  // Non-critical: local suppression is the durable authority.
+  if (CRON_INVOKE_SECRET) {
+    supabase.functions.invoke('resend-audience-sync', {
+      body: { action: 'remove', email },
+      headers: { 'X-Cron-Token': CRON_INVOKE_SECRET },
+    }).catch(() => { /* Non-critical */ })
+  }
 
   return html(`<h1>You're unsubscribed</h1><p>We won't send you any more marketing emails at <strong>${email.replace(/</g, '&lt;')}</strong>. You'll still get transactional emails (booking confirmations, receipts) because those are needed to run your bookings.</p><p style="margin-top:16px"><a href="https://www.wello-wellness.com/">Back to Wello →</a></p>`)
 })

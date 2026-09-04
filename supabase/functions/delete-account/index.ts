@@ -20,6 +20,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+const CRON_INVOKE_SECRET        = Deno.env.get('CRON_INVOKE_SECRET') || ''
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -93,6 +94,15 @@ serve(async (req) => {
         .upsert({ email: emailToSuppress, reason: 'user_unsubscribe' }, { onConflict: 'email', ignoreDuplicates: true })
       if (suppErr) console.warn('delete-account: suppression insert failed', suppErr.message)
       else results.email_suppressed = true
+
+      // Remove from Resend Broadcasts audience too so no queued campaign
+      // targets a deleted account. Server-to-server via X-Cron-Token.
+      if (CRON_INVOKE_SECRET) {
+        supabase.functions.invoke('resend-audience-sync', {
+          body: { action: 'remove', email: emailToSuppress },
+          headers: { 'X-Cron-Token': CRON_INVOKE_SECRET },
+        }).catch(() => { /* Non-critical: suppression list is the durable authority */ })
+      }
     }
 
     // 4. Delete the auth user itself.

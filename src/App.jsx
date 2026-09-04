@@ -5366,7 +5366,20 @@ function ProfilePage({ bookings, savedIds, listings, credits, creditSplit = { pu
                       ? { marketing_opt_in: true,  marketing_opt_in_at:  new Date().toISOString() }
                       : { marketing_opt_in: false, marketing_opt_out_at: new Date().toISOString() };
                     const { error } = await supabase.from('profiles').update(patch).eq('id', authSession.user.id);
-                    if (!error) onProfilePatch?.(patch);
+                    if (error) return;
+                    onProfilePatch?.(patch);
+                    // Sync to the Resend Broadcasts audience so campaigns
+                    // fire against the same list this toggle drives. Fire-
+                    // and-forget: local state has already updated, and
+                    // marketing_suppressions is the durable authority if
+                    // Resend ever gets out of step.
+                    const email = (authSession.user.email || '').trim().toLowerCase();
+                    if (email) {
+                      const [firstName, ...rest] = String(profile?.full_name || '').trim().split(/\s+/);
+                      supabase.functions.invoke('resend-audience-sync', {
+                        body: { action: next ? 'add' : 'remove', email, first_name: firstName || null, last_name: rest.join(' ') || null },
+                      }).catch(()=>{ /* Resend sync failure is non-critical */ });
+                    }
                   }} style={{width:44,height:24,borderRadius:999,background:profile?.marketing_opt_in?"#213C18":"#E4E2DD",cursor:"pointer",position:"relative",transition:"background .2s",flexShrink:0}}>
                     <div style={{position:"absolute",top:2,left:profile?.marketing_opt_in?22:2,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
                   </div>
@@ -16025,11 +16038,13 @@ export default function App() {
       // A prior opt-out is respected: even if metadata says opt-in=true,
       // we won't re-enable marketing without an explicit new consent
       // action from Settings.
+      let syncOptInToResend = false;
       if (existingProfile?.marketing_opt_in_at == null
           && existingProfile?.marketing_opt_out_at == null
           && u.user_metadata?.marketing_opt_in === true) {
         payload.marketing_opt_in    = true;
         payload.marketing_opt_in_at = new Date().toISOString();
+        syncOptInToResend = true;
       }
       const { data: row, error: upsertErr } = await supabase
         .from('profiles')
@@ -16050,6 +16065,15 @@ export default function App() {
         return;
       }
       setProfile(row);
+      // Fresh signup with the marketing checkbox ticked → sync the new
+      // contact into the Resend Broadcasts audience so it lands in the
+      // right list from day one. Fire-and-forget, no UX depends on it.
+      if (syncOptInToResend && row?.email) {
+        const [firstName, ...rest] = String(row.full_name || '').trim().split(/\s+/);
+        supabase.functions.invoke('resend-audience-sync', {
+          body: { action: 'add', email: String(row.email).trim().toLowerCase(), first_name: firstName || null, last_name: rest.join(' ') || null },
+        }).catch(() => { /* Resend sync failure is non-critical */ });
+      }
     })();
     return () => { cancelled = true; };
   }, [authSession?.user?.id]);
