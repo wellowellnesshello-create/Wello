@@ -65,8 +65,12 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 // Parse and verify token; returns { bookingId, expiryIso, sig } or an error.
+// bookingId stays a string — bookings.id is a UUID, not an int. The prior
+// parseInt collapsed UUIDs like "1abc-..." to the leading digits and either
+// failed the id-lookup or matched the wrong row; UUIDs starting with a
+// letter would return NaN and 400 as "Invalid booking id" here.
 async function verifyToken(token: string): Promise<
-  | { ok: true; bookingId: number; expiryIso: string; sig: string }
+  | { ok: true; bookingId: string; expiryIso: string; sig: string }
   | { ok: false; error: string }
 > {
   const parts = token.split('.')
@@ -76,10 +80,9 @@ async function verifyToken(token: string): Promise<
   const payload = decodeURIComponent(payloadEncoded)
   const dot = payload.indexOf('.')
   if (dot === -1) return { ok: false, error: 'Malformed token payload' }
-  const bookingIdStr = payload.slice(0, dot)
+  const bookingId    = payload.slice(0, dot)
   const expiryIso    = payload.slice(dot + 1)
-  const bookingId    = parseInt(bookingIdStr, 10)
-  if (!Number.isFinite(bookingId)) return { ok: false, error: 'Invalid booking id' }
+  if (!bookingId)                  return { ok: false, error: 'Missing booking id' }
   if (!expiryIso)                  return { ok: false, error: 'Missing expiry' }
   const expected = await hmacSign(payload, SAFETY_CANCEL_SECRET)
   if (!safeEqual(expected, sig)) return { ok: false, error: 'Signature mismatch' }
