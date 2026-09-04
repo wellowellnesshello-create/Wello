@@ -6474,7 +6474,23 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         credits: bizData.cr || 3,
         tags: Array.isArray(bizData.tags) ? bizData.tags.join(", ") : (bizData.tags || ""),
       });
-  const [integration, setIntegration] = useState(null);
+  // Persisted so the tile the partner had expanded (Booqable / Momence /
+  // Acuity) reappears expanded after nav-away-and-back, rather than
+  // collapsing every time the dashboard remounts.
+  const [integration, setIntegration] = useState(() => {
+    try {
+      const saved = localStorage.getItem("wello_dash_integration");
+      const allowed = ["acuity", "booqable", "momence", "manual"];
+      if (saved && allowed.includes(saved)) return saved;
+    } catch { /* fall through */ }
+    return null;
+  });
+  useEffect(() => {
+    try {
+      if (integration) localStorage.setItem("wello_dash_integration", integration);
+      else localStorage.removeItem("wello_dash_integration");
+    } catch { /* non-critical */ }
+  }, [integration]);
 
   // ─── Real-data persistence (non-preview only) ───────────────────────────
   // Listing edit form: everything customer-facing lives here now so partners
@@ -6533,7 +6549,21 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // section body renders at a time so the Settings screen doesn't feel
   // like an infinite stack of cards. Status banner stays above the
   // dropdown regardless — it's contextual, not editable content.
-  const [settingsSection, setSettingsSection] = useState('profile');
+  // Persisted to localStorage so navigating away from the dashboard
+  // (which unmounts BusinessPortalDashboard) and back doesn't reset
+  // the partner to Profile every time — mirrors the tab / manageSubTab
+  // pattern above.
+  const [settingsSection, setSettingsSection] = useState(() => {
+    try {
+      const saved = localStorage.getItem("wello_dash_settings_section");
+      const allowed = ["profile", "channels", "account"];
+      if (saved && allowed.includes(saved)) return saved;
+    } catch { /* fall through */ }
+    return 'profile';
+  });
+  useEffect(() => {
+    try { localStorage.setItem("wello_dash_settings_section", settingsSection); } catch { /* non-critical */ }
+  }, [settingsSection]);
   const [linkedListingId, setLinkedListingId] = useState(null);
   const [dbSlots, setDbSlots]     = useState(null); // null = loading | [] = empty | [...] = loaded
   const [statusLive, setStatusLive] = useState(bizData.status === 'approved' || bizData.status === 'submitted');
@@ -10915,15 +10945,15 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
 
                   <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Momence host ID</label>
                   <input type="number" min="1"
-                    value={isPreview ? "328124" : (settingsForm.momence_host_id || "")}
+                    value={isPreview ? "" : (settingsForm.momence_host_id || "")}
                     onChange={e=>!isPreview && setSettingsForm(p=>({...p,momence_host_id:e.target.value}))}
                     onFocus={e=>e.target.select()}
-                    placeholder="e.g. 328124"
+                    placeholder="e.g. 123456"
                     style={{...INP}}/>
                   <p style={{fontFamily:F2,fontSize:11,color:"#54584F",fontWeight:300,margin:"6px 0 12px",lineHeight:1.5}}>Numeric ID for your studio. Find it in the URL of your Momence host page, or in <b>Momence → Settings → API</b>.</p>
 
                   <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Momence API token</label>
-                  <input value={isPreview ? "•••••••••" : (settingsForm.momence_api_key || "")}
+                  <input value={isPreview ? "" : (settingsForm.momence_api_key || "")}
                     type="password"
                     autoComplete="off"
                     onChange={e=>!isPreview && setSettingsForm(p=>({...p,momence_api_key:e.target.value}))}
@@ -12432,9 +12462,10 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
       {!isPrivateInstructor && <label style={FL}>Connect to booking system</label>}
       {!isPrivateInstructor && <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:20}}>
         {[
-          {id:"acuity", name:"Acuity Scheduling", desc:"Auto-sync your classes from Acuity",                                    icon:"📅"},
-          {id:"ical",   name:"iCal Feed",         desc:"One-way sync from any calendar (Google, Apple, Outlook…)",              icon:"🔗"},
-          {id:"manual", name:"Manage manually",   desc:"Add & edit slots directly in Wello",                                    icon:"✏️"},
+          {id:"acuity",  name:"Acuity Scheduling", desc:"API integration — auto-syncs your classes from Acuity",                icon:"📅"},
+          {id:"momence", name:"Momence",           desc:"API integration — auto-syncs your classes from Momence",                icon:"🌀"},
+          {id:"ical",    name:"iCal Feed",         desc:"Calendar read — one-way import from Google, Apple, Outlook",           icon:"🔗"},
+          {id:"manual",  name:"Manage manually",   desc:"Add & edit slots directly in Wello",                                    icon:"✏️"},
         ].map(item => {
           const selected = availType === item.id;
           return (
@@ -12461,8 +12492,8 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
       {availType==="acuity" ? (
         <>
           <div style={{background:T.ochreXL,border:`1px solid ${T.ochreL}`,borderRadius:6,padding:"10px 12px",marginBottom:16}}>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:600,marginBottom:2}}>Heads up — Acuity API access requires a paid plan</div>
-            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.5}}>Acuity charges ~$16/month for API access. Find your User ID and API key in Acuity → Business Settings → Integrations → API.</div>
+            <div style={{fontFamily:F.body,fontSize:11,color:T.clay,fontWeight:600,marginBottom:2}}>Heads up — Acuity API access needs their paid tier</div>
+            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.5}}>Check Acuity's plans page for current pricing. Find your User ID and API key in Acuity → Business Settings → Integrations → API.</div>
           </div>
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
@@ -12525,6 +12556,13 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
               <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.5}}>Connected, but no appointment types were returned by Acuity. Create some in your Acuity dashboard then click Refresh.</div>
             </div>
           )}
+        </>
+      ) : availType==="momence" ? (
+        <>
+          <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:6,padding:"10px 12px",marginBottom:16}}>
+            <div style={{fontFamily:F.body,fontSize:11,color:T.ink,fontWeight:600,marginBottom:2}}>API sync with your Momence account</div>
+            <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.5}}>We pull your Momence class schedule into Wello every hour. Setup takes a Momence host ID and API token — you'll add both from <b>Settings → Booking channels → Momence</b> once your account is approved. Slots use your Momence price by default; override per-class-type in your offerings.</div>
+          </div>
         </>
       ) : availType==="ical" ? (
         <>
