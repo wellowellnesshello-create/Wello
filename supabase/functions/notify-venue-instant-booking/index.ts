@@ -24,6 +24,7 @@ const TWILIO_AUTH_TOKEN         = (Deno.env.get('TWILIO_AUTH_TOKEN')         || 
 const TWILIO_PHONE_NUMBER       = (Deno.env.get('TWILIO_PHONE_NUMBER')       || '').trim()
 const TWILIO_WHATSAPP_FROM        = (Deno.env.get('TWILIO_WHATSAPP_FROM')        || '').trim()
 const TWILIO_WHATSAPP_CONTENT_SID = (Deno.env.get('TWILIO_WHATSAPP_CONTENT_SID') || '').trim()
+const SAFETY_CANCEL_SECRET        = (Deno.env.get('SAFETY_CANCEL_SECRET')        || '').trim()
 
 const CORS = {
   'Access-Control-Allow-Origin':  '*',
@@ -35,6 +36,22 @@ const json = (body: unknown, status = 200) =>
 
 function fmtDate(iso: string) {
   try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) } catch { return iso }
+}
+
+// HMAC-SHA256 → base64url. Matches studio-cancel-booking's verifier so
+// the {t=<token>} query param it consumes is generated identically here.
+async function hmacSign(msg: string, key: string): Promise<string> {
+  const enc = new TextEncoder()
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw', enc.encode(key),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false, ['sign'],
+  )
+  const sig = await crypto.subtle.sign('HMAC', cryptoKey, enc.encode(msg))
+  const bytes = new Uint8Array(sig)
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
 serve(async (req) => {
@@ -148,10 +165,32 @@ serve(async (req) => {
   }
 
   // ── Venue WhatsApp (opt-in, uses approved template) ────────────
+  // The template has a "Cancel booking here" CTA whose URL substitutes
+  // {{6}} — we mint an HMAC-signed token that studio-cancel-booking
+  // verifies. Expiry = session start with a 1-hour floor so a same-hour
+  // booking still has a usable cancel window (mirrors the pattern in
+  // instructor-booking-response).
   let whatsappResult: string = 'not_attempted'
   const waNumber = business.bookings_whatsapp || business.phone
-  const deadline = new Date(Date.now() + 24 * 60 * 60 * 1000)
-    .toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  const sessionStartMs = new Date(`${booking.booking_date}T${(booking.start_time || '00:00').slice(0,5)}:00Z`).getTime()
+  const cancelExpiryMs = Math.max(sessionStartMs || 0, Date.now() + 60 * 60 * 1000)
+  const cancelExpiryIso = new Date(cancelExpiryMs).toISOString()
+  const deadline = new Date(cancelExpiryMs).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+  let cancelToken = ''
+  if (SAFETY_CANCEL_SECRET) {
+    const payload = `${booking.id}.${cancelExpiryIso}`
+    const sig     = await hmacSign(payload, SAFETY_CANCEL_SECRET)
+    cancelToken   = `${encodeURIComponent(payload)}.${sig}`
+    const { error: tokErr } = await supabase
+      .from('bookings')
+      .update({ safety_cancel_token: sig, safety_cancel_expires_at: cancelExpiryIso })
+      .eq('id', booking.id)
+    if (tokErr) console.error('notify-venue-instant-booking: could not persist cancel token', tokErr.message)
+  } else {
+    console.warn('notify-venue-instant-booking: SAFETY_CANCEL_SECRET not set — WhatsApp cancel button will be non-functional')
+  }
+
   if (!business.notify_whatsapp_enabled) {
     whatsappResult = 'opted_out'
   } else if (waNumber && TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_WHATSAPP_FROM && TWILIO_WHATSAPP_CONTENT_SID) {
@@ -167,11 +206,9 @@ serve(async (req) => {
         '3': dateHuman,
         '4': timeShort,
         '5': deadline,
-        // Var 6 wires into the template's button URL (Cancel booking).
-        // Passing the raw booking id for now — signed-token gen is a
-        // follow-up; the URL will still identify the booking, just
-        // without tamper-proofing.
-        '6': String(booking.id),
+        // Signed cancel token — studio-cancel-booking verifies HMAC and
+        // checks the token still matches bookings.safety_cancel_token.
+        '6': cancelToken || String(booking.id),
       }),
     })
     const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`)
