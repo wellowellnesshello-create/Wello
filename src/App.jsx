@@ -844,6 +844,10 @@ function AuthModal({ initialMode = "signin", onClose, onSuccess, onOpenTerms }) 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  // Marketing opt-in checkbox — must default to FALSE (pre-ticked opt-ins
+  // are illegal under GDPR / LSSI-CE). Consent + timestamp are persisted
+  // to profiles on the upsert path after signup completes.
+  const [marketingOptIn, setMarketingOptIn] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -868,7 +872,9 @@ function AuthModal({ initialMode = "signin", onClose, onSuccess, onOpenTerms }) 
         // full_name from the signup form + password_set flag so partner
         // onboarding (which reads user_metadata.password_set) skips the
         // "set a password" prompt for customers who already have one.
-        data: { full_name: fullName.trim(), password_set: true },
+        // marketing_opt_in is picked up by the profile-upsert path so
+        // consent + timestamp land on the profiles row.
+        data: { full_name: fullName.trim(), password_set: true, marketing_opt_in: marketingOptIn },
         // Send customers back to the main app with a flag so App.jsx knows
         // this is a customer confirmation, not a partner invite/recovery flow.
         emailRedirectTo: `${window.location.origin}/?confirmed=true`,
@@ -1056,12 +1062,21 @@ function AuthModal({ initialMode = "signin", onClose, onSuccess, onOpenTerms }) 
           </button>
 
           {mode==="signup" && (
-            <p style={{fontFamily:F2,fontSize:11,color:T.stone,margin:"6px 0 0",lineHeight:1.55,textAlign:"center"}}>
-              By creating an account you agree to the{" "}
-              <button type="button" onClick={()=>onOpenTerms?.()} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>
-                Wello Terms of Use
-              </button>.
-            </p>
+            <>
+              <label style={{display:"flex",gap:8,alignItems:"flex-start",padding:"8px 0 0",cursor:"pointer"}}>
+                <input type="checkbox" checked={marketingOptIn} onChange={e=>setMarketingOptIn(e.target.checked)}
+                  style={{marginTop:2,width:14,height:14,accentColor:T.sage,cursor:"pointer",flexShrink:0}}/>
+                <span style={{fontFamily:F2,fontSize:11,color:T.stone,lineHeight:1.55}}>
+                  Email me tips, new venues and Wello updates. Unsubscribe anytime.
+                </span>
+              </label>
+              <p style={{fontFamily:F2,fontSize:11,color:T.stone,margin:"6px 0 0",lineHeight:1.55,textAlign:"center"}}>
+                By creating an account you agree to the{" "}
+                <button type="button" onClick={()=>onOpenTerms?.()} style={{background:"transparent",border:"none",color:T.sage,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}}>
+                  Wello Terms of Use
+                </button>.
+              </p>
+            </>
           )}
 
           {mode==="signin" && (
@@ -4027,8 +4042,8 @@ const PRIVACY_SECTIONS = [
   ["Who we are", "Wello is a wellness marketplace based in Mallorca, Spain, operated by Wello-Wellness Ltd (registered in England and Wales, company number 17318025). We connect members with local wellness venues including yoga studios, gyms, spas and outdoor experiences. Our contact email is hello@wello-wellness.com."],
   ["What data we collect", "We collect the following personal data when you use Wello: your name, email address, and (optional) phone number when you register; your wellness activity preferences (interests) if you set them; payment information processed securely by Stripe (we never store your card details); booking history including which venues you visit, dates, times and credits used; the meeting address you provide for a private instructor session (needed so the instructor can find you) and any travel-zone information for that address; free-text notes you may add to a booking (for example arrival instructions or anything else you choose to share); a timestamped record that you acknowledged the health-and-safety notice for each booking; and anonymous, cookieless usage data collected via Vercel Analytics (aggregate page views, referrer, country — no personal identifiers, no cross-site tracking)."],
   ["Special category (health) information", "You are not required to share any health information to use Wello. Each booking asks you to acknowledge that you are responsible for judging your own fitness to participate — we record only the timestamp of that acknowledgement, not any health detail. If you voluntarily share health-related information via the free-text notes field, or in person with a Partner, we treat this as special-category personal data under GDPR Article 9 and process it only to allow the Partner to deliver your session safely."],
-  ["How we use your data", "Your data is used to: process and confirm bookings; send transactional emails via Resend (booking confirmations, receipts, reminders, cancellation notices); send booking notifications to partners via WhatsApp and SMS (Twilio), where the partner has opted in; manage your credit balance and account; understand aggregate platform usage through cookieless analytics (Vercel Analytics); and comply with legal obligations. We never sell your personal data to third parties, and we never use it for advertising."],
-  ["Legal bases for processing", "We rely on the following legal bases under GDPR: performance of a contract (to deliver the platform and process your bookings), legitimate interests (to secure the platform, improve it, and understand aggregate usage via cookieless analytics), consent (for any special-category information you voluntarily share), and legal obligation (for financial and tax record-keeping)."],
+  ["How we use your data", "Your data is used to: process and confirm bookings; send transactional emails via Resend (booking confirmations, receipts, reminders, cancellation notices); send booking notifications to partners via WhatsApp and SMS (Twilio), where the partner has opted in; where you have opted in, send occasional marketing emails from us (tips, new venues, updates) — you can withdraw this consent at any time from your account Email preferences or via the one-click unsubscribe link in any marketing email; manage your credit balance and account; understand aggregate platform usage through cookieless analytics (Vercel Analytics); and comply with legal obligations. We never sell your personal data to third parties, and we never use it for advertising."],
+  ["Legal bases for processing", "We rely on the following legal bases under GDPR: performance of a contract (to deliver the platform and process your bookings), legitimate interests (to secure the platform, improve it, and understand aggregate usage via cookieless analytics), consent (for marketing emails and for any special-category information you voluntarily share), and legal obligation (for financial and tax record-keeping)."],
   ["Third-party services", "Wello uses the following third-party services which may process your data: Supabase (database and authentication — hosted in the EU); Stripe (payment processing — PCI DSS compliant); Resend (transactional email); Vercel (web hosting and cookieless product analytics via Vercel Analytics); Twilio (WhatsApp and SMS notifications to partners). Each service operates under its own privacy policy and data processing agreement."],
   ["Venue partners", "When you book a class or experience, your first name and booking reference are shared with the relevant venue Partner so they can confirm your attendance. For private instructor sessions delivered at your location, your stated meeting address and any location notes you add are shared with the instructor so they can reach you. Any other notes you add to a booking (for example arrival instructions) are also shared. Partners are contractually restricted from using this data for any other purpose, including marketing, without your separate consent."],
   ["Data retention", "We retain your account data for as long as your account is active. Booking records are kept for 7 years for financial compliance under UK and Spanish tax law. Anonymous analytics data (Vercel Analytics) is retained for up to 12 months. You can request deletion of your account at any time; account deletion removes personal data except records we are legally required to keep."],
@@ -5298,16 +5313,42 @@ function ProfilePage({ bookings, savedIds, listings, credits, creditSplit = { pu
                   );
                 })()}
               </div>
-            )},{title:"Notifications",content:(
+            )},{title:"Email preferences",content:(
               <div style={{padding:"20px",display:"flex",flexDirection:"column",gap:14}}>
-                {["Booking confirmations","Availability reminders","Weekly recommendations","New venues nearby"].map(l=>(
-                  <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{fontFamily:F2,fontSize:14,color:"#1B1C19"}}>{l}</span>
-                    <div style={{width:44,height:24,borderRadius:999,background:"#213C18",cursor:"pointer",position:"relative",flexShrink:0}}>
-                      <div style={{position:"absolute",top:2,right:2,width:20,height:20,borderRadius:"50%",background:"#fff",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
-                    </div>
+                {/* Transactional emails — always on. Listed so members can
+                    see they'll receive them, but they can't turn them off
+                    without deleting the account. Honest. */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <span style={{fontFamily:F2,fontSize:14,color:"#1B1C19",display:"block"}}>Booking confirmations & reminders</span>
+                    <span style={{fontFamily:F2,fontSize:11,color:"#A3B18A"}}>Always on — needed to run your bookings</span>
                   </div>
-                ))}
+                  <div style={{width:44,height:24,borderRadius:999,background:"#E4E2DD",position:"relative",flexShrink:0,opacity:0.6}}>
+                    <div style={{position:"absolute",top:2,right:2,width:20,height:20,borderRadius:"50%",background:"#fff",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
+                  </div>
+                </div>
+
+                {/* Marketing opt-in — genuine toggle, writes to
+                    profiles.marketing_opt_in + timestamp for the GDPR audit
+                    trail. Opt-out records opt-out timestamp too and would
+                    add to the suppression list in the unsubscribe flow. */}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <span style={{fontFamily:F2,fontSize:14,color:"#1B1C19",display:"block"}}>Wello updates & offers</span>
+                    <span style={{fontFamily:F2,fontSize:11,color:"#A3B18A"}}>Tips, new venues, occasional offers. Unsubscribe anytime.</span>
+                  </div>
+                  <div onClick={async ()=>{
+                    if (!authSession?.user?.id) return;
+                    const next = !profile?.marketing_opt_in;
+                    const patch = next
+                      ? { marketing_opt_in: true,  marketing_opt_in_at:  new Date().toISOString() }
+                      : { marketing_opt_in: false, marketing_opt_out_at: new Date().toISOString() };
+                    const { error } = await supabase.from('profiles').update(patch).eq('id', authSession.user.id);
+                    if (!error) onProfilePatch?.(patch);
+                  }} style={{width:44,height:24,borderRadius:999,background:profile?.marketing_opt_in?"#213C18":"#E4E2DD",cursor:"pointer",position:"relative",transition:"background .2s",flexShrink:0}}>
+                    <div style={{position:"absolute",top:2,left:profile?.marketing_opt_in?22:2,width:20,height:20,borderRadius:"50%",background:"#fff",transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
+                  </div>
+                </div>
               </div>
             )},{title:"Danger zone",content:(
               <div style={{padding:"20px"}}>
@@ -15849,7 +15890,7 @@ export default function App() {
       // runs on every authSession change, and blindly rewriting these
       // would clobber that.
       const { data: existingProfile } = await supabase
-        .from('profiles').select('consumer_terms_version').eq('id', uid).maybeSingle();
+        .from('profiles').select('consumer_terms_version, marketing_opt_in_at, marketing_opt_out_at').eq('id', uid).maybeSingle();
       const payload = {
         id: uid,
         email: u.email ?? null,
@@ -15858,6 +15899,19 @@ export default function App() {
       if (!existingProfile?.consumer_terms_version) {
         payload.consumer_terms_version     = CONSUMER_TERMS_VERSION;
         payload.consumer_terms_accepted_at = new Date().toISOString();
+      }
+      // First-time signup: honour the marketing opt-in checkbox from the
+      // AuthModal (passed through user_metadata). Only stamp if this is a
+      // fresh profile row — never re-stamp on subsequent sign-ins, which
+      // would either clobber a later opt-out or fabricate consent.
+      // A prior opt-out is respected: even if metadata says opt-in=true,
+      // we won't re-enable marketing without an explicit new consent
+      // action from Settings.
+      if (existingProfile?.marketing_opt_in_at == null
+          && existingProfile?.marketing_opt_out_at == null
+          && u.user_metadata?.marketing_opt_in === true) {
+        payload.marketing_opt_in    = true;
+        payload.marketing_opt_in_at = new Date().toISOString();
       }
       const { data: row, error: upsertErr } = await supabase
         .from('profiles')
