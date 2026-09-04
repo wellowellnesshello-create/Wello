@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { Analytics } from '@vercel/analytics/react'
 import './index.css'
 import App, { PrivacyPage, TermsPage } from './App.jsx'
 
@@ -23,12 +24,16 @@ if (cancelMatch && import.meta.env.VITE_SUPABASE_URL) {
   window.location.replace(`${base}/functions/v1/studio-cancel-booking?t=${token}`)
 } else if (legalPage) {
   createRoot(document.getElementById('root')).render(
-    <StrictMode>{legalPage}</StrictMode>,
+    <StrictMode>
+      {legalPage}
+      <Analytics />
+    </StrictMode>,
   )
 } else {
   createRoot(document.getElementById('root')).render(
     <StrictMode>
       <App />
+      <Analytics />
     </StrictMode>,
   )
 }
