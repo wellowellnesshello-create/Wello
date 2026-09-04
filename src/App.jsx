@@ -320,7 +320,7 @@ function cancelStatusFor(booking, bizOrCat) {
 // Bump this string whenever the agreement body changes. Partners keep the
 // version they accepted on their businesses row so we can tell if they need
 // to re-accept an updated document.
-const TERMS_VERSION = 'v1.2-2026-09';
+const TERMS_VERSION = 'v1.3-2026-09';
 
 // Consumer-facing Terms of Use version stamped on profiles.consumer_terms_version
 // at signup. Bump this string when the customer TOU materially changes; the
@@ -360,7 +360,7 @@ const AGREEMENT_SECTIONS = [
     id: '2',
     title: 'Appointment and Scope',
     body: [
-      '2.1  Wello operates a marketplace that connects Members with wellness venues and instructors in Mallorca. Wello acts as a booking intermediary and commercial agent for the limited purpose of concluding Bookings and collecting payment on the Partner\'s behalf.',
+      '2.1  Wello operates a marketplace that connects Members with wellness venues and instructors. The current service area of the marketplace is Mallorca, Spain; Wello may extend or vary this service area from time to time without amendment to this Agreement. Wello acts as a booking intermediary and commercial agent for the limited purpose of concluding Bookings and collecting payment on the Partner\'s behalf.',
       '2.2  The Partner appoints Wello as its non-exclusive agent for the purposes of marketing the Partner\'s Sessions on the Platform, accepting Bookings, and collecting payment from Members.',
       '2.3  This Agreement is non-exclusive. The Partner remains free to sell its services through its own channels and through any other platform, and Wello remains free to list any other venue or instructor.',
       '2.4  The Partner at all times remains the provider of the Sessions. Nothing in this Agreement creates an employment relationship, joint venture or partnership between the parties. Wello does not deliver, supervise or control the Sessions.',
@@ -4098,7 +4098,12 @@ function PrivacyPage() {
         <header style={{marginBottom:"clamp(28px,4vw,44px)"}}>
           <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"4px",textTransform:"uppercase",color:"#54584F",margin:"0 0 10px"}}>Legal</p>
           <h1 style={{fontFamily:F2,fontSize:"clamp(28px,4vw,42px)",fontWeight:800,color:"#213C18",letterSpacing:"-1.4px",margin:"0 0 8px",lineHeight:1.1}}>Privacy Policy</h1>
-          <p style={{fontFamily:F2,fontSize:14,color:"#54584F",margin:0,fontWeight:500}}>Last updated September 2026 · Wello-Wellness Ltd</p>
+          <p style={{fontFamily:F2,fontSize:14,color:"#54584F",margin:"0 0 16px",fontWeight:500}}>Last updated September 2026 · Wello-Wellness Ltd</p>
+          {/* Euverify GDPR Trust Badge — links to the verification page
+              for our appointed Article 27 EU/EEA representative. */}
+          <a href="https://gdpr.euverify.com/verify/4bb47590-ffb8-4c0b-b018-61aef06b5ea5" target="_blank" rel="noopener" style={{display:"inline-block"}}>
+            <img src="https://gdpr.euverify.com/images/UE.png" alt="GDPR Compliant — Euverify" style={{height:44,width:"auto",display:"block"}}/>
+          </a>
         </header>
 
         {PRIVACY_SECTIONS.map(([title, body]) => (
