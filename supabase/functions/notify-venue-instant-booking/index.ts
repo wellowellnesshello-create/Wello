@@ -167,6 +167,11 @@ serve(async (req) => {
         '3': dateHuman,
         '4': timeShort,
         '5': deadline,
+        // Var 6 wires into the template's button URL (Cancel booking).
+        // Passing the raw booking id for now — signed-token gen is a
+        // follow-up; the URL will still identify the booking, just
+        // without tamper-proofing.
+        '6': String(booking.id),
       }),
     })
     const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`)

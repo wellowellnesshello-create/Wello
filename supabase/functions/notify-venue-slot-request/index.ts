@@ -222,6 +222,8 @@ serve(async (req) => {
         '3': dateHuman,
         '4': timeShort,
         '5': acceptDeadline,
+        // See notify-venue-instant-booking for the var-6 rationale.
+        '6': String(booking.id),
       }),
     })
     const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`)
