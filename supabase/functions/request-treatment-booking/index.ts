@@ -273,7 +273,7 @@ serve(async (req) => {
     .limit(1)
     .maybeSingle()
   if (dupe?.id) {
-    return json({ error: 'You already have a pending request for this offering. The venue has up to 48 hours to respond.', duplicate_booking_id: dupe.id }, 409)
+    return json({ error: 'You already have a pending request for this offering. The venue has up to 24 hours to respond.', duplicate_booking_id: dupe.id }, 409)
   }
 
   // ── Insert the pending booking ────────────────────────────────────────
@@ -342,10 +342,10 @@ serve(async (req) => {
   }
 
   // ── Mint accept + decline tokens ──────────────────────────────────────
-  // Same 48h clock as auto-decline plus a small buffer so late clicks
+  // Same 24h clock as auto-decline plus a small buffer so late clicks
   // still land before the sweep. Separate signatures per action so one
   // leaked token doesn't unlock both operations.
-  const expiryIso = new Date(Date.now() + 49 * 60 * 60 * 1000).toISOString()
+  const expiryIso = new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString()
   const acceptPayload  = `${bookingId}.${expiryIso}.accept`
   const declinePayload = `${bookingId}.${expiryIso}.decline`
   const acceptSig  = await hmacSign(acceptPayload,  SAFETY_CANCEL_SECRET)
@@ -399,7 +399,7 @@ serve(async (req) => {
     const html = `
       <div style="font-family:Manrope,Arial,sans-serif;max-width:540px;margin:0 auto;padding:24px;color:#1B1C19;background:#FBF9F4;">
         <h2 style="color:#213C18;font-size:18px;margin:0 0 14px;">New booking request</h2>
-        <p style="margin:0 0 16px;line-height:1.5;">${firstName} has requested a session at ${business.name}. Please accept or decline within 48 hours. If you do not respond, the request expires and the member's credits are returned in full.</p>
+        <p style="margin:0 0 16px;line-height:1.5;">${firstName} has requested a session at ${business.name}. Please accept or decline within 24 hours. If you do not respond, the request expires and the member's credits are returned in full.</p>
         <table style="width:100%;border-collapse:collapse;background:#F5F3EE;border-radius:8px;padding:14px;margin:0 0 18px;">
           <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;width:120px;">Session</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">${offeringType}</td></tr>
           <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Duration</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;">${durMin} min</td></tr>

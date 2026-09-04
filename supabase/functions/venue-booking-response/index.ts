@@ -305,7 +305,7 @@ async function emailCustomerDecline(
     ? `Your request at ${venueName} timed out`
     : `${venueName} cannot host your ${sessionName}`
   const opening = autoDecline
-    ? `<p style="color:#54584F;line-height:1.7;">Your request for <strong>${sessionName}</strong> at ${venueName} on <strong>${dateHuman}</strong> was not confirmed within 48 hours. Your credits are returned in full.</p>`
+    ? `<p style="color:#54584F;line-height:1.7;">Your request for <strong>${sessionName}</strong> at ${venueName} on <strong>${dateHuman}</strong> was not confirmed within 24 hours. Your credits are returned in full.</p>`
     : `<p style="color:#54584F;line-height:1.7;">Unfortunately ${venueName} cannot host your <strong>${sessionName}</strong> on <strong>${dateHuman}</strong>. Your ${credits} credits have been returned in full.</p>`
 
   await sendEmail(
@@ -460,7 +460,7 @@ serve(async (req) => {
   const expiresAt = new Date(expiryIso).getTime()
   if (!Number.isFinite(expiresAt)) return html(page('Invalid link', `<h1>Invalid link</h1><p>This link has an invalid expiry.</p>`), 400)
   if (now > expiresAt) {
-    return html(page('Window closed', `<h1>Window closed</h1><p>The 48 hour window for this request has ended. The member's credits have already been returned.</p>`), 410)
+    return html(page('Window closed', `<h1>Window closed</h1><p>The 24 hour window for this request has ended. The member's credits have already been returned.</p>`), 410)
   }
   const tokenColumn: 'venue_accept_token' | 'venue_decline_token' =
     action === 'accept' ? 'venue_accept_token' : 'venue_decline_token'
@@ -531,11 +531,11 @@ serve(async (req) => {
     // Confirmation email — brief, matches the rest of the pattern.
     if (customer.email) {
       // Cancellation window shown in the email. Prefer per-partner value;
-      // fall back to 48h private / 24h everything else.
+      // fall back to 48h private / 12h everything else.
       const cwhRaw = Number(business?.cancellation_window_hours)
       const cancelWindowHours = (Number.isFinite(cwhRaw) && cwhRaw >= 1 && cwhRaw <= 168)
         ? cwhRaw
-        : (business?.category === 'Private Instructor' ? 48 : 24)
+        : (business?.category === 'Private Instructor' ? 48 : 12)
       await sendEmail(customer.email, `Your ${sessionName} at ${venueName} is confirmed`,
         `<div style="font-family:Manrope,Arial,sans-serif;max-width:520px;padding:24px;background:#FBF9F4;">
           <h2 style="color:#213C18;">You are booked in</h2>

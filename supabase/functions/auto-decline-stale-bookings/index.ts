@@ -2,7 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 // Scheduled hourly via pg_cron / pg_net. Finds every booking still in status
-// 'pending_instructor' or 'pending_venue' more than 48 hours after creation
+// 'pending_instructor' or 'pending_venue' more than 24 hours after creation
 // and triggers the auto_decline path on the appropriate handler:
 //   - pending_instructor -> instructor-booking-response (existing flow)
 //   - pending_venue      -> venue-booking-response      (studio/spa offering)
@@ -46,7 +46,7 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     })
 
-    const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
     const { data: stale, error } = await supabase
       .from('bookings')
       .select('id, status')

@@ -116,12 +116,12 @@ serve(async (req) => {
     if (bizErr || !business) return json({ error: 'Business not found' }, 404)
 
     // Cancellation window shown in the confirmation email. Prefer the
-    // per-partner column; fall back to 48h private / 24h everything else
+    // per-partner column; fall back to 48h private / 12h everything else
     // (mirrors cancelWindowHoursFor in the client).
     const cwhRaw = Number(business.cancellation_window_hours)
     const cancelWindowHours = (Number.isFinite(cwhRaw) && cwhRaw >= 1 && cwhRaw <= 168)
       ? cwhRaw
-      : (business.category === 'Private Instructor' ? 48 : 24)
+      : (business.category === 'Private Instructor' ? 48 : 12)
 
     if (action !== 'auto_decline' && actingUserId && business.user_id && business.user_id !== actingUserId) {
       return json({ error: 'You can only respond to bookings for your own venues.' }, 403)

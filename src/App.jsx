@@ -183,10 +183,11 @@ function businessTypeFor(typeId) { return BUSINESS_TYPES.find(t=>t.id===typeId) 
 // ─── Cancellation policy ──────────────────────────────────────────────────
 // Windows apply to confirmed bookings only. Private-instructor sessions get
 // a longer 48-hour window because the instructor's slot is exclusively held
-// for one member. Group / venue sessions use the standard 24-hour window.
+// for one member. Group / venue sessions use the standard 12-hour window
+// (ClassPass-aligned).
 // These are fallback defaults only — the authoritative value is per-partner
 // on businesses.cancellation_window_hours, editable from Settings.
-const CANCEL_WINDOW_STANDARD_HOURS = 24;
+const CANCEL_WINDOW_STANDARD_HOURS = 12;
 const CANCEL_WINDOW_PRIVATE_HOURS  = 48;
 
 // Coerces a stored travel-areas value into the current [{area,fee_eur}] shape.
@@ -319,13 +320,13 @@ function cancelStatusFor(booking, bizOrCat) {
 // Bump this string whenever the agreement body changes. Partners keep the
 // version they accepted on their businesses row so we can tell if they need
 // to re-accept an updated document.
-const TERMS_VERSION = 'v1.1-2026-07';
+const TERMS_VERSION = 'v1.2-2026-09';
 
 // Consumer-facing Terms of Use version stamped on profiles.consumer_terms_version
 // at signup. Bump this string when the customer TOU materially changes; the
 // upsert path in App.jsx will then record a new acceptance on next
 // authenticated session for anyone whose stored version is older or null.
-const CONSUMER_TERMS_VERSION = 'v1.0-2026-07';
+const CONSUMER_TERMS_VERSION = 'v1.1-2026-09';
 
 // Feature flag: when true, partners must complete Stripe Connect onboarding
 // before their venue can be submitted for review, and the "Payouts" step
@@ -383,7 +384,7 @@ const AGREEMENT_SECTIONS = [
       '4.1  The Partner sets its own Session prices. Wello will not alter the Partner\'s pricing without agreement. Prices are displayed to Members in Wello credits at a rate of one credit per euro of Session Value.',
       '4.2  Members pay for Sessions using credits purchased from Wello. Wello is solely responsible for the sale of credits to Members, including any service fee Wello charges Members on credit purchases. No such Member-facing fee reduces the amount payable to the Partner.',
       '4.3  A Booking is confirmed when the Member completes the booking flow on the Platform and, where relevant, when it is accepted by the Partner\'s integrated booking system. For private instructor Sessions, a Booking is confirmed when the instructor accepts the request or when the acceptance window expires in accordance with clause 4.4.',
-      '4.4  Private instructor booking requests must be accepted or declined by the Partner within 48 hours. If the Partner does not respond within 48 hours, the request is automatically declined and the Member\'s credits are returned in full, in accordance with clause 5.2. Accepting promptly gives the Partner the best chance of retaining the Booking.',
+      '4.4  Private instructor booking requests must be accepted or declined by the Partner within 24 hours. If the Partner does not respond within 24 hours, the request is automatically declined and the Member\'s credits are returned in full, in accordance with clause 5.2. Accepting promptly gives the Partner the best chance of retaining the Booking.',
       '4.5  The Partner will honour every confirmed Booking on the same basis as a booking made through its own channels, and will not treat Members less favourably than its direct customers.',
     ],
   },
@@ -391,11 +392,12 @@ const AGREEMENT_SECTIONS = [
     id: '5',
     title: 'Cancellations and No-Shows',
     body: [
-      '5.1  Members may cancel a confirmed Booking through the Platform up to 24 hours before the scheduled Session start time. For private instructor Sessions, the cancellation window is 48 hours before the scheduled Session start time, reflecting that the instructor holds the slot exclusively for one Member. Cancellations made within these windows result in the Member\'s credits being returned in full, and no Commission or payout arises. Cancellations made after these windows have closed are not permitted through the Platform, and the Booking is treated as a Completed Booking under clause 5.2.',
+      '5.1  Members may cancel a confirmed Booking through the Platform up to 12 hours before the scheduled Session start time. For private instructor Sessions, the cancellation window is 48 hours before the scheduled Session start time, reflecting that the instructor holds the slot exclusively for one Member. Cancellations made within these windows result in the Member\'s credits being returned in full, and no Commission or payout arises. Cancellations made after these windows have closed are not permitted through the Platform, and the Booking is treated as a Completed Booking under clause 5.2.',
       '5.2  Where a Member fails to attend a confirmed Session without cancelling within the applicable window (a no-show), the Booking is treated as a Completed Booking. The Member\'s credits are deducted and the Partner is paid in full for that Booking. The Partner does not bear the cost of Member no-shows. This clause applies to confirmed Bookings only, and does not apply to private instructor requests that are automatically declined under clause 4.4, for which credits are returned to the Member.',
-      '5.3  If the Partner cancels a confirmed Booking other than through the safety window described in clause 5.4, the Member\'s credits are returned in full. Repeated Partner cancellations of this kind may result in reduced visibility on the Platform or suspension under clause 11.',
+      '5.3  If the Partner cancels a confirmed Booking other than under clauses 5.4 or 5.5, the Member\'s credits are returned in full. Repeated Partner cancellations of this kind may result in reduced visibility on the Platform or suspension under clause 11.',
       '5.4  Where the Partner has opted into the booking safety window feature, the Partner may cancel a newly confirmed Booking within the window communicated in the booking alert (currently 2 hours, counted within the hours of 9:00 to 19:00 Spanish time) where it has a genuine scheduling conflict. On such a cancellation the Member\'s credits are returned in full and Wello may suggest alternative Sessions to the Member. A cancellation made properly within the safety window is not a breach of this Agreement and does not of itself trigger the consequences described in clause 5.3, although Wello may review persistent use of the safety window with the Partner.',
-      '5.5  If the Partner needs to cancel a Session, it will give Wello and affected Members as much notice as reasonably possible through the partner portal or by contacting Wello directly.',
+      '5.5  Weather and unavoidable circumstances. The Partner may cancel a confirmed Booking outside the safety window where delivery of the Session is prevented by weather, unsafe conditions, or other genuinely unavoidable circumstances (for example rain or sea conditions preventing an outdoor watersports session, a facility closure, or the instructor being unfit to teach). On such a cancellation the Member\'s credits are returned in full and Wello will notify the Member on the Partner\'s behalf by email as promptly as reasonably possible. A cancellation made properly under this clause is not a breach of this Agreement and does not of itself trigger the consequences described in clause 5.3, although Wello may review persistent use of this provision with the Partner.',
+      '5.6  If the Partner needs to cancel a Session under clauses 5.3, 5.4 or 5.5, it will give Wello and affected Members as much notice as reasonably possible through the partner portal or by contacting Wello directly.',
     ],
   },
   {
@@ -1535,7 +1537,7 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
 
                   <div style={{background:"#FFF7EA",border:"1px solid #E8C9A4",borderRadius:10,padding:"10px 14px",marginBottom:20}}>
                     <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#7A5C32",margin:"0 0 2px",letterSpacing:"0.3px"}}>This is a booking request</p>
-                    <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.55}}>Your instructor has 48 hours to confirm. Credits are reserved but only deducted on confirmation. If declined or unanswered, we'll suggest alternative instructors and return your credits.</p>
+                    <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.55}}>Your instructor has 24 hours to confirm. Credits are reserved but only deducted on confirmation. If declined or unanswered, we'll suggest alternative instructors and return your credits.</p>
                   </div>
                 </>
               )}
@@ -1608,12 +1610,12 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                   : effectiveRequestMode      ? `Request booking · ◈ ${cost} held`
                   : `Confirm · ◈ ${cost} credits`;
                 const cancelWindow = cancelWindowHoursFor(biz);
-                // Detect "late booking" — slot start is within 24h of now.
-                // Copy mirrors clause 6.1 of the consumer terms so customers
-                // see it before confirming a booking that can't be
-                // cancelled.
+                // Detect "late booking" — slot start is inside this venue's
+                // cancel window. Copy mirrors clause 6.1 of the consumer
+                // terms so customers see it before confirming a booking
+                // that can't be cancelled.
                 const slotStart = sessionDateTime(slot?.date, slot?.time);
-                const isLateBooking = slotStart && (slotStart.getTime() - Date.now()) < 24 * 60 * 60 * 1000;
+                const isLateBooking = slotStart && (slotStart.getTime() - Date.now()) < cancelWindow * 60 * 60 * 1000;
                 return (
                   <>
                   <div style={{background:"#F5F3EE",border:"1px solid rgba(195,200,188,0.5)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
@@ -1643,7 +1645,7 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
                   </label>
                   {isLateBooking && !isPrivateBooking && (
                     <p style={{fontFamily:F2,fontSize:12,color:"#54584F",lineHeight:1.55,margin:"0 0 12px",fontStyle:"italic"}}>
-                      This session starts in under 24 hours, so this booking is final once confirmed.
+                      This session starts in under {cancelWindow} hours, so this booking is final once confirmed.
                     </p>
                   )}
                   <button onClick={()=>{
@@ -1691,8 +1693,8 @@ function BookingModal({ biz, slot, onClose, onConfirm, credits, onBuyCredits, pr
             {effectiveRequestMode && (
               <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 20px",lineHeight:1.6}}>
                 {isPrivateBooking
-                  ? "Your instructor has been notified by SMS. They have 48 hours to confirm. We'll email you the moment they do — credits stay on your account until then."
-                  : "The venue has been emailed. They have 48 hours to confirm. We'll email you the moment they do — credits stay on your account until then."}
+                  ? "Your instructor has been notified by SMS. They have 24 hours to confirm. We'll email you the moment they do — credits stay on your account until then."
+                  : "The venue has been emailed. They have 24 hours to confirm. We'll email you the moment they do — credits stay on your account until then."}
               </p>
             )}
             {totalPeople > 1 && (
@@ -1896,7 +1898,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   // Reveal-per-offering pattern: only one panel open at a time so the
   // modal stays compact. Each panel wraps a request form that hits the
   // request-treatment-booking edge function, mirroring the private
-  // instructor pending flow with a 48h window.
+  // instructor pending flow with a 24h window.
   const [openOfferingIdx, setOpenOfferingIdx] = useState(null);
   // Rental booking state — inline expand per rental card. Only one open
   // at a time to keep the panel compact. Availability is checked
@@ -2215,7 +2217,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     // Fire the venue notification (mint accept/decline tokens + email
     // the venue). Failure is non-blocking — the booking row already
     // exists; the partner will still see it in Requests. Auto-decline
-    // sweeps at the 48h mark regardless.
+    // sweeps at the 24h mark regardless.
     try {
       await supabase.functions.invoke('notify-venue-rental-request', {
         body: { booking_id: inserted.id },
@@ -2226,7 +2228,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     setRentalSubmitting(false);
     setRentalSuccessFor(openRentalIdx);
     onBookingsChanged?.();
-    showToast?.(`Rental request sent — ◈ ${totalCredits} held. The venue has 48 hours to confirm.`, "info", 4200);
+    showToast?.(`Rental request sent — ◈ ${totalCredits} held. The venue has 24 hours to confirm.`, "info", 4200);
   }
   const _todayIso = new Date().toISOString().slice(0, 10);
   const _tomorrow = new Date(); _tomorrow.setDate(_tomorrow.getDate() + 1);
@@ -2338,7 +2340,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
       if (data?.error) { setReqError(data.error); return; }
       setReqSuccessFor(openOfferingIdx);
       onBookingsChanged?.();
-      showToast?.("Request sent. The venue has 48 hours to confirm.", "info", 4200);
+      showToast?.("Request sent. The venue has 24 hours to confirm.", "info", 4200);
     } catch (e) {
       setReqError(e?.message || 'Could not send request.');
     } finally {
@@ -2728,7 +2730,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                 {privateSegLabel}
               </p>
               <p style={{fontFamily:F2,fontSize:12,color:"#54584F",lineHeight:1.55,margin:"0 0 16px"}}>
-                Not on the timetable. Pick an offering and request a booking. The venue will confirm within 48 hours.
+                Not on the timetable. Pick an offering and request a booking. The venue will confirm within 24 hours.
               </p>
               <div style={{display:"flex",flexDirection:"column",gap:10,paddingBottom:8}}>
                 {nonRentalOfferings.map((o, i) => {
@@ -2805,7 +2807,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                         <div style={{marginTop:14,padding:"12px 14px",background:"#F5F3EE",border:"1px solid rgba(163,177,138,0.6)",borderRadius:10}}>
                           <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 6px",letterSpacing:"-0.1px"}}>Request sent</p>
                           <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.55}}>
-                            The venue will confirm within 48 hours. If they cannot host you, your credits are returned in full. You can cancel the request from your bookings at any time.
+                            The venue will confirm within 24 hours. If they cannot host you, your credits are returned in full. You can cancel the request from your bookings at any time.
                           </p>
                         </div>
                       )}
@@ -2813,7 +2815,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                         <div style={{marginTop:14,padding:"14px 14px",background:"#fff",border:"1px solid rgba(195,200,188,0.5)",borderRadius:10}}>
                           <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.2px",textTransform:"uppercase",margin:"0 0 4px"}}>Request booking</p>
                           <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.55}}>
-                            Pick a date and time preference. The venue has 48 hours to confirm. Your credits are held from your balance while the request is pending and returned in full if the venue cannot host you.
+                            Pick a date and time preference. The venue has 24 hours to confirm. Your credits are held from your balance while the request is pending and returned in full if the venue cannot host you.
                           </p>
 
                           <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -2975,7 +2977,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
             <>
               <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>Rentals</p>
               <p style={{fontFamily:F2,fontSize:12,color:"#54584F",lineHeight:1.55,margin:"0 0 16px"}}>
-                Pick a rental, choose your dates and add-ons. The venue confirms within 48 hours; credits are held from your balance until they do.
+                Pick a rental, choose your dates and add-ons. The venue confirms within 24 hours; credits are held from your balance until they do.
               </p>
               <div style={{display:"flex",flexDirection:"column",gap:12,paddingBottom:8}}>
                 {rentalOfferings.map((r, i) => {
@@ -3029,7 +3031,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                         <div style={{marginTop:14,padding:"12px 14px",background:"#F5F3EE",border:"1px solid rgba(163,177,138,0.6)",borderRadius:10}}>
                           <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",margin:"0 0 6px",letterSpacing:"-0.1px"}}>Request sent</p>
                           <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.55}}>
-                            The venue has 48 hours to confirm your {r?.type || 'rental'} for {rentalStart} → {rentalEnd}. Credits are held from your balance until they do.
+                            The venue has 24 hours to confirm your {r?.type || 'rental'} for {rentalStart} → {rentalEnd}. Credits are held from your balance until they do.
                           </p>
                         </div>
                       )}
@@ -3052,7 +3054,7 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                         <div style={{marginTop:14,padding:"14px 14px",background:"#fff",border:"1px solid rgba(195,200,188,0.5)",borderRadius:10}}>
                           <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.2px",textTransform:"uppercase",margin:"0 0 4px"}}>Book rental</p>
                           <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.55}}>
-                            Pick your dates and any add-ons. The venue has 48 hours to confirm. Credits are held from your balance while the request is pending and returned in full if the venue can't fulfil it.
+                            Pick your dates and any add-ons. The venue has 24 hours to confirm. Credits are held from your balance while the request is pending and returned in full if the venue can't fulfil it.
                           </p>
                           <div style={{display:"flex",flexDirection:"column",gap:10}}>
                             {(() => {
@@ -3798,7 +3800,7 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
             <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#D6B47C",letterSpacing:"3px",textTransform:"uppercase",margin:"0 0 10px"}}>New on Wello</p>
             <h3 style={{fontFamily:F2,fontSize:"clamp(24px,3.5vw,36px)",fontWeight:700,color:"#fff",letterSpacing:"-1px",margin:"0 0 12px",lineHeight:1.1}}>Book a private instructor</h3>
             <p style={{fontFamily:F2,fontSize:"clamp(13px,1.5vw,15px)",color:"rgba(255,255,255,0.7)",fontWeight:400,lineHeight:1.65,margin:"0 0 18px",maxWidth:520}}>
-              Yoga, pilates, surf, fitness — request a 1-to-1 session and our local instructors come to you. Same pass. Same credits. Pick a slot, tell us where you're based, and your instructor confirms within 48 hours.
+              Yoga, pilates, surf, fitness — request a 1-to-1 session and our local instructors come to you. Same pass. Same credits. Pick a slot, tell us where you're based, and your instructor confirms within 24 hours.
             </p>
             <button onClick={()=>{ onSetView("explore"); setTimeout(()=>{ const evt=new CustomEvent('wello-set-cat',{detail:'Private Instructor'}); window.dispatchEvent(evt); },50); }}
               style={{padding:"11px 22px",background:"#D6B47C",color:"#213C18",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer",letterSpacing:"-0.2px"}}
@@ -3810,7 +3812,7 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
           <div style={{display:"flex",gap:24,flexWrap:"wrap",position:"relative",zIndex:1}}>
             {[
               ["1-to-1","Always private"],
-              ["48h","Instructor confirms"],
+              ["24h","Instructor confirms"],
               ["Comes to you","Beach, home, park"],
             ].map(([k,v])=>(
               <div key={k}>
@@ -3951,7 +3953,7 @@ const CONSUMER_TERMS_SECTIONS = [
     title: 'Bookings',
     body: [
       '5.1  A booking is confirmed when you complete the booking flow and receive a confirmation on the platform or by email. Credits equal to the session price are deducted from your balance when the booking is made.',
-      '5.2  Private instructor sessions work by request. The instructor has up to 48 hours to accept. If the instructor does not accept within 48 hours, the request is automatically declined and your credits are returned in full.',
+      '5.2  Private instructor sessions work by request. The instructor has up to 24 hours to accept. If the instructor does not accept within 24 hours, the request is automatically declined and your credits are returned in full.',
       '5.3  Some venues use a short safety window after a booking is confirmed, during which the venue may cancel if it has a genuine scheduling conflict. If this happens your credits are returned in full and we will suggest alternative sessions. This is rare and exists to prevent double bookings.',
       '5.4  Session details, including what is included, duration, location and any requirements (such as fitness level or equipment), are set out in the Partner\'s listing. Check the listing before booking.',
       '5.5  You are expected to arrive on time and to follow the Partner\'s reasonable rules at the venue, including health and safety instructions.',
@@ -3960,10 +3962,10 @@ const CONSUMER_TERMS_SECTIONS = [
   {
     title: 'Cancellations, no-shows and refunds',
     body: [
-      '6.1  You can cancel a booking through the platform. The cancellation window is shown at the time of booking. Unless the listing states otherwise, bookings can be cancelled up to 24 hours before the session start time for a full credit refund. Bookings made within 24 hours of the session start time are final once confirmed and cannot be cancelled; this is made clear before you confirm such a booking.',
+      '6.1  You can cancel a booking through the platform. The cancellation window is shown at the time of booking. Unless the listing states otherwise, bookings can be cancelled up to 12 hours before the session start time for a full credit refund. Bookings made within 12 hours of the session start time are final once confirmed and cannot be cancelled; this is made clear before you confirm such a booking.',
       '6.2  If you cancel within the cancellation window, your credits are returned to your account in full.',
       '6.3  If you do not attend a booked session and have not cancelled within the window (a no-show), the credits for that session are not refunded. The Partner has reserved that time and capacity for you and is paid for the booking.',
-      '6.4  If a Partner cancels your booking (including under the safety window in clause 5.3), your credits are returned in full.',
+      '6.4  If a Partner cancels your booking your credits are returned to your account in full. This includes cancellations for weather or other unavoidable conditions (for example rain forcing an outdoor session to be scrubbed, or the instructor being unable to deliver the session), and cancellations under the safety window in clause 5.3. Where a Partner cancels close to the session time, we will notify you by email as promptly as possible.',
       '6.5  If a session materially fails to match its listing or is not delivered, contact us at hello@wello-wellness.com within 7 days. Where we agree the session was not delivered as described, we will refund the credits for that booking. This does not limit your statutory rights.',
       '6.6  Refunds under these terms are made in credits to your Wello account, except refunds under clause 4 (withdrawal from a credit purchase), which are made to your original payment method.',
     ],
@@ -4017,6 +4019,26 @@ const CONSUMER_TERMS_SECTIONS = [
   },
 ];
 
+// Privacy Policy sections. Rendered by both PrivacyPage (standalone URL at
+// /privacy) and the in-app privacy modal so the copy lives in one place.
+// EU/GDPR require the privacy notice be accessible via a stable URL —
+// /privacy is that URL, wired up in src/main.jsx before React mounts.
+const PRIVACY_SECTIONS = [
+  ["Who we are", "Wello is a wellness marketplace based in Mallorca, Spain, operated by Wello-Wellness Ltd (registered in England and Wales, company number 17318025). We connect members with local wellness venues including yoga studios, gyms, spas and outdoor experiences. Our contact email is hello@wello-wellness.com."],
+  ["What data we collect", "We collect the following personal data when you use Wello: your name, email address, and (optional) phone number when you register; your wellness activity preferences (interests) if you set them; payment information processed securely by Stripe (we never store your card details); booking history including which venues you visit, dates, times and credits used; the meeting address you provide for a private instructor session (needed so the instructor can find you) and any travel-zone information for that address; free-text notes you may add to a booking (for example arrival instructions or anything else you choose to share); a timestamped record that you acknowledged the health-and-safety notice for each booking; and device and usage data collected via PostHog analytics to help us improve the platform."],
+  ["Special category (health) information", "You are not required to share any health information to use Wello. Each booking asks you to acknowledge that you are responsible for judging your own fitness to participate — we record only the timestamp of that acknowledgement, not any health detail. If you voluntarily share health-related information via the free-text notes field, or in person with a Partner, we treat this as special-category personal data under GDPR Article 9 and process it only to allow the Partner to deliver your session safely."],
+  ["How we use your data", "Your data is used to: process and confirm bookings; send transactional emails via Resend (booking confirmations, receipts, reminders, cancellation notices); send booking notifications to partners via WhatsApp and SMS (Twilio), where the partner has opted in; manage your credit balance and account; improve platform performance through anonymised analytics; and comply with legal obligations. We never sell your personal data to third parties, and we never use it for advertising."],
+  ["Legal bases for processing", "We rely on the following legal bases under GDPR: performance of a contract (to deliver the platform and process your bookings), legitimate interests (to secure the platform and improve it), consent (for non-essential analytics cookies, and for any special-category information you voluntarily share), and legal obligation (for financial and tax record-keeping)."],
+  ["Third-party services", "Wello uses the following third-party services which may process your data: Supabase (database and authentication — hosted in the EU); Stripe (payment processing — PCI DSS compliant); Resend (transactional email); PostHog (product analytics — data anonymised where possible); Twilio (WhatsApp and SMS notifications to partners). Each service operates under its own privacy policy and data processing agreement."],
+  ["Venue partners", "When you book a class or experience, your first name and booking reference are shared with the relevant venue Partner so they can confirm your attendance. For private instructor sessions delivered at your location, your stated meeting address and any location notes you add are shared with the instructor so they can reach you. Any other notes you add to a booking (for example arrival instructions) are also shared. Partners are contractually restricted from using this data for any other purpose, including marketing, without your separate consent."],
+  ["Data retention", "We retain your account data for as long as your account is active. Booking records are kept for 7 years for financial compliance under UK and Spanish tax law. Analytics data is retained for up to 24 months. You can request deletion of your account at any time; account deletion removes personal data except records we are legally required to keep."],
+  ["Your rights (GDPR)", "Under GDPR you have the right to: access the personal data we hold about you; correct inaccurate data; request deletion of your data; object to or restrict processing; withdraw consent (for consent-based processing); and data portability. To exercise any of these rights, contact hello@wello-wellness.com. You also have the right to lodge a complaint with your local supervisory authority — for Spain, the Agencia Española de Protección de Datos (aepd.es); for the UK, the Information Commissioner's Office (ico.org.uk)."],
+  ["Cookies", "Wello uses essential cookies to keep you signed in and maintain your session. We use PostHog analytics cookies to understand how the platform is used — these can be declined via our cookie banner at any time. We do not use advertising cookies or sell cookie data."],
+  ["International transfers", "Your data is primarily processed within the EU (Supabase EU region). Where processors operate outside the EU (for example Stripe, PostHog and Resend, which may process data in the US), transfers rely on the appropriate GDPR safeguards including Standard Contractual Clauses and the EU-US Data Privacy Framework."],
+  ["Changes to this policy", "We may update this policy from time to time. Material changes will be communicated by email or via a notice on the platform. Continued use after changes take effect constitutes acceptance."],
+  ["Contact", "For any privacy questions, data requests, or complaints: hello@wello-wellness.com. Postal correspondence: Wello-Wellness Ltd, 71-75 Shelton Street, Covent Garden, London, WC2H 9JQ, United Kingdom."],
+];
+
 function TermsPage() {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   return (
@@ -4025,7 +4047,7 @@ function TermsPage() {
         <header style={{marginBottom:"clamp(28px,4vw,44px)"}}>
           <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"4px",textTransform:"uppercase",color:"#54584F",margin:"0 0 10px"}}>Legal</p>
           <h1 style={{fontFamily:F2,fontSize:"clamp(28px,4vw,42px)",fontWeight:800,color:"#213C18",letterSpacing:"-1.4px",margin:"0 0 8px",lineHeight:1.1}}>Wello Terms of Use</h1>
-          <p style={{fontFamily:F2,fontSize:14,color:"#54584F",margin:0,fontWeight:500}}>Version 1.0, July 2026</p>
+          <p style={{fontFamily:F2,fontSize:14,color:"#54584F",margin:0,fontWeight:500}}>Version {CONSUMER_TERMS_VERSION}</p>
         </header>
 
         {CONSUMER_TERMS_SECTIONS.map((section, i) => (
@@ -4048,6 +4070,37 @@ function TermsPage() {
     </div>
   );
 }
+
+// Standalone Privacy Policy page — served at /privacy for GDPR/EU compliance
+// (privacy notice must be reachable via a stable URL, not just an in-app
+// modal). Same content as the modal — both render from PRIVACY_SECTIONS.
+function PrivacyPage() {
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  return (
+    <div style={{background:"#FBF9F4",paddingTop:24,paddingBottom:"calc(80px + env(safe-area-inset-bottom))",minHeight:"100vh"}}>
+      <div style={{maxWidth:800,margin:"0 auto",padding:"clamp(24px,5vw,48px) clamp(20px,4vw,32px)"}}>
+        <header style={{marginBottom:"clamp(28px,4vw,44px)"}}>
+          <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"4px",textTransform:"uppercase",color:"#54584F",margin:"0 0 10px"}}>Legal</p>
+          <h1 style={{fontFamily:F2,fontSize:"clamp(28px,4vw,42px)",fontWeight:800,color:"#213C18",letterSpacing:"-1.4px",margin:"0 0 8px",lineHeight:1.1}}>Privacy Policy</h1>
+          <p style={{fontFamily:F2,fontSize:14,color:"#54584F",margin:0,fontWeight:500}}>Last updated September 2026 · Wello-Wellness Ltd</p>
+        </header>
+
+        {PRIVACY_SECTIONS.map(([title, body]) => (
+          <section key={title} style={{marginBottom:"clamp(24px,3vw,32px)"}}>
+            <h2 style={{fontFamily:F2,fontSize:"clamp(16px,2vw,20px)",fontWeight:700,color:"#213C18",letterSpacing:"-0.3px",margin:"0 0 10px",lineHeight:1.3}}>{title}</h2>
+            <p style={{fontFamily:F2,fontSize:15,color:"#1B1C19",lineHeight:1.75,margin:0,fontWeight:400}}>{body}</p>
+          </section>
+        ))}
+
+        <p style={{fontFamily:F2,fontSize:12,color:"#54584F",lineHeight:1.6,margin:"32px 0 0",paddingTop:20,borderTop:"1px solid rgba(195,200,188,0.4)"}}>
+          Questions about how we handle your data? Email <a href="mailto:hello@wello-wellness.com" style={{color:"#213C18",fontWeight:600,textDecoration:"underline"}}>hello@wello-wellness.com</a>. Return to <a href="/" style={{color:"#213C18",fontWeight:600,textDecoration:"underline"}}>wello-wellness.com</a>.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export { TermsPage, PrivacyPage, PRIVACY_SECTIONS, CONSUMER_TERMS_SECTIONS };
 
 // ═══════════════════════════════════════════════════════════════
 // PAGE: ABOUT
@@ -5090,7 +5143,7 @@ function ProfilePage({ bookings, savedIds, listings, credits, creditSplit = { pu
                           )}
                           {isPendingReq && (
                             <span style={{fontFamily:F2,fontSize:10,color:"#54584F",fontStyle:"italic",textAlign:"right",maxWidth:220,lineHeight:1.4}}>
-                              The venue will confirm within 48 hours. If they cannot host you, your credits are returned in full.
+                              The venue will confirm within 24 hours. If they cannot host you, your credits are returned in full.
                             </span>
                           )}
                         </div>
@@ -6637,7 +6690,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
           // (legacy) shape.
           venue_side:       o?.venue_side === 'customer' ? 'customer' : 'instructor',
           // Booking flow. 'instant' = customer confirms immediately;
-          // 'request' = partner has 48h to accept/decline. Lets a hybrid
+          // 'request' = partner has 24h to accept/decline. Lets a hybrid
           // partner mix modes on the same business (Transcend: Fire & Ice
           // instant + Massage request). Falls back to instant to preserve
           // existing behaviour for legacy offerings.
@@ -8621,7 +8674,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             {pendingRequests && pendingRequests.length > 0 && (
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 {pendingRequests.map(req => {
-                  const expiresAt = new Date(new Date(req.created_at).getTime() + 48*60*60*1000);
+                  const expiresAt = new Date(new Date(req.created_at).getTime() + 24*60*60*1000);
                   const hoursLeft = Math.max(0, Math.round((expiresAt - new Date()) / 3600000));
                   const expired = hoursLeft <= 0;
                   const customerName = req._customer?.full_name || req._customer?.email || 'Customer';
@@ -9060,12 +9113,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
 
                           {/* Booking mode. Instant confirms immediately;
                               request routes as pending and gives the
-                              partner 48h to accept/decline. */}
+                              partner 24h to accept/decline. */}
                           <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Booking flow</p>
                           <div style={{display:"flex",gap:0,borderRadius:6,overflow:"hidden",border:"1px solid rgba(195,200,188,0.6)",width:"fit-content",marginBottom:14}}>
                             {[
                               { key:'instant',  label:'Instant book' },
-                              { key:'request',  label:'Request (48h to confirm)' },
+                              { key:'request',  label:'Request (24h to confirm)' },
                             ].map(opt => {
                               const on = (editBuffer?.booking_mode || 'instant') === opt.key;
                               return (
@@ -9318,7 +9371,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                       return `Live until ${fmt(t)}`;
                     })();
                     const flagPills = [];
-                    if (off.booking_mode === 'request')             flagPills.push({ label: 'Request · 48h to confirm', color: '#7A5C32', bg: '#FFF3E6' });
+                    if (off.booking_mode === 'request')             flagPills.push({ label: 'Request · 24h to confirm', color: '#7A5C32', bg: '#FFF3E6' });
                     if (!locMinMax && off.venue_side === 'customer') flagPills.push({ label: "At customer's address",       color: '#7A5C32', bg: '#FFF3E6' });
                     if (locMinMax && locMinMax.count > 0)           flagPills.push({ label: `${locMinMax.count} location${locMinMax.count===1?'':'s'}`, color: '#213C18', bg: '#F5F3EE' });
                     if (off.capacity > 1)                            flagPills.push({ label: `${off.capacity} seats per slot`, color: '#213C18', bg: '#F5F3EE' });
@@ -9688,7 +9741,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                         <div style={{display:"flex",gap:0,borderRadius:6,overflow:"hidden",border:"1px solid rgba(195,200,188,0.6)",width:"fit-content",marginBottom:10}}>
                           {[
                             { key:'instant',  label:'Instant book' },
-                            { key:'request',  label:'Request (48h to confirm)' },
+                            { key:'request',  label:'Request (24h to confirm)' },
                           ].map(opt => {
                             const on = (newOff.booking_mode || 'instant') === opt.key;
                             return (
@@ -10867,11 +10920,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   <input type="number" min="1" max="168" step="1"
                     value={isPreview ? "24" : (settingsForm.cancellation_window_hours ?? "")}
                     onChange={e=>!isPreview && setSettingsForm(p=>({...p,cancellation_window_hours:e.target.value}))}
-                    placeholder="24"
+                    placeholder="12"
                     style={{...INP,maxWidth:120}}
                     onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
                   <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"6px 0 0",lineHeight:1.5}}>
-                    How many hours before the session a customer can cancel and get their credits back in full. Applies to every booking at this venue. Default 24 (48 for private instructors).
+                    How many hours before the session a customer can cancel and get their credits back in full. Applies to every booking at this venue. Default 12 (48 for private instructors).
                   </p>
                 </div>
                 {/* At-customer opt-in — reveals the Coverage & travel-zone
@@ -11502,7 +11555,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
   const [tags, setTags] = useState(Array.isArray(bizData.tags) ? bizData.tags : []);
   const [customTag, setCustomTag] = useState("");
   // Opt-in safety window (studio/hotel/spa only; instructors already have
-  // their own 48h pending_instructor flow). When on, bookings under 2 hours
+  // their own 24h pending_instructor flow). When on, bookings under 2 hours
   // from now stop appearing on Explore, and every confirmed booking fires a
   // WhatsApp alert with a one-time cancel link valid for 2 hours of 9-19
   // Madrid business time.
@@ -12143,7 +12196,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
           <label style={FL}>Phone number (for booking requests) <span style={{color:T.clay,fontWeight:600}}>*</span></label>
           <input type="tel" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+34 600 000 000"
             style={{...INP,marginBottom:6}} onFocus={onFi} onBlur={onBl}/>
-          <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"0 0 16px",lineHeight:1.6}}>We text you when someone books. You have 48 hours to confirm or decline. Guests never see your number.</p>
+          <p style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,margin:"0 0 16px",lineHeight:1.6}}>We text you when someone books. You have 24 hours to confirm or decline. Guests never see your number.</p>
         </>
       )}
 
@@ -12480,7 +12533,7 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
       {isPrivateInstructor && (
         <div style={{background:T.sageXL,border:`1px solid ${T.sageL}`,borderRadius:6,padding:"12px 14px",marginBottom:20}}>
           <div style={{fontFamily:F.body,fontSize:11,color:T.sage,fontWeight:700,marginBottom:3,letterSpacing:"0.3px"}}>Each slot is a 1-to-1 private session</div>
-          <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.55}}>Bookings request your time — you have 48 hours to confirm or decline by SMS or in your dashboard. Slots must be at least 4 days out.</div>
+          <div style={{fontFamily:F.body,fontSize:11,color:T.stone,fontWeight:300,lineHeight:1.55}}>Bookings request your time — you have 24 hours to confirm or decline by SMS or in your dashboard. Slots must be at least 4 days out.</div>
         </div>
       )}
       {!isPrivateInstructor && <label style={FL}>Connect to booking system</label>}
@@ -15740,7 +15793,6 @@ export default function App() {
   },[]);
   const [cookieConsent,setCookieConsent] = useState(()=>localStorage.getItem("wello_cookie_consent")||null);
   const [showContact,setShowContact] = useState(false);
-  const [showPrivacy,setShowPrivacy] = useState(false);
   const [contactForm,setContactForm] = useState({name:"",email:"",message:""});
   const [contactSent,setContactSent] = useState(false);
   const [recovering,setRecovering] = useState(false);
@@ -16310,7 +16362,7 @@ export default function App() {
     }
   }, [authSession, pendingCheckoutQty, doCheckout]);
 
-  // Customer-initiated booking cancellation. Enforces the 24h/48h window on
+  // Customer-initiated booking cancellation. Enforces the 12h/48h window on
   // the server side; here we just fire the call and update local state on
   // success. Bumps bookingsVersion so ProfilePage refetches the reservation
   // list, and credits balance so the refund shows immediately.
@@ -16438,8 +16490,8 @@ export default function App() {
     showToast(
       effectiveRequest
         ? (isPrivateBooking
-            ? "Request sent. Instructor has 48 hours to confirm."
-            : "Request sent. The venue has 48 hours to confirm.")
+            ? "Request sent. Instructor has 24 hours to confirm."
+            : "Request sent. The venue has 24 hours to confirm.")
         : `Booked! ◈ ${cost} credits used.`,
       "success"
     );
@@ -16709,7 +16761,7 @@ export default function App() {
       {!cookieConsent&&(
         <div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:3000,background:"#1B1C19",borderTop:"1px solid rgba(255,255,255,0.08)",padding:"14px clamp(16px,4vw,32px)",display:"flex",alignItems:"center",justifyContent:"space-between",gap:16,flexWrap:"wrap"}}>
           <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:12,color:"rgba(255,255,255,0.65)",margin:0,lineHeight:1.6,flex:1,minWidth:200}}>
-            We use essential cookies to keep you signed in, and analytics cookies to improve Wello. <button onClick={()=>setShowPrivacy(true)} style={{background:"none",border:"none",color:"#A3B18A",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:12,cursor:"pointer",textDecoration:"underline",padding:0}}>Privacy Policy</button>
+            We use essential cookies to keep you signed in, and analytics cookies to improve Wello. <a href="/privacy" style={{color:"#A3B18A",fontFamily:"'Manrope',system-ui,sans-serif",fontSize:12,textDecoration:"underline"}}>Privacy Policy</a>
           </p>
           <div style={{display:"flex",gap:8,flexShrink:0}}>
             <button onClick={()=>{localStorage.setItem("wello_cookie_consent","essential");setCookieConsent("essential");}}
@@ -16833,8 +16885,8 @@ export default function App() {
             <div style={{display:"flex",gap:32,flexWrap:"wrap"}}>
               <a onClick={()=>setView("about")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>About</a>
               <a onClick={()=>setView("partners")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>For partners</a>
-              <a onClick={()=>setShowPrivacy(true)} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Privacy</a>
-              <a onClick={()=>setView("terms")} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Terms of Use</a>
+              <a href="/privacy" style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Privacy</a>
+              <a href="/terms" style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Terms of Use</a>
               <a onClick={()=>setShowContact(true)} style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#43483F",cursor:"pointer",opacity:0.8,textDecoration:"none",transition:"opacity .15s"}} onMouseEnter={e=>e.target.style.opacity="1"} onMouseLeave={e=>e.target.style.opacity="0.8"}>Contact</a>
             </div>
             <div>
@@ -16893,36 +16945,6 @@ export default function App() {
                 <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"#A3B18A",textAlign:"center",margin:0}}>Or email us directly: hello@wello-wellness.com</p>
               </div>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* PRIVACY MODAL */}
-      {showPrivacy&&(
-        <div style={{position:"fixed",inset:0,zIndex:2000,background:"rgba(27,28,25,0.75)",backdropFilter:"blur(6px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowPrivacy(false)}>
-          <div style={{background:"#fff",borderRadius:20,maxWidth:600,width:"100%",padding:"36px 32px",boxShadow:"0 32px 80px rgba(0,0,0,0.22)",maxHeight:"85vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-              <h2 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:22,fontWeight:700,color:"#213C18",margin:0}}>Privacy Policy</h2>
-              <button onClick={()=>setShowPrivacy(false)} style={{background:"transparent",border:"none",fontSize:20,cursor:"pointer",color:"#54584F"}}>×</button>
-            </div>
-            <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:11,color:"#A3B18A",margin:"0 0 24px"}}>Last updated: April 2026 · Wello (wello-wellness.com)</p>
-            {[
-              ["Who we are", "Wello is a wellness marketplace based in Mallorca, Spain. We connect members with local wellness venues including yoga studios, gyms, spas and outdoor experiences. Our contact email is hello@wello-wellness.com."],
-              ["What data we collect", "We collect the following personal data when you use Wello: your name and email address when you register or make an enquiry; payment information processed securely by Stripe (we never store your card details); booking history including which venues you visit and credits used; and device and usage data collected via PostHog analytics to help us improve the platform."],
-              ["How we use your data", "Your data is used to: process and confirm bookings; send transactional emails via Resend (booking confirmations, receipts); manage your credit balance and account; improve platform performance through anonymised analytics; and comply with legal obligations. We never sell your personal data to third parties, and we never use it for advertising."],
-              ["Third-party services", "Wello uses the following third-party services which may process your data: Supabase (database and authentication — hosted in EU); Stripe (payment processing — PCI DSS compliant); Resend (transactional email); PostHog (product analytics — data anonymised where possible). Each service operates under its own privacy policy and data processing agreement."],
-              ["Venue partners", "When you book a class or experience, your first name and booking reference are shared with the relevant venue partner so they can confirm your attendance. Venues are not permitted to use this data for any other purpose."],
-              ["Data retention", "We retain your account data for as long as your account is active. Booking records are kept for 7 years for financial compliance. You can request deletion of your account at any time."],
-              ["Your rights (GDPR)", "Under GDPR you have the right to: access the personal data we hold about you; correct inaccurate data; request deletion of your data; object to or restrict processing; and data portability. To exercise any of these rights, contact hello@wello-wellness.com. You also have the right to lodge a complaint with the relevant supervisory authority."],
-              ["Cookies", "Wello uses essential cookies to keep you signed in and maintain your session. We use PostHog analytics cookies to understand how the platform is used — these can be declined via our cookie banner. We do not use advertising cookies or sell cookie data."],
-              ["Changes to this policy", "We may update this policy from time to time. Material changes will be communicated by email or via a notice on the platform. Continued use after changes constitutes acceptance."],
-              ["Contact", "For any privacy questions or data requests: hello@wello-wellness.com"],
-            ].map(([title,body])=>(
-              <div key={title} style={{marginBottom:20,paddingBottom:20,borderBottom:"1px solid #F5F3EE"}}>
-                <h3 style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,fontWeight:700,color:"#213C18",margin:"0 0 6px",textTransform:"uppercase",letterSpacing:"0.5px"}}>{title}</h3>
-                <p style={{fontFamily:"'Manrope',system-ui,sans-serif",fontSize:13,color:"#54584F",margin:0,lineHeight:1.75}}>{body}</p>
-              </div>
-            ))}
           </div>
         </div>
       )}

@@ -4,7 +4,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // Wello booking cancellation.
 //
 // Enforces the cancellation policy set out in the Partner Agreement (clause
-// 5.1): members can cancel a confirmed booking up to 24 hours before the
+// 5.1): members can cancel a confirmed booking up to 12 hours before the
 // session start for standard sessions, or 48 hours for private-instructor
 // sessions. Cancellations inside those windows are rejected here so the
 // customer can't sidestep the policy from the client.
@@ -17,7 +17,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const SUPABASE_URL              = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 
-const STANDARD_WINDOW_HOURS = 24
+const STANDARD_WINDOW_HOURS = 12
 const PRIVATE_WINDOW_HOURS  = 48
 // Rentals default 24h. Partner-set overrides on the offering row win
 // (session_offerings[i].rental_cancellation_hours) — respected below.
@@ -163,7 +163,7 @@ serve(async (req) => {
     // 2. Look up the business + resolve the cancellation window for this
     // booking's kind. Rentals prefer the offering's own
     // rental_cancellation_hours override; classes fall back to the
-    // Private Instructor split (48h) vs standard (24h).
+    // Private Instructor split (48h) vs standard (12h).
     const isRental = !!booking.end_date
     // Post-confirmation self-cancel is a slot-based (class) privilege
     // only — rentals + appointments (offering-based, no slot_id) require

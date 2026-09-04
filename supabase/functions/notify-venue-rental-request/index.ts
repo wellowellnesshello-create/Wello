@@ -143,7 +143,7 @@ serve(async (req) => {
   const html = `
     <div style="font-family:Manrope,Arial,sans-serif;max-width:540px;margin:0 auto;padding:24px;color:#1B1C19;background:#FBF9F4;">
       <h2 style="color:#213C18;font-size:18px;margin:0 0 14px;">New rental request</h2>
-      <p style="margin:0 0 16px;line-height:1.5;">${firstName} has requested a ${rentalName} from ${business.name}. Please accept or decline within 48 hours. If you do not respond, the request expires and the member's credits are returned in full.</p>
+      <p style="margin:0 0 16px;line-height:1.5;">${firstName} has requested a ${rentalName} from ${business.name}. Please accept or decline within 24 hours. If you do not respond, the request expires and the member's credits are returned in full.</p>
       <table style="width:100%;border-collapse:collapse;background:#F5F3EE;border-radius:8px;padding:14px;margin:0 0 18px;">
         <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;width:120px;">Rental</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">${rentalName}</td></tr>
         <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Dates</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">${startHuman} → ${endHuman}</td></tr>
@@ -210,10 +210,10 @@ serve(async (req) => {
   //    If this clashes with an existing booking, you can cancel
   //    free of charge before {{5}}."
   // {{5}} = "cancel free before" — for rental requests we use the
-  // 48h accept deadline (auto-decline sweeps at this point).
+  // 24h accept deadline (auto-decline sweeps at this point).
   let whatsappResult: string = 'not_attempted'
   const waNumber = business.bookings_whatsapp || business.phone
-  const acceptDeadline = new Date(Date.now() + 48 * 60 * 60 * 1000)
+  const acceptDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000)
     .toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
   if (!business.notify_whatsapp_enabled) {
     whatsappResult = 'opted_out'
@@ -277,7 +277,7 @@ serve(async (req) => {
     const customerHtml = `
       <div style="font-family:Manrope,Arial,sans-serif;max-width:540px;margin:0 auto;padding:24px;color:#1B1C19;background:#FBF9F4;">
         <h2 style="color:#213C18;font-size:20px;margin:0 0 12px;">Rental request received</h2>
-        <p style="margin:0 0 16px;line-height:1.55;">Hi ${firstName}, thanks for your request. <b>${business.name}</b> has 48 hours to confirm your <b>${rentalName}</b> for <b>${startHuman} → ${endHuman}</b>.</p>
+        <p style="margin:0 0 16px;line-height:1.55;">Hi ${firstName}, thanks for your request. <b>${business.name}</b> has 24 hours to confirm your <b>${rentalName}</b> for <b>${startHuman} → ${endHuman}</b>.</p>
         <table style="width:100%;border-collapse:collapse;background:#F5F3EE;border-radius:8px;padding:14px;margin:0 0 18px;">
           <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;width:140px;">Rental</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">${rentalName}</td></tr>
           <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Dates</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;">${startHuman} → ${endHuman}</td></tr>

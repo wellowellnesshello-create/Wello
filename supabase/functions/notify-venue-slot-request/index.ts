@@ -102,10 +102,10 @@ serve(async (req) => {
     ? await supabase.from('slots').select('name').eq('id', Number(booking.slot_id)).maybeSingle()
     : { data: null }
 
-  // Mint accept + decline tokens. Same 49h clock as
+  // Mint accept + decline tokens. Same 25h clock as
   // request-treatment-booking so auto-decline-stale-bookings sweeps
-  // at the 48h mark before tokens expire.
-  const expiryIso = new Date(Date.now() + 49 * 60 * 60 * 1000).toISOString()
+  // at the 24h mark before tokens expire.
+  const expiryIso = new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString()
   const acceptPayload  = `${bookingId}.${expiryIso}.accept`
   const declinePayload = `${bookingId}.${expiryIso}.decline`
   const acceptSig  = await hmacSign(acceptPayload,  SAFETY_CANCEL_SECRET)
@@ -145,7 +145,7 @@ serve(async (req) => {
   const html = `
     <div style="font-family:Manrope,Arial,sans-serif;max-width:540px;margin:0 auto;padding:24px;color:#1B1C19;background:#FBF9F4;">
       <h2 style="color:#213C18;font-size:18px;margin:0 0 14px;">New booking request</h2>
-      <p style="margin:0 0 16px;line-height:1.5;">${firstName} has requested ${sessionName} at ${business.name}. Please accept or decline within 48 hours. If you do not respond, the request expires and the member's credits are returned in full.</p>
+      <p style="margin:0 0 16px;line-height:1.5;">${firstName} has requested ${sessionName} at ${business.name}. Please accept or decline within 24 hours. If you do not respond, the request expires and the member's credits are returned in full.</p>
       <table style="width:100%;border-collapse:collapse;background:#F5F3EE;border-radius:8px;padding:14px;margin:0 0 18px;">
         <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;width:120px;">Session</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">${sessionName}</td></tr>
         <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Date</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">${dateHuman}</td></tr>
@@ -177,7 +177,7 @@ serve(async (req) => {
   if (!business.notify_sms_enabled) {
     smsResult = 'opted_out'
   } else if (business.phone && TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_PHONE_NUMBER) {
-    const body = `New Wello booking request from ${firstName} for ${sessionName} on ${dateHuman} at ${timeShort}. ${cost} credits held. Accept or decline within 48h at wello-wellness.com`
+    const body = `New Wello booking request from ${firstName} for ${sessionName} on ${dateHuman} at ${timeShort}. ${cost} credits held. Accept or decline within 24h at wello-wellness.com`
     const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`
     const params = new URLSearchParams({ To: business.phone, From: TWILIO_PHONE_NUMBER, Body: body })
     const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`)
@@ -205,7 +205,7 @@ serve(async (req) => {
   // {{1}}=name, {{2}}=session, {{3}}=date, {{4}}=time, {{5}}=deadline.
   let whatsappResult: string = 'not_attempted'
   const waNumber = business.bookings_whatsapp || business.phone
-  const acceptDeadline = new Date(Date.now() + 48 * 60 * 60 * 1000)
+  const acceptDeadline = new Date(Date.now() + 24 * 60 * 60 * 1000)
     .toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
   if (!business.notify_whatsapp_enabled) {
     whatsappResult = 'opted_out'
@@ -251,7 +251,7 @@ serve(async (req) => {
     const customerHtml = `
       <div style="font-family:Manrope,Arial,sans-serif;max-width:540px;margin:0 auto;padding:24px;color:#1B1C19;background:#FBF9F4;">
         <h2 style="color:#213C18;font-size:20px;margin:0 0 12px;">Booking request received</h2>
-        <p style="margin:0 0 16px;line-height:1.55;">Hi ${firstName}, thanks for your request. <b>${business.name}</b> has 48 hours to confirm your <b>${sessionName}</b>.</p>
+        <p style="margin:0 0 16px;line-height:1.55;">Hi ${firstName}, thanks for your request. <b>${business.name}</b> has 24 hours to confirm your <b>${sessionName}</b>.</p>
         <table style="width:100%;border-collapse:collapse;background:#F5F3EE;border-radius:8px;padding:14px;margin:0 0 18px;">
           <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;width:140px;">Session</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">${sessionName}</td></tr>
           <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">When</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;">${dateHuman} at ${timeShort}</td></tr>

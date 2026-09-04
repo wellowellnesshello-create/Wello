@@ -93,7 +93,7 @@ serve(async (req) => {
       const html = `
         <div style="font-family:Manrope,Arial,sans-serif;max-width:540px;margin:0 auto;padding:24px;color:#1B1C19;">
           <h2 style="color:#213C18;font-size:18px;margin:0 0 14px;">New booking request</h2>
-          <p style="margin:0 0 16px;line-height:1.5;">${customerName} has requested a session. Please confirm or decline within 48 hours.</p>
+          <p style="margin:0 0 16px;line-height:1.5;">${customerName} has requested a session. Please confirm or decline within 24 hours.</p>
           <table style="width:100%;border-collapse:collapse;background:#F5F3EE;border-radius:8px;padding:14px;margin:0 0 18px;">
             <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;width:120px;">Session</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">${sessionName}</td></tr>
             <tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Date</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-weight:600;">${dateStr} at ${timeStr}</td></tr>
@@ -104,7 +104,7 @@ serve(async (req) => {
             ${arrivalNote ? `<tr><td style="padding:6px 12px;font-size:13px;color:#54584F;">Notes</td><td style="padding:6px 12px;font-size:13px;color:#1B1C19;font-style:italic;">${arrivalNote}</td></tr>` : ''}
           </table>
           <a href="https://wello-wellness.com" style="display:inline-block;padding:12px 24px;background:#213C18;color:#FBF9F4;text-decoration:none;border-radius:999px;font-weight:700;font-size:13px;">Open the portal</a>
-          <p style="margin:18px 0 0;font-size:11px;color:#A3B18A;">You have 48 hours from now. After that the request expires and the customer is redirected to alternative instructors.</p>
+          <p style="margin:18px 0 0;font-size:11px;color:#A3B18A;">You have 24 hours from now. After that the request expires and the customer is redirected to alternative instructors.</p>
         </div>`
       const emailRes = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -124,7 +124,7 @@ serve(async (req) => {
     // ── SMS (only if phone + Twilio configured) ────────────────────────
     if (business.phone && TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_PHONE_NUMBER) {
       const groupSuffix = peopleCount > 1 ? ` for ${peopleCount} people` : ''
-      const body = `New Wello booking request from ${customerName}${groupSuffix} for ${sessionName} on ${dateStr} at ${timeStr}. Location: ${customerLoc}. You have 48 hours to confirm at wello-wellness.com`
+      const body = `New Wello booking request from ${customerName}${groupSuffix} for ${sessionName} on ${dateStr} at ${timeStr}. Location: ${customerLoc}. You have 24 hours to confirm at wello-wellness.com`
       const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`
       const params = new URLSearchParams({ To: business.phone, From: TWILIO_PHONE_NUMBER, Body: body })
       const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`)
