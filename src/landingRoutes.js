@@ -14,19 +14,19 @@ export const LANDING_ROUTES = [
     cat: "Yoga",
     location: "Mallorca",
     // SEO head
-    title: "Yoga Mallorca — Drop-in Classes & Studio Passes | Wello",
-    metaDescription: "Book yoga classes across Mallorca on one pass. Palma, Deià, Sóller and beyond — one membership, credits at every partner studio. No lock-in.",
+    title: "Yoga Mallorca | Drop-in Classes & Studio Passes | Wello",
+    metaDescription: "Book yoga classes across Mallorca on one pass. One membership, credits at every partner studio. No lock-in, no auto-renew.",
     // Landing content
     eyebrow: "The Wellness Pass · Mallorca",
     h1: "Yoga in Mallorca",
-    subhead: "Drop into a class in Palma, a beachfront flow in Deià or a slow morning in Sóller. One pass. Every studio worth going to.",
+    subhead: "One pass, credits that work at every partner studio. Book a drop-in class, a private session or a whole week — no monthly lock-in.",
     heroImage: "https://images.unsplash.com/photo-1588286840104-8957b019727f?w=1600&q=80",
     // FAQ — 5-6 category-specific answers. Rendered both as visible
     // accordion (for humans) and as JSON-LD FAQPage schema (for Google).
     faq: [
       {
         q: "Where can I do yoga in Mallorca with a Wello pass?",
-        a: "Wello partners with studios across Palma, Deià, Sóller, Portals, Santa Ponsa and Alcúdia. You pick the class and pay with credits — the same pass works at every partner studio, so you can flow through half the island on one membership.",
+        a: "Every partner studio is listed above with its town on the card. You pick the class and pay with credits — the same pass works at every partner studio, so one membership covers the island.",
       },
       {
         q: "How much does a yoga class cost on Wello?",
@@ -50,4 +50,48 @@ export const LANDING_ROUTES = [
       },
     ],
   },
+  // Pilates entry is drafted and template-verified, but withheld from
+  // LANDING_ROUTES until we have a live pilates partner — shipping now
+  // means a Google visitor lands on a page whose CTA dumps them into an
+  // empty Explore filter. Uncomment the object below (and drop the /*
+  // */ wrapping) once the first pilates studio is live.
+  /*
+  {
+    path: "/pilates-mallorca",
+    cat: "Pilates",
+    location: "Mallorca",
+    title: "Pilates Mallorca | Reformer & Mat Classes | Wello",
+    metaDescription: "Book pilates in Mallorca on one pass. Reformer and mat classes — one membership, credits at every partner studio. No lock-in.",
+    eyebrow: "The Wellness Pass · Mallorca",
+    h1: "Pilates in Mallorca",
+    subhead: "Reformer or mat, drop-in or private. One pass, credits that work at every partner studio — no monthly lock-in.",
+    heroImage: "https://images.unsplash.com/photo-1518611012118-696072aa579a?w=1600&q=80",
+    faq: [
+      {
+        q: "Where can I do pilates in Mallorca with a Wello pass?",
+        a: "Every partner studio is listed above with its town on the card. Book any class and pay in credits — the same pass works at every partner studio.",
+      },
+      {
+        q: "What's the difference between reformer and mat pilates?",
+        a: "Mat pilates uses your bodyweight on the floor — most yoga studios can teach it. Reformer uses a spring-loaded carriage that adds resistance and support; it's a smaller class, usually in a specialist studio, and tends to cost a little more per session.",
+      },
+      {
+        q: "How much does a pilates class cost on Wello?",
+        a: "Mat pilates is typically 20 credits (€20) off-peak, 25 credits (€25) peak. Reformer classes are usually 25–35 credits depending on the studio. Credits are 1:1 with euros and the cost is shown before you book.",
+      },
+      {
+        q: "Do I need pilates experience to start?",
+        a: "Most studios on Wello run beginner-friendly classes clearly labelled in the timetable. Reformer studios usually ask new students to take an intro session first — this is noted on the class listing.",
+      },
+      {
+        q: "Can I book pilates classes on the same day?",
+        a: "Yes. Most classes on Wello are instant-book right up to the start time. A few studios (mostly reformer) require 12 hours' notice so they can set the equipment for the right participants — this is shown before you confirm.",
+      },
+      {
+        q: "What if I need to cancel a pilates class?",
+        a: "Cancellation windows are set by each studio. Cancel within the window and your credits are refunded automatically. Outside the window (common for reformer classes because of equipment prep), the credits hold on the booking.",
+      },
+    ],
+  },
+  */
 ];

@@ -41,9 +41,16 @@ if (cancelMatch && import.meta.env.VITE_SUPABASE_URL) {
 } else if (landingRoute) {
   // hydrateRoot (not createRoot) so React attaches to the pre-rendered
   // DOM instead of replacing it — visitors on a cold link see no flash.
+  // window.__WELLO_LANDING__.venues is injected by scripts/prerender.mjs
+  // so the initial render on the client matches the SSR HTML exactly
+  // (no hydration mismatch). Falls back to null on the dev server where
+  // there's no prerender output; the useEffect fetch then populates.
+  const injected = (typeof window !== 'undefined' && window.__WELLO_LANDING__ && window.__WELLO_LANDING__.path === landingRoute.path)
+    ? window.__WELLO_LANDING__.venues
+    : null;
   hydrateRoot(document.getElementById('root'),
     <StrictMode>
-      <CategoryLanding route={landingRoute} />
+      <CategoryLanding route={landingRoute} initialVenues={injected} />
       <Analytics debug={import.meta.env.DEV} />
     </StrictMode>,
   )

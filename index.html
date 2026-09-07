@@ -26,6 +26,22 @@
     <meta name="twitter:image" content="https://www.wello-wellness.com/favicon.svg" />
 
     <title>Wello — one wellness pass for Mallorca</title>
+
+    <!-- Organization schema. Gives Google the entity Wello is (and where it operates)
+         so branded search and knowledge-panel signals attach to the right thing.
+         Kept minimal — no physical address (marketplace, not brick-and-mortar). -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "Wello",
+      "url": "https://www.wello-wellness.com",
+      "logo": "https://www.wello-wellness.com/favicon.svg",
+      "description": "Wellness pass for Mallorca — yoga, pilates, gyms, spas and private instructors on one membership.",
+      "areaServed": { "@type": "Place", "name": "Mallorca, Spain" },
+      "sameAs": ["https://www.instagram.com/wello.wellness"]
+    }
+    </script>
     <!-- Leaflet for the Explore map. Loaded from unpkg with subresource
          integrity hashes so a compromised CDN can't inject arbitrary JS.
          Used only on the Explore map view; window.L is nullable and the

@@ -26,7 +26,7 @@ const T = {
 };
 const F = "'Manrope','Jost',system-ui,sans-serif";
 
-export default function CategoryLanding({ route }) {
+export default function CategoryLanding({ route, initialVenues = null }) {
   // Logged-in visitors skip the landing and drop straight into Explore
   // with the matching category pre-selected. We key off the supabase
   // auth token in localStorage — no need to spin up the full client
@@ -38,31 +38,33 @@ export default function CategoryLanding({ route }) {
     } catch { /* localStorage blocked — treat as logged-out */ }
   }, [route.cat]);
 
-  // Live venues for this category, fetched after hydration. Dynamic
-  // import so this file stays SSR-safe (supabase.js reads Vite env vars
-  // that don't exist in Node). Empty result -> hide the section.
-  const [venues, setVenues] = useState(null);
+  // Venues seeded from SSR (baked into HTML at build time by
+  // scripts/prerender.mjs — this is what Google sees). useEffect then
+  // refreshes with live data post-hydration so a visitor who arrives
+  // hours after the build still sees an accurate grid. Dynamic import
+  // so this file stays SSR-safe (supabase.js reads Vite env vars that
+  // are undefined in the Node prerender context).
+  const [venues, setVenues] = useState(initialVenues);
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         const { supabase } = await import('./supabase.js');
-        const todayIso = new Date().toISOString().slice(0, 10);
         const { data, error } = await supabase
           .from('listings')
           .select('id, name, cat, loc, img, cr, rating, reviews, businesses(name, slug, gallery, email)')
           .eq('status', 'active')
           .or(`cat.eq.${route.cat},session_categories.cs.{${route.cat}}`)
-          .gte('slots.date', todayIso)
           .limit(8);
         if (error) throw error;
         if (!alive) return;
-        // Hide the seed demo rows (demo- email prefix) on public landings
-        // so a Google visitor doesn't see fake partners as their first
-        // impression of the marketplace.
-        const real = (data || []).filter(r => !/^demo-/i.test(r.businesses?.email || ''));
+        const real = (data || []).filter(r => {
+          const email = String(r.businesses?.email || '').toLowerCase();
+          const name = String(r.businesses?.name || r.name || '').toLowerCase();
+          return !email.startsWith('demo-') && !name.startsWith('demo');
+        });
         setVenues(real);
-      } catch { if (alive) setVenues([]); }
+      } catch { /* keep whatever SSR baked in */ }
     })();
     return () => { alive = false; };
   }, [route.cat]);

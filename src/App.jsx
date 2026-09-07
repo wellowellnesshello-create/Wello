@@ -3916,6 +3916,29 @@ function HomePage({ listings, listingsLoading, bookings, onSelect, savedIds, onT
         );
       })()}
 
+      {/* ── BROWSE BY ACTIVITY — internal links to SEO landing pages ──
+          Serves two jobs: (1) users can jump straight to a category
+          page they'd find via Google; (2) Google's crawler follows the
+          internal links to discover /yoga-mallorca etc. — a proper
+          discovery path from the home page is worth more than a
+          sitemap entry on its own for indexing speed. */}
+      <section style={{padding:"clamp(32px,4vw,56px) clamp(16px,4vw,32px)",background:"#F5F3EE",borderTop:"1px solid #E4E2DD"}}>
+        <div style={{maxWidth:1100,margin:"0 auto"}}>
+          <p style={{fontFamily:F2,fontSize:10,fontWeight:700,color:"#A3B18A",letterSpacing:"3px",textTransform:"uppercase",margin:"0 0 8px"}}>Browse Mallorca by activity</p>
+          <h3 style={{fontFamily:F2,fontSize:"clamp(20px,2.6vw,28px)",fontWeight:700,color:"#213C18",letterSpacing:"-0.8px",margin:"0 0 clamp(16px,2.5vw,24px)"}}>Popular categories</h3>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+            {[
+              {href:"/yoga-mallorca",   label:"Yoga in Mallorca"},
+              // Add more landing routes here as they go live. Must match
+              // an entry in src/landingRoutes.js — otherwise the click
+              // lands on the SPA home instead of a proper landing.
+            ].map(l=>(
+              <a key={l.href} href={l.href} style={{fontFamily:F2,fontSize:13,fontWeight:600,color:"#213C18",background:"#FBF9F4",border:"1px solid #C3C8BC",padding:"9px 16px",borderRadius:999,textDecoration:"none",letterSpacing:"-0.2px"}}>{l.label} →</a>
+            ))}
+          </div>
+        </div>
+      </section>
+
     </div>
   );
 }
