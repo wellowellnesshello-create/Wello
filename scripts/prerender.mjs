@@ -2,10 +2,12 @@
 // dist/<path>/index.html and regenerates dist/sitemap.xml so Google can
 // discover the new URLs. Runs automatically via `npm run build`.
 //
-// Runs with `tsx --env-file=.env.local` locally (Node --env-file support
-// via tsx) so process.env has the Vite variables. On Vercel, env vars
-// are populated from project settings — the --env-file flag is ignored
-// gracefully when the file is missing.
+// Runs with `tsx --env-file-if-exists=.env.local`. Locally the file
+// loads and populates process.env with the Vite variables; on Vercel
+// the file is gitignored (missing) but VITE_* variables come from
+// project env settings. The `-if-exists` variant is required because
+// plain `--env-file` throws on a missing file, which would break the
+// Vercel build.
 
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';

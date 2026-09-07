@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && tsx --env-file=.env.local scripts/prerender.mjs",
+    "build": "vite build && tsx --env-file-if-exists=.env.local scripts/prerender.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
