@@ -26,14 +26,14 @@ if (cancelMatch && import.meta.env.VITE_SUPABASE_URL) {
   createRoot(document.getElementById('root')).render(
     <StrictMode>
       {legalPage}
-      <Analytics />
+      <Analytics debug={import.meta.env.DEV} />
     </StrictMode>,
   )
 } else {
   createRoot(document.getElementById('root')).render(
     <StrictMode>
       <App />
-      <Analytics />
+      <Analytics debug={import.meta.env.DEV} />
     </StrictMode>,
   )
 }

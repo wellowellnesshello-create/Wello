@@ -15912,6 +15912,10 @@ export default function App() {
     // sandbox) so we can render the result page with our own design
     // system. SafetyCancelPage fires the fn and displays the outcome.
     if(params.get("cancel")) return "safetyCancel";
+    // Cold load at /venue/<slug> — start on Explore so BizPanel has a valid
+    // host to open over. The pending-slug effect below resolves the slug to
+    // a business once listings arrive and opens the panel.
+    if(/^\/venue\/[^/?#]+/.test(window.location.pathname)) return "explore";
     return "home";
   });
   useEffect(() => { if (view === "biz-portal") setBizPortalMounted(true); }, [view]);
@@ -16301,7 +16305,7 @@ export default function App() {
           const todayIso = new Date().toISOString().slice(0, 10);
           const res = await supabase
             .from("listings")
-            .select("*, slots(id, listing_id, name, date, time, dur, spots, booked, credits, acuity_type_id, booking_mode, venue_side, sync_status), businesses(name, address, phone, website, instagram, email, gallery, session_offerings, travel_areas, cancellation_safety_window, cancellation_window_hours, lat, lng)")
+            .select("*, slots(id, listing_id, name, date, time, dur, spots, booked, credits, acuity_type_id, booking_mode, venue_side, sync_status), businesses(name, slug, address, phone, website, instagram, email, gallery, session_offerings, travel_areas, cancellation_safety_window, cancellation_window_hours, lat, lng)")
             .eq("status","active")
             .gte("slots.date", todayIso)
             .order("id");
@@ -16350,6 +16354,7 @@ export default function App() {
       const transformed = listingRows.map(row => ({
         id: row.id,
         business_id: row.business_id || null,
+        slug: row.businesses?.slug || null,
         // Prefer businesses.name so a partner edit (or a direct edit in
         // the businesses table) propagates without needing a separate
         // listings.name update. Falls back to the denormalised
@@ -16547,6 +16552,95 @@ export default function App() {
     setView('explore');
     setSelBiz(biz);
   }, [pendingRentalResume, listings]);
+
+  // ── Venue URLs (/venue/<slug>) ────────────────────────────────
+  // Cold-load restoration: if the initial URL is /venue/<slug>, capture
+  // the slug now, then open the matching business once listings load.
+  const [pendingVenueSlug, setPendingVenueSlug] = useState(() => {
+    const m = window.location.pathname.match(/^\/venue\/([^/?#]+)/);
+    return m ? m[1] : null;
+  });
+  // Tags the *next* venue open with a source label consumed by the
+  // venue_views logger. Default (unset) is 'in-app' — set to 'direct'
+  // when the open was driven by the URL (cold-load or browser nav)
+  // rather than an in-app click.
+  const venueOpenSourceRef = useRef(null);
+  useEffect(() => {
+    if (!pendingVenueSlug) return;
+    if (!Array.isArray(listings) || listings.length === 0) return;
+    const biz = listings.find(l => l.slug === pendingVenueSlug);
+    if (biz) { venueOpenSourceRef.current = 'direct'; setView('explore'); setSelBiz(biz); }
+    // Clear whether or not the slug matched — a stale link shouldn't
+    // keep firing this effect on every listings refresh.
+    setPendingVenueSlug(null);
+  }, [pendingVenueSlug, listings]);
+
+  // Sync URL to selBiz. pushState (not replaceState) so browser back
+  // takes the customer out of the venue and back to Explore. Skip the
+  // push when the URL already matches — that's the cold-load / popstate
+  // case where the URL is the *cause* of the selBiz change.
+  useEffect(() => {
+    const desiredPath = selBiz?.slug ? `/venue/${selBiz.slug}` : null;
+    const currentPath = window.location.pathname;
+    if (desiredPath) {
+      if (currentPath !== desiredPath) {
+        window.history.pushState({ venueSlug: selBiz.slug }, '', desiredPath);
+      }
+    } else if (currentPath.startsWith('/venue/')) {
+      // Panel closed — restore a clean marketplace URL. pushState (not
+      // replace) so the venue URL stays in history and forward-nav works.
+      window.history.pushState({}, '', '/');
+    }
+  }, [selBiz?.slug]);
+
+  // Browser back/forward — reconcile the panel with whatever the URL now says.
+  useEffect(() => {
+    function onPopState() {
+      const m = window.location.pathname.match(/^\/venue\/([^/?#]+)/);
+      if (m) {
+        const slug = m[1];
+        const biz = listings.find(l => l.slug === slug);
+        if (biz && biz.slug !== selBiz?.slug) {
+          venueOpenSourceRef.current = 'direct';
+          setView('explore'); setSelBiz(biz);
+        }
+      } else if (selBiz) {
+        setSelBiz(null);
+      }
+    }
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [listings, selBiz]);
+
+  // Log a venue_views row on every panel open. Fire-and-forget: analytics
+  // must never block or fail the UX. RLS is insert-only so a network peek
+  // can't be used to enumerate other users' browsing.
+  useEffect(() => {
+    if (!selBiz?.business_id) return;
+    // Consume-and-clear the source tag. Default is 'in-app' — an open with
+    // no explicit tag is a card click from within the app.
+    let source = venueOpenSourceRef.current || 'in-app';
+    venueOpenSourceRef.current = null;
+    // If document.referrer is an external URL (not our own origin), append
+    // its hostname so analytics can attribute cold-loads to google, IG, etc.
+    // e.g. 'direct:www.google.com'. SPA in-app clicks have empty referrer
+    // and get plain 'in-app'.
+    try {
+      const ref = typeof document !== 'undefined' ? document.referrer : '';
+      if (ref && !ref.startsWith(window.location.origin)) {
+        const host = new URL(ref).hostname;
+        if (host) source = `${source}:${host}`;
+      }
+    } catch { /* invalid referrer URL — fall through with plain tag */ }
+    supabase.from('venue_views').insert({
+      business_id: selBiz.business_id,
+      listing_id: selBiz.id ?? null,
+      user_id: authSession?.user?.id || null,
+      source,
+    }).then(({ error }) => {
+      if (error) console.warn('venue_views insert failed:', error.message);
+    });
+  }, [selBiz?.business_id, selBiz?.id, authSession?.user?.id]);
   // If a guest clicked Buy, we stashed their quantity and opened the sign-up
   // modal. As soon as the session lands, resume the checkout automatically
   // so they never have to click Buy twice.
