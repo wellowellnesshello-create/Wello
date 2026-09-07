@@ -4296,9 +4296,12 @@ function InterestsModal({ initial = [], onCancel, onSave, busy = false }) {
   );
 }
 
-function ExplorePage({ listings, listingsLoading, onSelect, savedIds, onToggleSave, syncingIds, profile, authSession, onSaveInterests }) {
+function ExplorePage({ listings, listingsLoading, onSelect, savedIds, onToggleSave, syncingIds, profile, authSession, onSaveInterests, initialCat }) {
   const [search,setSearch]=useState("");
-  const [activeCat,setActiveCat]=useState("All");
+  // Seed from initialCat when the visitor arrived via a landing CTA
+  // like /?view=explore&cat=Yoga. Only accept values that are actually
+  // in CATS so a stale link can't render an empty filter chip.
+  const [activeCat,setActiveCat]=useState(() => (initialCat && CATS.includes(initialCat)) ? initialCat : "All");
   const [activeLoc,setActiveLoc]=useState("All Mallorca");
   const [viewMode,setViewMode]=useState("grid");
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
@@ -15916,7 +15919,21 @@ export default function App() {
     // host to open over. The pending-slug effect below resolves the slug to
     // a business once listings arrive and opens the panel.
     if(/^\/venue\/[^/?#]+/.test(window.location.pathname)) return "explore";
+    // ?view=<name> — deep-link into a specific top-level tab. Used by the
+    // SEO landing CTAs (`/yoga-mallorca` → `/?view=explore&cat=Yoga`) and
+    // anywhere else we want to share a link that lands on a non-home tab.
+    // Whitelist so arbitrary ?view= values can't render unknown states.
+    const requestedView = params.get("view");
+    if (["home","explore","credits","profile","bookings","saved","partners"].includes(requestedView)) return requestedView;
     return "home";
+  });
+  // ?cat=<Category> — used by SEO landing CTAs to drop the visitor into
+  // Explore with the matching filter pre-selected. Read once at mount and
+  // handed to ExplorePage as initialCat. Nulled after read so a later
+  // tab switch back to Explore doesn't force the filter back on.
+  const [initialExploreCat] = useState(() => {
+    try { return new URLSearchParams(window.location.search).get("cat") || null; }
+    catch { return null; }
   });
   useEffect(() => { if (view === "biz-portal") setBizPortalMounted(true); }, [view]);
   // ?claim=WELLO-XXXX-XXXX from the recipient email — read once so RedeemPage
@@ -17150,7 +17167,7 @@ export default function App() {
         {/* PAGES — padded for fixed banner+nav */}
         <div style={{paddingTop:headerH}}>
           {view==="home"       &&<HomePage listings={listings} listingsLoading={listingsLoading} bookings={bookings} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} onSetView={setView} syncingIds={syncingIds} onGotoCredits={gotoCredits}/>}
-          {view==="explore"    &&<ExplorePage listings={listings} listingsLoading={listingsLoading} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds} profile={profile} authSession={authSession} onSaveInterests={saveInterests}/>}
+          {view==="explore"    &&<ExplorePage listings={listings} listingsLoading={listingsLoading} onSelect={onSelect} savedIds={saved} onToggleSave={toggleSave} syncingIds={syncingIds} profile={profile} authSession={authSession} onSaveInterests={saveInterests} initialCat={initialExploreCat}/>}
           {view==="profile"    &&<ProfilePage bookings={bookings} savedIds={saved} listings={listings} credits={credits} creditSplit={creditSplit} onSelect={onSelect} onSetView={setView} isBiz={isBiz} onToggleBiz={()=>setIsBiz(v=>!v)} onPreviewDashboard={()=>setBizPreview(true)} profile={profile} authSession={authSession} onSignOut={doSignOut} onOpenSignIn={()=>setAuthModal({mode:"signin"})} bookingsVersion={bookingsVersion} onSaveInterests={saveInterests} onCancelBooking={cancelBooking} onProfilePatch={(patch)=>setProfile(p => p ? { ...p, ...patch } : { id: authSession?.user?.id, ...patch })}/>}
           {/* Keep-mounted-once BusinessPortal. First navigation to biz-portal
               mounts the component; subsequent navigations away hide it via
