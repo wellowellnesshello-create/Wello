@@ -16575,42 +16575,53 @@ export default function App() {
     setPendingVenueSlug(null);
   }, [pendingVenueSlug, listings]);
 
-  // Sync URL to selBiz. pushState (not replaceState) so browser back
-  // takes the customer out of the venue and back to Explore. Skip the
-  // push when the URL already matches — that's the cold-load / popstate
-  // case where the URL is the *cause* of the selBiz change.
+  // Sync URL to the deepest open modal: BookingModal (/venue/<slug>/book)
+  // beats BizPanel (/venue/<slug>) beats nothing (/). Every pushState is a
+  // Vercel Analytics pageview, so this doubles as conversion-funnel plumbing:
+  // /venue/<slug> -> /venue/<slug>/book -> booking outcome. Skip the push
+  // when the URL already matches (cold-load / popstate case).
   useEffect(() => {
-    const desiredPath = selBiz?.slug ? `/venue/${selBiz.slug}` : null;
-    const currentPath = window.location.pathname;
-    if (desiredPath) {
-      if (currentPath !== desiredPath) {
-        window.history.pushState({ venueSlug: selBiz.slug }, '', desiredPath);
+    let desired = null;
+    if (bkData?.biz?.slug) desired = `/venue/${bkData.biz.slug}/book`;
+    else if (selBiz?.slug) desired = `/venue/${selBiz.slug}`;
+    const current = window.location.pathname;
+    if (desired) {
+      if (current !== desired) {
+        window.history.pushState({}, '', desired);
       }
-    } else if (currentPath.startsWith('/venue/')) {
-      // Panel closed — restore a clean marketplace URL. pushState (not
-      // replace) so the venue URL stays in history and forward-nav works.
+    } else if (current.startsWith('/venue/')) {
       window.history.pushState({}, '', '/');
     }
-  }, [selBiz?.slug]);
+  }, [selBiz?.slug, bkData?.biz?.slug]);
 
-  // Browser back/forward — reconcile the panel with whatever the URL now says.
+  // Browser back/forward — reconcile panel + booking modal with the URL.
   useEffect(() => {
     function onPopState() {
-      const m = window.location.pathname.match(/^\/venue\/([^/?#]+)/);
-      if (m) {
-        const slug = m[1];
+      const m = window.location.pathname.match(/^\/venue\/([^/?#]+)(\/book)?/);
+      if (!m) {
+        // Not a /venue/... URL — close everything.
+        if (bkData) setBkData(null);
+        if (selBiz) setSelBiz(null);
+        return;
+      }
+      const [, slug, bookSuffix] = m;
+      const isBooking = !!bookSuffix;
+      // Leaving the booking step — clear the modal (URL doesn't carry the
+      // selected slot, so /book can't be restored from a cold nav).
+      if (!isBooking && bkData) setBkData(null);
+      // Restore the venue panel if the URL says /venue/<slug> and we don't
+      // already have that venue open.
+      if (!isBooking) {
         const biz = listings.find(l => l.slug === slug);
         if (biz && biz.slug !== selBiz?.slug) {
           venueOpenSourceRef.current = 'direct';
           setView('explore'); setSelBiz(biz);
         }
-      } else if (selBiz) {
-        setSelBiz(null);
       }
     }
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [listings, selBiz]);
+  }, [listings, selBiz, bkData]);
 
   // Log a venue_views row on every panel open. Fire-and-forget: analytics
   // must never block or fail the UX. RLS is insert-only so a network peek
