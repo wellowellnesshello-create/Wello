@@ -23,6 +23,13 @@ const RESEND_API_KEY            = Deno.env.get('RESEND_API_KEY')      || ''
 const TWILIO_ACCOUNT_SID        = Deno.env.get('TWILIO_ACCOUNT_SID')  || ''
 const TWILIO_AUTH_TOKEN         = Deno.env.get('TWILIO_AUTH_TOKEN')   || ''
 const TWILIO_PHONE_NUMBER       = Deno.env.get('TWILIO_PHONE_NUMBER') || ''
+// Approved WhatsApp Business template for the safety-window alert.
+// WhatsApp only delivers freeform messages inside the 24h customer-service
+// window; outside it (which is our common case for this alert) Twilio
+// returns 63016 "outside messaging window" unless we send a template.
+// Env override so ops can rotate templates without a deploy; defaults to
+// the currently-approved booking_safety_alert_v2 ContentSid.
+const TWILIO_SAFETY_ALERT_CONTENT_SID = Deno.env.get('TWILIO_SAFETY_ALERT_CONTENT_SID') || 'HXc6427a8623b874a79ca9bec06a05cff8'
 // Feature flag: only try WhatsApp/SMS in addition to email when explicitly
 // enabled. Any value other than empty/"false"/"0" turns it on so ops can
 // toggle by setting the secret without redeploying.
@@ -187,11 +194,38 @@ function buildAlertEmail({ sessionName, dateStr, timeStr, customerName, cancelUr
   </div>`
 }
 
-async function sendTwilio(to: string, body: string, useWhatsApp: boolean): Promise<{ ok: boolean; sid?: string; error?: string; status?: number }> {
+// SMS-only Twilio send. Kept freeform because SMS has no template concept
+// and no 24h window restriction. Do NOT reuse this for WhatsApp — use
+// sendTwilioWhatsAppTemplate below so we never hit 63016.
+async function sendTwilioSms(to: string, body: string): Promise<{ ok: boolean; sid?: string; error?: string; status?: number }> {
   const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`
-  const from = useWhatsApp ? `whatsapp:${TWILIO_PHONE_NUMBER}` : TWILIO_PHONE_NUMBER
-  const target = useWhatsApp ? `whatsapp:${to}` : to
-  const params = new URLSearchParams({ To: target, From: from, Body: body })
+  const params = new URLSearchParams({ To: to, From: TWILIO_PHONE_NUMBER, Body: body })
+  const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`)
+  const r = await fetch(twilioUrl, {
+    method: 'POST',
+    headers: { 'Authorization': `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  })
+  const respBody = await r.json().catch(() => ({}))
+  if (!r.ok) return { ok: false, status: r.status, error: respBody?.message || respBody?.error_message || `Twilio ${r.status}` }
+  return { ok: true, sid: respBody.sid }
+}
+
+// WhatsApp Business template send. Passes ContentSid + ContentVariables
+// and DOES NOT include a Body param — Twilio silently falls back to
+// freeform if both are present, which reintroduces the 63016 outside-
+// window failure this helper exists to prevent. Variables are positional
+// and must match booking_safety_alert_v2 in order.
+async function sendTwilioWhatsAppTemplate(to: string, variables: Record<string, string>): Promise<{ ok: boolean; sid?: string; error?: string; status?: number }> {
+  const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`
+  const fromFormatted = TWILIO_PHONE_NUMBER.startsWith('whatsapp:') ? TWILIO_PHONE_NUMBER : `whatsapp:${TWILIO_PHONE_NUMBER}`
+  const toFormatted   = to.startsWith('whatsapp:') ? to : `whatsapp:${to}`
+  const params = new URLSearchParams({
+    From: fromFormatted,
+    To: toFormatted,
+    ContentSid: TWILIO_SAFETY_ALERT_CONTENT_SID,
+    ContentVariables: JSON.stringify(variables),
+  })
   const auth = btoa(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`)
   const r = await fetch(twilioUrl, {
     method: 'POST',
@@ -318,14 +352,28 @@ serve(async (req) => {
       } else if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
         results.messaging = 'skipped_twilio_not_configured'
       } else {
-        const bodyText = `New booking confirmed: ${sessionName} on ${dateStr} at ${timeStr} with ${customerName}. If there is a conflict, you have until ${windowEnds} to cancel: ${cancelUrl}`
-        const waResult = await sendTwilio(business.phone, bodyText, true)
+        // Positional variables must match the booking_safety_alert_v2 template
+        // (currently HXc6427a8623b874a79ca9bec06a05cff8). Matches the ordering
+        // used by notify-venue-instant-booking and notify-venue-slot-request,
+        // which use the same variable slots.
+        const waVars = {
+          '1': customerName,
+          '2': sessionName,
+          '3': dateStr,
+          '4': timeStr,
+          '5': windowEnds,
+          '6': sig,  // signed cancel token — the template's button URL uses this
+        }
+        const waResult = await sendTwilioWhatsAppTemplate(business.phone, waVars)
         if (waResult.ok) {
           results.messaging = 'whatsapp'
           results.messaging_sid = waResult.sid
         } else {
           console.warn('booking-safety-alert: WhatsApp failed, trying SMS:', waResult.error)
-          const smsResult = await sendTwilio(business.phone, bodyText, false)
+          // SMS fallback keeps freeform body — SMS has no template concept
+          // and no 24h window restriction.
+          const smsBody = `New booking confirmed: ${sessionName} on ${dateStr} at ${timeStr} with ${customerName}. If there is a conflict, you have until ${windowEnds} to cancel: ${cancelUrl}`
+          const smsResult = await sendTwilioSms(business.phone, smsBody)
           if (smsResult.ok) {
             results.messaging = 'sms'
             results.messaging_sid = smsResult.sid
