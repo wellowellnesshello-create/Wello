@@ -109,11 +109,17 @@ serve(async (req) => {
 
     // Account Links are one-shot — safe to create a fresh one every call.
     // refresh_url = they abandoned or timed out; return_url = Stripe thinks
-    // they finished. In both cases we send them back to the portal Payouts
-    // step, which reads the fresh status from the DB (updated by the
-    // account.updated webhook) and shows the right pill.
-    const returnUrl  = `${APP_ORIGIN}/?portal=business#payouts-return`
-    const refreshUrl = `${APP_ORIGIN}/?portal=business#payouts-refresh`
+    // they finished. In both cases we send them back to the wizard's
+    // Payouts step (step=6) with a `stripe` query param the wizard reads
+    // on mount:
+    //   - stripe=return  → verify state via check-connect-status; if
+    //                       details_submitted && payouts_enabled advance;
+    //                       else show "Finish setting up with Stripe".
+    //   - stripe=refresh → the account link expired mid-flow (Stripe's
+    //                       links have a ~5 min lifetime); wizard offers
+    //                       to mint a fresh link.
+    const returnUrl  = `${APP_ORIGIN}/?portal=business&step=payouts&stripe=return`
+    const refreshUrl = `${APP_ORIGIN}/?portal=business&step=payouts&stripe=refresh`
     const link = await stripe.accountLinks.create({
       account:      accountId,
       refresh_url:  refreshUrl,

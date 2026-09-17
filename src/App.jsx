@@ -11950,7 +11950,82 @@ function OWrap({ title, sub, children, footer, step, total, doSignOut, onPreview
 
 function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard, onRemoveVenue, onChangeType }) {
   const TOTAL = 7;
-  const [step, setStep] = useState(bizData.onboarding_step > 0 ? Math.min(bizData.onboarding_step, TOTAL) : 1);
+  // Payouts step index. Named so we don't have magic 6s sprinkled through
+  // the return-from-Stripe handling below.
+  const PAYOUTS_STEP = 6;
+  // Read the Stripe onboarding return marker off the URL on mount. Stripe
+  // hosted onboarding sends the partner back to one of two URLs we set on
+  // the account link (return_url / refresh_url), each carrying a `stripe`
+  // param the wizard needs to react to before rendering the payouts step.
+  // Captured once at mount so a subsequent history.replaceState (which we
+  // do below to clean the URL) doesn't re-trigger the effect.
+  const stripeReturnParam = (() => {
+    try {
+      const p = new URLSearchParams(window.location.search).get('stripe');
+      return p === 'return' || p === 'refresh' ? p : null;
+    } catch { return null; }
+  })();
+  const [step, setStep] = useState(() => {
+    if (stripeReturnParam) return PAYOUTS_STEP;
+    return bizData.onboarding_step > 0 ? Math.min(bizData.onboarding_step, TOTAL) : 1;
+  });
+  // 'idle' | 'checking' | 'complete' | 'incomplete' | 'expired' | 'error'
+  //   idle       — no Stripe return in flight
+  //   checking   — retrieving the connected account state
+  //   complete   — details_submitted && payouts_enabled; wizard can advance
+  //   incomplete — Stripe returned but requirements still outstanding; show
+  //                "Finish setting up with Stripe" CTA to mint a new link
+  //   expired    — refresh_url path (previous link timed out); same CTA
+  //   error      — status fetch failed; retry option
+  const [stripeReturnStatus, setStripeReturnStatus] = useState(stripeReturnParam ? 'checking' : 'idle');
+  const [stripeReturnDetail, setStripeReturnDetail] = useState(null); // { details_submitted, payouts_enabled, requirements }
+  // Fires once on mount when we came back from Stripe. Never re-runs — we
+  // strip the ?stripe= param from the URL after the first read so a stale
+  // history entry can't loop the check on refresh.
+  useEffect(() => {
+    if (!stripeReturnParam) return;
+    if (!bizData?.id) return;
+    let cancelled = false;
+    // Cleanup the URL immediately so the wizard doesn't re-enter this branch
+    // if the partner reloads. Same trick used for the ?gift=sent success page.
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('stripe');
+      url.searchParams.delete('step');
+      window.history.replaceState({}, '', url.pathname + (url.search ? url.search : '') + url.hash);
+    } catch { /* non-critical */ }
+    if (stripeReturnParam === 'refresh') {
+      // Stripe's account link expired mid-flow. No account state change
+      // implied; just prompt the partner to re-start onboarding.
+      if (!cancelled) setStripeReturnStatus('expired');
+      return;
+    }
+    // return path — fetch fresh account state so we can flip the wizard to
+    // "complete" when Stripe agrees the partner is set up.
+    (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('check-connect-status', {
+          body: { business_id: bizData.id },
+        });
+        if (cancelled) return;
+        if (error || !data) {
+          console.warn('check-connect-status invoke failed:', error?.message);
+          setStripeReturnStatus('error');
+          return;
+        }
+        setStripeReturnDetail(data);
+        if (data.details_submitted && data.payouts_enabled) {
+          setStripeReturnStatus('complete');
+        } else {
+          setStripeReturnStatus('incomplete');
+        }
+      } catch (e) {
+        console.warn('check-connect-status threw:', e?.message);
+        if (!cancelled) setStripeReturnStatus('error');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [stripeReturnParam, bizData?.id]);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [venueName, setVenueName] = useState(bizData.name || "");
@@ -13359,10 +13434,69 @@ function PartnerOnboarding({ bizData, onSubmitted, doSignOut, onBackToDashboard,
         setSaving(false);
       }
     }
+    // Banner shown above the payout status card when the partner has just
+    // come back from Stripe hosted onboarding (either return_url success
+    // path or refresh_url expired path). Keeps the payout status card
+    // rendered underneath so the wizard state stays legible.
+    const stripeReturnBanner = stripeReturnStatus === 'idle' ? null : (
+      <div style={{
+        borderRadius:10, padding:"14px 16px", marginBottom:14,
+        background: stripeReturnStatus === 'complete' ? '#EAF3E5'
+                  : stripeReturnStatus === 'error'    ? '#FDECEA'
+                  : T.ochreXL,
+        border: `1px solid ${
+          stripeReturnStatus === 'complete' ? T.sage
+          : stripeReturnStatus === 'error'  ? T.clay
+          : T.ochreL
+        }`,
+      }}>
+        {stripeReturnStatus === 'checking' && (
+          <p style={{fontFamily:F.body,fontSize:12,color:T.stone,margin:0,fontWeight:500}}>Checking with Stripe…</p>
+        )}
+        {stripeReturnStatus === 'complete' && (
+          <>
+            <p style={{fontFamily:F.body,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:T.sage,margin:"0 0 4px"}}>Payouts ready</p>
+            <p style={{fontFamily:F.body,fontSize:12,color:T.ink,fontWeight:400,lineHeight:1.65,margin:0}}>Stripe confirmed your details. Continue to the next step.</p>
+          </>
+        )}
+        {stripeReturnStatus === 'incomplete' && (
+          <>
+            <p style={{fontFamily:F.body,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:T.clay,margin:"0 0 4px"}}>Nearly there</p>
+            <p style={{fontFamily:F.body,fontSize:12,color:T.clay,fontWeight:400,lineHeight:1.65,margin:"0 0 10px"}}>Stripe still needs a few details from you. Pick up where you left off — should only take a couple of minutes.</p>
+            <button onClick={startStripeOnboarding} disabled={saving}
+              style={{padding:"9px 16px",background:saving?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:saving?"wait":"pointer"}}>
+              Finish setting up with Stripe →
+            </button>
+          </>
+        )}
+        {stripeReturnStatus === 'expired' && (
+          <>
+            <p style={{fontFamily:F.body,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:T.clay,margin:"0 0 4px"}}>Link expired</p>
+            <p style={{fontFamily:F.body,fontSize:12,color:T.clay,fontWeight:400,lineHeight:1.65,margin:"0 0 10px"}}>Stripe's onboarding link timed out. No problem — start again with a fresh link.</p>
+            <button onClick={startStripeOnboarding} disabled={saving}
+              style={{padding:"9px 16px",background:saving?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:saving?"wait":"pointer"}}>
+              Continue with Stripe →
+            </button>
+          </>
+        )}
+        {stripeReturnStatus === 'error' && (
+          <>
+            <p style={{fontFamily:F.body,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:T.clay,margin:"0 0 4px"}}>Couldn't reach Stripe</p>
+            <p style={{fontFamily:F.body,fontSize:12,color:T.clay,fontWeight:400,lineHeight:1.65,margin:"0 0 10px"}}>We weren't able to confirm your setup right now. Try again in a moment.</p>
+            <button onClick={startStripeOnboarding} disabled={saving}
+              style={{padding:"9px 16px",background:saving?T.border:T.sage,color:"#fff",border:"none",borderRadius:2,fontFamily:F.body,fontSize:12,fontWeight:600,cursor:saving?"wait":"pointer"}}>
+              Retry Stripe setup →
+            </button>
+          </>
+        )}
+      </div>
+    );
+
     return (
       <OWrap title="Set up payouts" sub="We pay every Friday for the previous week's bookings, straight to your bank via Stripe. Complete Stripe's short onboarding to enable payouts on your venue." step={step} total={TOTAL} doSignOut={doSignOut} onBackToDashboard={onBackToDashboard} onRemoveVenue={onRemoveVenue} stepLabels={stepLabels} onJumpToStep={onJumpToStep} listingTypeLabel={listingTypeLabel} onChangeType={onChangeType} onPreview={()=>setPreviewOpen(true)}
         footer={[<OBtn key="b" saving={saving} onClick={()=>setStep(5)} label="← Back" variant="secondary"/>,
-                 <OBtn key="n" saving={saving} onClick={()=>goNext({})} label={stripeActive ? "Save & continue →" : "Skip for now →"} variant={stripeActive ? "primary" : "secondary"}/>]}>
+                 <OBtn key="n" saving={saving} onClick={()=>goNext({})} label={(stripeActive || stripeReturnStatus === 'complete') ? "Save & continue →" : "Skip for now →"} variant={(stripeActive || stripeReturnStatus === 'complete') ? "primary" : "secondary"}/>]}>
+        {stripeReturnBanner}
         <div style={{background:T.bg2,border:`1px solid ${T.border}`,borderRadius:10,padding:"18px 20px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
           <div style={{minWidth:0,flex:"1 1 220px"}}>
             <p style={{fontFamily:F.body,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:T.stone,margin:"0 0 4px"}}>Payout status</p>
