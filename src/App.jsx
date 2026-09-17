@@ -1933,7 +1933,14 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   const bookableSlots = _isRentalOnlyBiz
     ? []
     : (biz.slots || []).filter(s => !isEffectivelyBlocked(s));
-  const hasClasses = bookableSlots.length > 0;
+  // Classes segment is drop-in / instant-book only. Request-mode slots
+  // (i.e. private sessions where the partner has to confirm each booking)
+  // don't belong in the Classes timetable — they surface as offering
+  // cards on the Private sessions tab instead. Slot rows inherit
+  // booking_mode from their source offering, so this filter is enough
+  // to keep the two experiences separate.
+  const classSlots = bookableSlots.filter(s => (s?.booking_mode || 'instant') === 'instant');
+  const hasClasses = classSlots.length > 0;
   const hasOfferings = offerings.length > 0;
   // Segment label detection — honest labels for the offering mix.
   //   All rental → "Rentals"
@@ -1944,7 +1951,12 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   // rental cards under a "Private sessions" tab.
   const TREATMENT_RE = /(massage|treatment|therapy|reflexolog|facial|reiki|shiatsu|deep tissue|swedish|thai|hot stone|acupuncture)/i;
   const rentalOfferings = offerings.filter(o => o?.kind === 'rental');
-  const nonRentalOfferings = offerings.filter(o => o?.kind !== 'rental');
+  // Private sessions tab is for "book me for 1:1 / request-mode" cards.
+  // Class-kind offerings surface only via their generated slots on the
+  // Classes tab — surfacing them again as private-tab cards means the same
+  // offering shows up twice (once as a chip on Classes, once as a card on
+  // Private sessions). Filter them out here so the tabs stay honest.
+  const nonRentalOfferings = offerings.filter(o => o?.kind !== 'rental' && o?.kind !== 'class');
   const hasRentals = rentalOfferings.length > 0;
   const hasNonRentalOfferings = nonRentalOfferings.length > 0;
   const allTreatments = nonRentalOfferings.length > 0 && nonRentalOfferings.every(o => TREATMENT_RE.test(String(o.type || "")));
@@ -1971,10 +1983,11 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     return vs === 'customer' ? `${name} · At your home` : name;
   }
   // Unique (name, venue_side) pairs, sorted by chip label for stable
-  // strip ordering.
+  // strip ordering. Filter-chips + slot list operate on classSlots (drop-
+  // in only) so request-mode private slots don't leak into the Classes tab.
   const distinctSessionKeys = (() => {
     const seen = new Map();
-    for (const s of bookableSlots) {
+    for (const s of classSlots) {
       const key = slotKey(s);
       if (!seen.has(key)) seen.set(key, { key, name: s.name || '', venue_side: s.venue_side || 'customer' });
     }
@@ -1993,8 +2006,8 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   // After filters are applied — slots that survive both the availability
   // check and the session-name filter.
   const filteredSlots = filterKeys.size === 0
-    ? bookableSlots
-    : bookableSlots.filter(s => filterKeys.has(slotKey(s)));
+    ? classSlots
+    : classSlots.filter(s => filterKeys.has(slotKey(s)));
 
   // Build the 7-day chip array: Today, Tomorrow, then five more dated chips.
   // Labels: "Today", "Tomorrow", then dow + day-of-month (e.g. "Thu 16").
@@ -2602,41 +2615,58 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
             </div>
           )}
 
-          {/* Any partner that travels: surface coverage areas as pills so
-              guests know where the partner goes. Data-gated, not category-
-              gated, so hybrid partners (Yoga studio that also offers
-              at-your-home privates) get the same display without needing to
-              be recategorised as Private Instructor. */}
-          {Array.isArray(biz.coverage_areas) && biz.coverage_areas.length > 0 && (
-            <div style={{marginBottom:20}}>
-              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 8px"}}>Travels to</p>
-              <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-                {biz.coverage_areas.map(loc => (
-                  <span key={loc} style={{fontFamily:F2,fontSize:11,fontWeight:500,color:"#54584F",background:"rgba(228,226,221,0.6)",padding:"4px 10px",borderRadius:999}}>{loc}</span>
-                ))}
+          {/* "Travels to" / "Also travels" — surfaced only when the segment
+              the customer is currently viewing actually contains at-customer
+              offerings. A studio's group Classes segment happens at the venue,
+              so travel areas are noise there and confuse the customer. A
+              private-instructor "classes" segment (their per-slot bookings
+              expanded from private offerings) IS at-customer, so travel shows
+              there. Mixed venues (studio classes + at-your-home privates)
+              show travel only when the Private sessions tab is active. This
+              is the platform-level rule — no per-partner data hack. */}
+          {(() => {
+            const hasCoverage = Array.isArray(biz.coverage_areas) && biz.coverage_areas.length > 0;
+            if (!hasCoverage) return null;
+            const anySlotAtCustomer = classSlots.some(s => s?.venue_side === 'customer');
+            const anyPrivateAtCustomer = nonRentalOfferings.some(o =>
+              o?.venue_side === 'customer'
+              || (Array.isArray(o?.locations) && o.locations.some(l => l?.venue_side === 'customer'))
+            );
+            const showForSegment =
+              segment === 'classes' ? anySlotAtCustomer
+              : segment === 'private' ? anyPrivateAtCustomer
+              : false; // rentals segment: travel doesn't apply
+            if (!showForSegment) return null;
+            const zones = normalizeTravelAreas(biz.travel_areas);
+            return (
+              <div style={{marginBottom:20}}>
+                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 8px"}}>Travels to</p>
+                <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                  {biz.coverage_areas.map(loc => (
+                    <span key={loc} style={{fontFamily:F2,fontSize:11,fontWeight:500,color:"#54584F",background:"rgba(228,226,221,0.6)",padding:"4px 10px",borderRadius:999}}>{loc}</span>
+                  ))}
+                </div>
+                {zones.length > 0 && (() => {
+                  // Sort by fee ascending so cheaper zones read first — the
+                  // "how far can I stretch this?" scan then goes low→high.
+                  const sorted = zones.slice().sort((a, b) => (a.fee_eur || 0) - (b.fee_eur || 0));
+                  return (
+                    <>
+                      <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#B8925C",letterSpacing:"1.5px",textTransform:"uppercase",margin:"14px 0 8px"}}>Also travels — surcharge applies</p>
+                      <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                        {sorted.map(z => (
+                          <div key={z.area} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"6px 10px",background:"rgba(214,180,124,0.15)",border:"1px solid rgba(184,146,92,0.35)",borderRadius:8}}>
+                            <span style={{fontFamily:F2,fontSize:12,color:"#766149"}}>{z.area}</span>
+                            <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#766149"}}>+◈ {Number(z.fee_eur) || 0}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
-              {(() => {
-                const zones = normalizeTravelAreas(biz.travel_areas);
-                if (zones.length === 0) return null;
-                // Sort by fee ascending so cheaper zones read first — the
-                // "how far can I stretch this?" scan then goes low→high.
-                const sorted = zones.slice().sort((a, b) => (a.fee_eur || 0) - (b.fee_eur || 0));
-                return (
-                  <>
-                    <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#B8925C",letterSpacing:"1.5px",textTransform:"uppercase",margin:"14px 0 8px"}}>Also travels — surcharge applies</p>
-                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                      {sorted.map(z => (
-                        <div key={z.area} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"6px 10px",background:"rgba(214,180,124,0.15)",border:"1px solid rgba(184,146,92,0.35)",borderRadius:8}}>
-                          <span style={{fontFamily:F2,fontSize:12,color:"#766149"}}>{z.area}</span>
-                          <span style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#766149"}}>+◈ {Number(z.fee_eur) || 0}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
-          )}
+            );
+          })()}
 
           {/* Cancellation policy — shown before slot selection so members
               know the refund window before they pick a session. */}
