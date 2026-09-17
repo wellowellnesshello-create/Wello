@@ -1933,25 +1933,31 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   const bookableSlots = _isRentalOnlyBiz
     ? []
     : (biz.slots || []).filter(s => !isEffectivelyBlocked(s));
-  // Classes segment is for group-sized bookings. Solo slots (max_people
-  // == null or 1) belong on the Private sessions tab as a request-to-
-  // book card, not as chip-filters on Classes. We look up the source
-  // offering by slot.name so we can honour `max_people` / `capacity`
-  // which live on the offering, not the slot row. Slots that don't
-  // match any known offering (e.g. imported directly like Yoga Del
-  // Mar's 832 class rows) stay on Classes — safe default for the
-  // studio class-timetable pattern.
+  // Classes segment is for group-sized bookings. Solo offerings
+  // (capacity 1 AND max_people null/1) live only on the Private
+  // Sessions tab — surfacing them as class rows too is a duplication
+  // of the same offering under both sections (Noor's "Private" was
+  // showing on both Classes and Private Sessions). Group-sized
+  // offerings (Noor's "Group private", max_people=30) stay on Classes
+  // even when request-mode. Slot rows are stamped with
+  // `name = "${type} · ${length_min} min"` at generation time (see
+  // notify-partner-status:301 + App.jsx:8338), so we key the offering
+  // lookup on that same label. Slots that don't match any known
+  // offering (e.g. Yoga Del Mar's 832 imported class rows) stay on
+  // Classes — safe default for the studio class-timetable pattern.
   const offeringByName = new Map();
   for (const o of (rawOfferings || [])) {
-    if (o?.type) offeringByName.set(o.type, o);
+    if (!o?.type) continue;
+    const key = `${o.type} · ${o.length_min || 60} min`;
+    offeringByName.set(key, o);
   }
-  function slotIsGroupSized(s) {
+  function slotBelongsInClasses(s) {
     const o = offeringByName.get(s?.name);
     if (!o) return true; // no matching offering → assume class timetable slot
     const cap = Number(o?.max_people ?? o?.capacity ?? 0);
     return cap > 1;
   }
-  const classSlots = bookableSlots.filter(slotIsGroupSized);
+  const classSlots = bookableSlots.filter(slotBelongsInClasses);
   const hasClasses = classSlots.length > 0;
   const hasOfferings = offerings.length > 0;
   // Segment label detection — honest labels for the offering mix.
