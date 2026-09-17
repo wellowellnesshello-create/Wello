@@ -6809,14 +6809,30 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   const dashHasOfferings = Array.isArray(bizData?.session_offerings) && bizData.session_offerings.length > 0;
   const dashSupportsRequests = dashIsPrivate || dashHasOfferings;
   // Any partner who travels to the customer's address needs the coverage +
-  // travel-zone editor. Private instructors get it implicitly; studios and
-  // hybrid partners opt in via businesses.offers_at_customer (settable from
-  // the Settings toggle). Zone data already populated also counts, so old
-  // rows keep their editor without waiting for a partner to toggle.
-  const dashHasTravel = dashIsPrivate
-    || !!bizData?.offers_at_customer
-    || (Array.isArray(bizData?.coverage_areas) && bizData.coverage_areas.length > 0)
-    || (Array.isArray(bizData?.travel_areas)   && bizData.travel_areas.length   > 0);
+  // travel-zone editor. Private instructors get it implicitly; other
+  // businesses only see it if they've actually configured a customer-side
+  // offering (venue_side='customer' on the base offering or on any
+  // location entry), OR they've explicitly opted in via the Settings
+  // toggle (offers_at_customer). Rentals, studios and treatment-only
+  // venues no longer see the panel just because legacy coverage_areas
+  // rows exist — they were surfacing "where can I travel to" to
+  // partners who never travel anywhere. The offering-level check reads
+  // from bizData.session_offerings directly (not the dashSessionOfferings
+  // state variable, which is declared further down and would trigger
+  // a temporal-dead-zone reference error at this point in the module).
+  const _rawOfferingsForTravelCheck = Array.isArray(bizData?.session_offerings) ? bizData.session_offerings : [];
+  const dashOfferingTravels = _rawOfferingsForTravelCheck.some(o => {
+    if (o?.venue_side === 'customer') return true;
+    if (Array.isArray(o?.locations) && o.locations.some(l => l?.venue_side === 'customer')) return true;
+    return false;
+  });
+  // Coverage/travel editor is only for partners who genuinely travel to
+  // the customer — private instructors, or any business with a
+  // customer-side offering configured. The old rule also included
+  // `offers_at_customer` (a legacy toggle) and empty-offering rentals
+  // via `coverage_areas` presence, both of which surfaced the editor
+  // for studios and rentals that never travel anywhere.
+  const dashHasTravel = dashIsPrivate || dashOfferingTravels;
   // Sub-tab within Manage. Defaults to Requests for private instructors
   // (most actionable), Schedule for everyone else.
   const [manageSubTab, setManageSubTab] = useState(() => {
@@ -6835,6 +6851,16 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     try { localStorage.setItem("wello_dash_subtab", manageSubTab); } catch { /* non-critical */ }
   }, [manageSubTab]);
   const [selDay, setSelDay] = useState(0);
+  // Which pill is active inside the Schedule sub-tab. Splits the tab
+  // into three focused views (classes / timetable / coverage) so the
+  // partner sees one job at a time instead of a scrolling stack.
+  const [scheduleView, setScheduleView] = useState(() => {
+    try { return localStorage.getItem("wello_dash_schedule_view") || "classes"; }
+    catch { return "classes"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("wello_dash_schedule_view", scheduleView); } catch { /* non-critical */ }
+  }, [scheduleView]);
   // Add slot modal + newSlot state retired — per-slot Edit + per-offering
   // recurrence cover both add-a-one-off and add-a-recurring-class flows.
   const [editListing, setEditListing] = useState(false);
@@ -9180,6 +9206,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                   pinned to the top of Overview. RECENT is preview-only mock
                   data and no longer rendered. */}
             </div>
+
+            {/* This week's timetable lives back in Manage → Schedule
+                under the Timetable pill. Overview stays focused on
+                bookings + revenue trends. */}
           </div>
         )}
 
@@ -9426,12 +9456,62 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             survives. See migration 20260818100000_slots_source.sql. */}
         {tab==="manage" && manageSubTab==="schedule" && (
           <div>
-            <div style={{marginBottom:18}}>
-              <h2 style={{fontFamily:F2,fontSize:18,fontWeight:700,color:"#1B1C19",margin:"0 0 4px"}}>Your weekly availability</h2>
-              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.6}}>
-                Block out time windows + the session types you offer. We generate bookable slots for each offering inside every window. Guests pick the slot they want.
-                {!dashIsPrivate && <span style={{display:"block",marginTop:6,color:"#766149"}}>Studio partners: any slots you added manually or that came from your original setup stay put — Save availability only regenerates rows tied to the offerings below.</span>}
-              </p>
+            {/* Header row — title + pill nav + primary Save action.
+                Pills swap the panel below so the tab shows one job at
+                a time rather than a scrolling stack of Classes /
+                Timetable / Coverage all at once. Save availability is
+                pinned to the top-right and applies to whichever pill
+                is active. */}
+            <div style={{marginBottom:14,display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:16,flexWrap:"wrap"}}>
+              <div style={{flex:"1 1 260px",minWidth:0}}>
+                <h2 style={{fontFamily:F2,fontSize:20,fontWeight:800,color:"#1B1C19",margin:"0 0 4px",letterSpacing:"-0.3px"}}>
+                  {scheduleView === 'timetable' ? "This week's timetable"
+                    : scheduleView === 'coverage' ? "Where you operate"
+                    : "Your classes"}
+                </h2>
+                <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:0,lineHeight:1.55}}>
+                  {scheduleView === 'timetable' ? "What customers can book right now. Pause a class to hide it from the marketplace, or Remove a slot entirely."
+                    : scheduleView === 'coverage' ? "The Mallorca areas you travel to. Guests filter by location, so update this whenever your radius changes."
+                    : "Add a new class type below, or edit an existing one — name, price, photo, description, schedule."}
+                </p>
+              </div>
+              {(() => {
+                const badRange = availabilityFrom && availabilityTo && availabilityTo < availabilityFrom;
+                const blocked = saving || isPreview || badRange;
+                return (
+                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",flexShrink:0}}>
+                    <button onClick={saveAvailability} disabled={blocked}
+                      style={{padding:"11px 26px",background:blocked?"#E4E2DD":"#213C18",color:blocked?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:blocked?"not-allowed":"pointer"}}>
+                      {saving ? "Saving" : "Save availability"}
+                    </button>
+                    <button type="button" onClick={regenerateFromScratch} disabled={blocked}
+                      title="Wipe all offering-generated slots for this listing and regenerate. Booked and hand-edited slots are preserved."
+                      style={{padding:"11px 18px",background:"transparent",color:blocked?"#A3B18A":"#766149",border:`1px solid ${blocked?"rgba(195,200,188,0.5)":"rgba(118,97,73,0.4)"}`,borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:600,cursor:blocked?"not-allowed":"pointer"}}>
+                      Regenerate from scratch
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Pill nav — one row of segment buttons. Coverage pill is
+                only shown for partners who actually travel to
+                customers (dashHasTravel), so a rental-only or
+                studio-only setup sees just Classes / Timetable. */}
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:18,padding:4,background:"rgba(33,60,24,0.06)",border:"1px solid rgba(33,60,24,0.08)",borderRadius:14}}>
+              {[
+                { key:'classes',   label:'Classes',   show:true },
+                { key:'timetable', label:'Timetable', show:!dashIsPrivate },
+                { key:'coverage',  label:'Coverage areas', show:dashHasTravel },
+              ].filter(p => p.show).map(p => {
+                const active = scheduleView === p.key;
+                return (
+                  <button key={p.key} type="button" onClick={()=>setScheduleView(p.key)}
+                    style={{flex:"1 1 auto",minWidth:96,padding:"10px 14px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:F2,fontSize:13,fontWeight:600,background:active?"#213C18":"transparent",color:active?"#FBF9F4":"#213C18",transition:"background 120ms ease"}}>
+                    {p.label}
+                  </button>
+                );
+              })}
             </div>
 
             {/* Needs-price banner: sync'd rows that came in without a
@@ -9468,10 +9548,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
 
             {/* What you offer — chip-based. Each offering is a tappable
                 pill with a clear "Remove" button. Add form is hidden by
-                default and opens via the dashed Add button. */}
+                default and opens via the dashed Add button. Only
+                rendered under the Classes pill. */}
+            {scheduleView === 'classes' && (
             <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:14}}>
               <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>What you offer</p>
-              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>One pill per session type. Click Remove to delete one, or add a new one below.</p>
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.55}}>Edit an existing class (name, price, description, photo, schedule) or use the + button at the bottom to add a new one.</p>
 
               {dashSessionOfferings.length > 0 && (
                 <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
@@ -9649,16 +9731,23 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                           </div>
 
                           {/* Slot capacity — how many independent bookings
-                              per generated slot. 1 = strict, N > 1 = group
-                              class where each booking claims one seat. */}
-                          <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Slot capacity <span style={{fontWeight:400}}>— seats per slot (1 = one booking; N &gt; 1 for group classes)</span></p>
-                          <div style={{marginBottom:14}}>
-                            <input type="number" min="1" value={editBuffer?.capacity ?? 1}
-                              onChange={e=>bufferUpdate({ capacity: e.target.value })}
-                              onFocus={e=>e.target.select()}
-                              placeholder="1"
-                              style={{...INP,marginBottom:0,width:140}}/>
-                          </div>
+                              per generated slot. Only relevant for
+                              instant-book class-timetable offerings.
+                              Any request-mode offering hides this
+                              entirely: customers request one booking at
+                              a time and the partner accepts/declines,
+                              so "seats per slot" isn't a concept they
+                              need to think about. */}
+                          {(editBuffer?.booking_mode || 'instant') !== 'request' && (<>
+                            <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>Slot capacity <span style={{fontWeight:400}}>— seats per slot (1 = one booking; N &gt; 1 for group classes)</span></p>
+                            <div style={{marginBottom:14}}>
+                              <input type="number" min="1" value={editBuffer?.capacity ?? 1}
+                                onChange={e=>bufferUpdate({ capacity: e.target.value })}
+                                onFocus={e=>e.target.select()}
+                                placeholder="1"
+                                style={{...INP,marginBottom:0,width:140}}/>
+                            </div>
+                          </>)}
 
                           {/* Where the session happens. Ignored when
                               locations[] is populated — each location's own
@@ -9704,7 +9793,33 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                               down from businesses.availability_windows so
                               existing partners inherit their old schedule
                               on this offering; edits from here are what
-                              saveAvailability now generates from. */}
+                              saveAvailability now generates from.
+                              Solo request-mode offerings skip this
+                              entirely — customers propose their own
+                              date/time on the venue page and the partner
+                              accepts or declines, so a weekly recurrence
+                              rule doesn't apply. Timetabled offerings
+                              (instant-book, or group request-mode like
+                              Noor's Group private) still need it. */}
+                          {(() => {
+                            const isRequest = (editBuffer?.booking_mode || 'instant') === 'request';
+                            const isGroup   = Number(editBuffer?.max_people || 0) > 1 || Number(editBuffer?.capacity || 0) > 1;
+                            const timetabled = !isRequest || isGroup;
+                            if (!timetabled) return (
+                              <div style={{marginBottom:14,padding:"10px 14px",background:"#F5F3EE",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8}}>
+                                <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,lineHeight:1.5}}>
+                                  <strong style={{color:"#213C18",fontWeight:700}}>Request-mode:</strong> customers pick their preferred date &amp; time when they book. You get a request and choose to accept or decline — no weekly schedule to set up here.
+                                </p>
+                              </div>
+                            );
+                            return null;
+                          })()}
+                          {(() => {
+                            const isRequest = (editBuffer?.booking_mode || 'instant') === 'request';
+                            const isGroup   = Number(editBuffer?.max_people || 0) > 1 || Number(editBuffer?.capacity || 0) > 1;
+                            const timetabled = !isRequest || isGroup;
+                            if (!timetabled) return null;
+                            return (
                           <div style={{marginBottom:14}}>
                             <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 4px"}}>When it runs</p>
                             <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 10px",lineHeight:1.5}}>Weekly recurrence for this offering. Slot rows are generated for every time the rule matches.</p>
@@ -9755,13 +9870,23 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                               </div>
                             </div>
                           </div>
+                            );
+                          })()}
 
                           {/* How long — date range that gates slot generation.
                               Presets cover the common cases (ongoing, 3mo, 6mo);
                               Custom keeps the raw date pickers for anything
                               else. Empty = "ongoing" via the rolling 4-week
                               default in saveAvailability. Any range is capped
-                              at 26 weeks server-side to keep slot counts sane. */}
+                              at 26 weeks server-side to keep slot counts sane.
+                              Hidden for solo request-mode — no slot generation
+                              means no need for a live-through date. */}
+                          {(() => {
+                            const isRequest = (editBuffer?.booking_mode || 'instant') === 'request';
+                            const isGroup   = Number(editBuffer?.max_people || 0) > 1 || Number(editBuffer?.capacity || 0) > 1;
+                            const timetabled = !isRequest || isGroup;
+                            if (!timetabled) return null;
+                            return (
                           <div style={{marginBottom:14}}>
                             <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 8px"}}>How long is this class live for?</p>
                             {(() => {
@@ -9819,6 +9944,8 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                               );
                             })()}
                           </div>
+                            );
+                          })()}
 
                           {/* Per-location prices — for multi-venue offerings
                               (e.g. Noor's Private: at studio 30, at home 60).
@@ -10380,6 +10507,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 );
               })()}
             </div>
+            )}
 
             {/* Standalone "Offering photos" section deleted — photo
                 attach now lives inline on each offering card above.
@@ -10495,37 +10623,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             </div>
             )}
 
-            {/* Save bar — primary action lives here */}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",padding:"12px 0 18px"}}>
-              <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:0,flex:1,minWidth:200,lineHeight:1.5}}>
-                Saving regenerates your bookable slots
-                {availabilityFrom || availabilityTo
-                  ? ` for the dates you've set (${availabilityFrom || "today"} → ${availabilityTo || "+4 weeks"})`
-                  : " for the next 4 weeks"}.
-                Slots inside the 4-day lead window are skipped.
-              </p>
-              {(() => {
-                const badRange = availabilityFrom && availabilityTo && availabilityTo < availabilityFrom;
-                const blocked = saving || isPreview || badRange;
-                return (
-                  <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                    <button onClick={saveAvailability} disabled={blocked}
-                      style={{padding:"11px 26px",background:blocked?"#E4E2DD":"#213C18",color:blocked?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:blocked?"not-allowed":"pointer"}}>
-                      {saving ? "Saving" : "Save availability"}
-                    </button>
-                    {/* Nuclear escape hatch. Not the default — Save
-                        availability is additive and preserves manual
-                        edits. Use this when a rule change orphans lots
-                        of rows and the partner wants a clean state. */}
-                    <button type="button" onClick={regenerateFromScratch} disabled={blocked}
-                      title="Wipe all offering-generated slots for this listing and regenerate. Booked and hand-edited slots are preserved."
-                      style={{padding:"11px 20px",background:"transparent",color:blocked?"#A3B18A":"#766149",border:`1px solid ${blocked?"rgba(195,200,188,0.5)":"rgba(118,97,73,0.4)"}`,borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:600,cursor:blocked?"not-allowed":"pointer"}}>
-                      Regenerate from scratch
-                    </button>
-                  </div>
-                );
-              })()}
-            </div>
+            {/* Save availability bar was here — moved to the header
+                row at the top of this tab (see the div just under the
+                "Your classes" H2). Kept as a comment so future
+                maintainers know where to look. */}
 
             {/* Save toast — large, sage success or clay error so it's hard to
                 miss after pressing Save. */}
@@ -10541,40 +10642,121 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               </div>
             )}
 
-            {/* Compact live-slots summary. The old "What customers can
-                book" panel with per-day list + per-slot Edit/Cancel +
-                bulk-edit form was deleted — every capability it exposed
-                is now either on the offering card (Change price /
-                Edit / photo) or in the day-carousel below (Pause /
-                Remove per slot). What remains here is a single-line
-                confirmation that slots exist, plus the orphan-cancel
-                nudge for cleanup after rule changes. */}
-            <div style={{background:"#fff",borderRadius:12,padding:"14px 18px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-              {dbSlots && dbSlots.length > 0 && (
-                <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 11px",borderRadius:999,background:"#CAECBA",border:"1px solid #A3B18A",fontFamily:F2,fontSize:11,fontWeight:600,color:"#213C18"}}>
-                  <span style={{width:7,height:7,borderRadius:"50%",background:"#A3B18A",display:"inline-block"}}/>
-                  Live
-                </span>
-              )}
-              <p style={{fontFamily:F2,fontSize:13,color:"#213C18",fontWeight:600,margin:0,flex:"1 1 220px"}}>
-                {dbSlots === null
-                  ? "Loading slots…"
-                  : (dbSlots.length > 0
-                      ? `${dbSlots.length} slot${dbSlots.length===1?"":"s"} live on the marketplace`
-                      : "No slots yet — add an offering + a window above, then Save availability.")}
-              </p>
-              {/* Orphan-cancel nudge — offering_gen rows that no longer
-                  match any current rule (e.g. partner narrowed a window
-                  or renamed an offering). Booked orphans are excluded
-                  because customers already paid. */}
-              {orphanedSlots.length > 0 && (
-                <button type="button" onClick={bulkCancelOrphans}
-                  title={`${orphanedSlots.length} slot${orphanedSlots.length===1?'':'s'} no longer match your current rules — safe to cancel.`}
-                  style={{padding:"7px 14px",background:"#7A5C32",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:"0.3px"}}>
-                  Cancel {orphanedSlots.length} stale slot{orphanedSlots.length===1?'':'s'}
-                </button>
-              )}
-            </div>
+            {/* Compact live-slots summary. Lives under the Classes
+                pill (it's about the config → live slots relationship —
+                partner just saved offerings and wants confirmation
+                that slots exist). */}
+            {scheduleView === 'classes' && (
+              <div style={{background:"#fff",borderRadius:12,padding:"14px 18px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                {dbSlots && dbSlots.length > 0 && (
+                  <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 11px",borderRadius:999,background:"#CAECBA",border:"1px solid #A3B18A",fontFamily:F2,fontSize:11,fontWeight:600,color:"#213C18"}}>
+                    <span style={{width:7,height:7,borderRadius:"50%",background:"#A3B18A",display:"inline-block"}}/>
+                    Live
+                  </span>
+                )}
+                <p style={{fontFamily:F2,fontSize:13,color:"#213C18",fontWeight:600,margin:0,flex:"1 1 220px"}}>
+                  {dbSlots === null
+                    ? "Loading slots…"
+                    : (dbSlots.length > 0
+                        ? `${dbSlots.length} slot${dbSlots.length===1?"":"s"} live on the marketplace`
+                        : "No slots yet — add an offering + a window above, then Save availability.")}
+                </p>
+                {orphanedSlots.length > 0 && (
+                  <button type="button" onClick={bulkCancelOrphans}
+                    title={`${orphanedSlots.length} slot${orphanedSlots.length===1?'':'s'} no longer match your current rules — safe to cancel.`}
+                    style={{padding:"7px 14px",background:"#7A5C32",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:"0.3px"}}>
+                    Cancel {orphanedSlots.length} stale slot{orphanedSlots.length===1?'':'s'}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Timetable pill content — day carousel of this week's
+                classes with Pause/Remove actions per slot. Same JSX
+                that used to live in a `!dashIsPrivate` gate below.
+                Wrapping in the pill state keeps it as a swap-in view
+                rather than another panel in the stack. */}
+            {scheduleView === 'timetable' && !dashIsPrivate && (
+              <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
+                  <div style={{display:"flex",gap:6,overflowX:"auto",scrollbarWidth:"none"}}>
+                    {WEEK_DAYS.map((d,i)=>{
+                      const count = CLS.filter(c=>c.day===i).length;
+                      return (
+                        <button key={d} onClick={()=>setSelDay(i)}
+                          style={{padding:"10px 14px",borderRadius:10,border:"none",cursor:"pointer",textAlign:"center",transition:"all .15s",flexShrink:0,
+                            background:selDay===i?"#213C18":"#F5F3EE",
+                            boxShadow:selDay===i?"0 1px 6px rgba(0,0,0,0.08)":"none"}}>
+                          <p style={{fontFamily:F2,fontSize:10,color:selDay===i?"rgba(255,255,255,0.6)":"#54584F",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.5px"}}>{d}</p>
+                          <p style={{fontFamily:F2,fontSize:15,fontWeight:800,color:selDay===i?"#fff":"#213C18",margin:"0 0 2px",letterSpacing:"-0.5px"}}>{WEEK_DATES[i].split(" ")[0]}</p>
+                          {count>0&&<div style={{width:4,height:4,borderRadius:"50%",background:selDay===i?"rgba(255,255,255,0.5)":"#213C18",margin:"0 auto"}}/>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {dayCLS.length===0
+                    ? <div style={{background:"#F5F3EE",borderRadius:10,padding:"28px 16px",textAlign:"center"}}>
+                        <p style={{fontFamily:F2,fontSize:13,color:"#54584F",margin:0}}>No classes on {WEEK_DAYS[selDay]}. Set up availability windows under the Classes pill.</p>
+                      </div>
+                    : dayCLS.map(cl=>{
+                        const avail=cl.spots-cl.booked;
+                        const pct=(cl.booked/cl.spots)*100;
+                        const slotBookings = RECENT.filter(b=>b.cls===cl.name).slice(0,3);
+                        return (
+                          <div key={cl.id} style={{background:"#FBF9F4",borderRadius:10,padding:"14px 16px",border:cl.live?"1px solid rgba(195,200,188,0.4)":"1px dashed rgba(195,200,188,0.6)",opacity:cl.live?1:0.7}}>
+                            <div style={{display:"flex",alignItems:"flex-start",gap:14,flexWrap:"wrap"}}>
+                              <div style={{textAlign:"center",minWidth:48,flexShrink:0}}>
+                                <p style={{fontFamily:F2,fontSize:16,fontWeight:800,color:"#213C18",margin:0,letterSpacing:"-0.5px"}}>{cl.time}</p>
+                                <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>{cl.dur}</p>
+                              </div>
+                              <div style={{width:1,height:36,background:"rgba(195,200,188,0.5)",flexShrink:0,marginTop:4}}/>
+                              <div style={{flex:1,minWidth:0}}>
+                                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
+                                  <p style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#1B1C19",margin:0}}>{cl.name}</p>
+                                  <span style={{fontFamily:F2,fontSize:10,fontWeight:700,color:cl.live?"#213C18":"#54584F",background:cl.live?"#CAECBA":"#E4E2DD",padding:"2px 8px",borderRadius:999}}>{cl.live?"Live":"Paused"}</span>
+                                  <span style={{fontFamily:F2,fontSize:10,color:"#54584F",background:"#F5F3EE",padding:"2px 8px",borderRadius:999}}>◈ {cl.credits}</span>
+                                </div>
+                                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:slotBookings.length>0?6:0}}>
+                                  <div style={{width:110,height:4,background:"#E4E2DD",borderRadius:999}}>
+                                    <div style={{width:`${pct}%`,height:"100%",background:pct>=100?"#1B1C19":pct>75?"#B8925C":"#213C18",borderRadius:999}}/>
+                                  </div>
+                                  <p style={{fontFamily:F2,fontSize:11,color:pct>=100?"#e05c5c":"#213C18",fontWeight:600,margin:0}}>{cl.booked}/{cl.spots} booked · {avail} left</p>
+                                </div>
+                                {slotBookings.length>0&&(
+                                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                                    {slotBookings.map(b=>(
+                                      <span key={b.initials} style={{fontFamily:F2,fontSize:10,color:"#54584F",background:"#F5F3EE",padding:"2px 8px",borderRadius:999}}>{b.name}</span>
+                                    ))}
+                                    {cl.booked>slotBookings.length&&<span style={{fontFamily:F2,fontSize:10,color:"#A3B18A",padding:"2px 0"}}>+{cl.booked-slotBookings.length} more</span>}
+                                  </div>
+                                )}
+                              </div>
+                              <div style={{display:"flex",gap:6,flexShrink:0}}>
+                                <button onClick={()=>{
+                                    if (isPreview) setCLS(p=>p.map(c=>c.id===cl.id?{...c,live:!c.live}:c));
+                                    else togglePausedDb(cl.id, cl.live);
+                                  }}
+                                  style={{padding:"6px 12px",background:cl.live?"#FADEC0":"#CAECBA",color:cl.live?"#766149":"#213C18",border:"none",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                                  {cl.live?"Pause":"Go live"}
+                                </button>
+                                <button onClick={()=>{
+                                    if (isPreview) setCLS(p=>p.filter(c=>c.id!==cl.id));
+                                    else removeSlotDb(cl.id);
+                                  }}
+                                  style={{padding:"6px 12px",background:"transparent",color:"#54584F",border:"1px solid rgba(195,200,188,0.4)",borderRadius:999,fontFamily:F2,fontSize:11,cursor:"pointer"}}>
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                  }
+                </div>
+              </div>
+            )}
 
           </div>
         )}
@@ -10586,10 +10768,17 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             private-instructors implicitly, everyone else via the
             "This business travels to customers" toggle in Settings,
             or automatically if zone data is already populated. */}
-        {tab==="manage" && manageSubTab==="schedule" && dashHasTravel && (
+        {tab==="manage" && manageSubTab==="schedule" && scheduleView==="coverage" && dashHasTravel && (
           <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:18}}>
-            <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 6px"}}>Coverage areas</h3>
-            <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 14px",lineHeight:1.6}}>The Mallorca areas you travel to. Guests filter by location, so update this whenever your radius changes.</p>
+            {/* Section title + subtitle live in the Schedule tab
+                header row (they change based on selected pill), so
+                this panel only needs its own Save action. */}
+            <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}>
+              <button onClick={saveCoverageAreas} disabled={saving||isPreview||coverageAreas.length===0}
+                style={{padding:"10px 22px",background:(saving||isPreview||coverageAreas.length===0)?"#E4E2DD":"#213C18",color:(saving||isPreview||coverageAreas.length===0)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview||coverageAreas.length===0)?"not-allowed":"pointer",flexShrink:0}}>
+                {saving ? "Saving" : "Save coverage and travel"}
+              </button>
+            </div>
             <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
               {MALLORCA_LOCATIONS.map(loc => {
                 const on = coverageAreas.includes(loc);
@@ -10645,117 +10834,21 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                 </div>
               )}
             </div>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginTop:18}}>
+            <div style={{marginTop:14}}>
               <p style={{fontFamily:F2,fontSize:11,color:coverageAreas.length>0?"#213C18":"#6F5B44",fontWeight:600,margin:0}}>
                 {coverageAreas.length > 0
                   ? `${coverageAreas.length} core area${coverageAreas.length===1?"":"s"}${travelAreas.length>0?` · ${travelAreas.length} extended`:""}`
                   : "Pick at least one area to appear in that location's marketplace filter"}
               </p>
-              <button onClick={saveCoverageAreas} disabled={saving||isPreview||coverageAreas.length===0}
-                style={{padding:"10px 22px",background:(saving||isPreview||coverageAreas.length===0)?"#E4E2DD":"#213C18",color:(saving||isPreview||coverageAreas.length===0)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview||coverageAreas.length===0)?"not-allowed":"pointer"}}>
-                {saving ? "Saving" : "Save coverage and travel"}
-              </button>
             </div>
           </div>
         )}
 
-        {tab==="manage" && manageSubTab==="schedule" && !dashIsPrivate && (
-          <div>
-            {/* Standalone "Timetable class photos" section deleted —
-                inline photo attach on the offering card writes to
-                class_photos automatically, so this panel duplicated
-                the same action against the same data. */}
-
-            {/* Day selector */}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
-              <div style={{display:"flex",gap:6,overflowX:"auto",scrollbarWidth:"none"}}>
-                {WEEK_DAYS.map((d,i)=>{
-                  const count = CLS.filter(c=>c.day===i).length;
-                  return (
-                    <button key={d} onClick={()=>setSelDay(i)}
-                      style={{padding:"10px 14px",borderRadius:10,border:"none",cursor:"pointer",textAlign:"center",transition:"all .15s",flexShrink:0,
-                        background:selDay===i?"#213C18":"#fff",
-                        boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
-                      <p style={{fontFamily:F2,fontSize:10,color:selDay===i?"rgba(255,255,255,0.6)":"#54584F",margin:"0 0 2px",textTransform:"uppercase",letterSpacing:"0.5px"}}>{d}</p>
-                      <p style={{fontFamily:F2,fontSize:15,fontWeight:800,color:selDay===i?"#fff":"#213C18",margin:"0 0 2px",letterSpacing:"-0.5px"}}>{WEEK_DATES[i].split(" ")[0]}</p>
-                      {count>0&&<div style={{width:4,height:4,borderRadius:"50%",background:selDay===i?"rgba(255,255,255,0.5)":"#213C18",margin:"0 auto"}}/>}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Slots for day */}
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {dayCLS.length===0
-                ? <div style={{background:"#fff",borderRadius:12,padding:"40px",textAlign:"center",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
-                    <p style={{fontFamily:F2,fontSize:16,color:"#54584F",margin:"0 0 12px"}}>No classes on {WEEK_DAYS[selDay]}</p>
-                    <button onClick={()=>setShowAddSlot(true)} style={{background:"#213C18",color:"#fff",border:"none",borderRadius:999,padding:"10px 20px",fontFamily:F2,fontSize:12,fontWeight:700,cursor:"pointer"}}>+ Add a class</button>
-                  </div>
-                : dayCLS.map(cl=>{
-                    const avail=cl.spots-cl.booked;
-                    const pct=(cl.booked/cl.spots)*100;
-                    // Bookings for this slot
-                    const slotBookings = RECENT.filter(b=>b.cls===cl.name).slice(0,3);
-                    return (
-                      <div key={cl.id} style={{background:"#fff",borderRadius:12,padding:"16px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)",border:cl.live?"1px solid rgba(195,200,188,0.3)":"1px dashed rgba(195,200,188,0.5)",opacity:cl.live?1:0.7}}>
-                        <div style={{display:"flex",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
-                          {/* Time */}
-                          <div style={{textAlign:"center",minWidth:52,flexShrink:0}}>
-                            <p style={{fontFamily:F2,fontSize:18,fontWeight:800,color:"#213C18",margin:0,letterSpacing:"-0.5px"}}>{cl.time}</p>
-                            <p style={{fontFamily:F2,fontSize:10,color:"#54584F",margin:0}}>{cl.dur}</p>
-                          </div>
-                          <div style={{width:1,height:40,background:"rgba(195,200,188,0.4)",flexShrink:0,marginTop:4}}/>
-                          {/* Details */}
-                          <div style={{flex:1}}>
-                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,flexWrap:"wrap"}}>
-                              <p style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#1B1C19",margin:0}}>{cl.name}</p>
-                              <span style={{fontFamily:F2,fontSize:10,fontWeight:700,color:cl.live?"#213C18":"#54584F",background:cl.live?"#CAECBA":"#E4E2DD",padding:"2px 8px",borderRadius:999}}>{cl.live?"Live":"Paused"}</span>
-                              <span style={{fontFamily:F2,fontSize:10,color:"#54584F",background:"#F5F3EE",padding:"2px 8px",borderRadius:999}}>◈ {cl.credits} per person</span>
-                            </div>
-                            {/* Capacity */}
-                            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-                              <div style={{width:120,height:4,background:"#E4E2DD",borderRadius:999}}>
-                                <div style={{width:`${pct}%`,height:"100%",background:pct>=100?"#1B1C19":pct>75?"#B8925C":"#213C18",borderRadius:999}}/>
-                              </div>
-                              <p style={{fontFamily:F2,fontSize:11,color:pct>=100?"#e05c5c":"#213C18",fontWeight:600,margin:0}}>{cl.booked}/{cl.spots} booked · {avail} left</p>
-                            </div>
-                            {/* Booked names */}
-                            {slotBookings.length>0&&(
-                              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                                {slotBookings.map(b=>(
-                                  <span key={b.initials} style={{fontFamily:F2,fontSize:10,color:"#54584F",background:"#F5F3EE",padding:"2px 8px",borderRadius:999}}>{b.name}</span>
-                                ))}
-                                {cl.booked>slotBookings.length&&<span style={{fontFamily:F2,fontSize:10,color:"#A3B18A",padding:"2px 0"}}>+{cl.booked-slotBookings.length} more</span>}
-                              </div>
-                            )}
-                          </div>
-                          {/* Actions */}
-                          <div style={{display:"flex",gap:6,flexShrink:0}}>
-                            <button onClick={()=>{
-                                if (isPreview) setCLS(p=>p.map(c=>c.id===cl.id?{...c,live:!c.live}:c));
-                                else togglePausedDb(cl.id, cl.live);
-                              }}
-                              style={{padding:"6px 12px",background:cl.live?"#FADEC0":"#CAECBA",color:cl.live?"#766149":"#213C18",border:"none",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer"}}>
-                              {cl.live?"Pause":"Go live"}
-                            </button>
-                            <button onClick={()=>{
-                                if (isPreview) setCLS(p=>p.filter(c=>c.id!==cl.id));
-                                else removeSlotDb(cl.id);
-                              }}
-                              style={{padding:"6px 12px",background:"transparent",color:"#54584F",border:"1px solid rgba(195,200,188,0.4)",borderRadius:999,fontFamily:F2,fontSize:11,cursor:"pointer"}}>
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-              }
-            </div>
-
-          </div>
-        )}
+        {/* Day-carousel timetable moved to Overview tab — Manage →
+            Schedule is now configuration-only (add / edit classes +
+            coverage). "What's on this week" lives on the Overview
+            tab under "This week's timetable" where partners land
+            first. See the {tab==="overview"} block above. */}
 
         {/* ── PAYOUTS ── */}
         {tab==="payouts"&&(
@@ -10845,7 +10938,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             </div>
             {/* Edit form — Listing-level fields per spec: category, location, credit price, price_mode */}
             <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
-              <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 16px"}}>Listing details</h3>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:16,flexWrap:"wrap"}}>
+                <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:0}}>Listing details</h3>
+                <button onClick={saveListing} disabled={saving||isPreview}
+                  style={{padding:"10px 22px",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer",flexShrink:0}}>
+                  {saving ? "Saving" : "Save changes"}
+                </button>
+              </div>
               <div style={{display:"flex",flexDirection:"column",gap:12}}>
                 <div>
                   <label style={{fontFamily:F2,fontSize:9,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",display:"block",marginBottom:5}}>Category</label>
@@ -10907,10 +11006,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     onFocus={e=>e.target.style.borderColor="#213C18"} onBlur={e=>e.target.style.borderColor="rgba(195,200,188,0.5)"}/>
                   <p style={{fontFamily:F2,fontSize:10,color:"#A3B18A",margin:"4px 0 0"}}>Comma-separated, up to 8. Shown as pills on your venue popup.</p>
                 </div>
-                <button onClick={saveListing} disabled={saving||isPreview}
-                  style={{padding:"12px 0",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer"}}>
-                  {saving ? "Saving" : "Save changes"}
-                </button>
+                {/* Save button moved to the top of this panel next to
+                    the Listing details header — kept the flash-message
+                    surface here so success/error still lands under the
+                    form when the partner saves. */}
                 {saveMsg.kind === "listing" && <p style={{fontFamily:F2,fontSize:12,color:"#213C18",margin:0,textAlign:"center"}}>{saveMsg.text}</p>}
                 {saveMsg.kind === "err"     && <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:0,textAlign:"center"}}>{saveMsg.text}</p>}
               </div>
@@ -11139,7 +11238,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
             {/* ── Business profile section ── */}
             {settingsSection === 'profile' && (
             <div style={{background:"#fff",borderRadius:12,padding:"20px",boxShadow:"0 1px 6px rgba(0,0,0,0.04)"}}>
-              <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:"0 0 14px"}}>Business profile</h3>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:14,flexWrap:"wrap"}}>
+                <h3 style={{fontFamily:F2,fontSize:14,fontWeight:700,color:"#213C18",margin:0}}>Business profile</h3>
+                <button onClick={saveSettings} disabled={saving||isPreview}
+                  style={{padding:"10px 22px",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer",flexShrink:0}}>
+                  {saving ? "Saving" : "Save changes"}
+                </button>
+              </div>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {[
                   { k:"name",      l:"Venue name",     ph:"e.g. Sol Yoga Mallorca" },
@@ -11199,10 +11304,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     </div>
                   </label>
                 )}
-                <button onClick={saveSettings} disabled={saving||isPreview}
-                  style={{alignSelf:"flex-start",padding:"10px 20px",background:(saving||isPreview)?"#E4E2DD":"#213C18",color:(saving||isPreview)?"#54584F":"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:700,cursor:(saving||isPreview)?"not-allowed":"pointer",marginTop:4}}>
-                  {saving ? "Saving" : "Save changes"}
-                </button>
+                {/* Save button moved to the top of this panel next to
+                    the section header — flash-message surface stays
+                    below the form so success/error lands where the
+                    partner just was. */}
                 {saveMsg.kind === "settings" && <p style={{fontFamily:F2,fontSize:12,color:"#213C18",margin:"4px 0 0"}}>{saveMsg.text}</p>}
                 {saveMsg.kind === "err"      && <p style={{fontFamily:F2,fontSize:12,color:"#6F5B44",margin:"4px 0 0"}}>{saveMsg.text}</p>}
               </div>
