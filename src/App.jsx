@@ -7925,6 +7925,103 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     setBizData(prev => ({ ...prev, class_photos: next }));
   }
 
+  // One-shot photo attach used inline on the offering card. Uploads +
+  // writes the URL to BOTH session_offerings[idx].img AND
+  // class_photos["${type} · ${length_min} min"] in a single businesses
+  // update, so the photo shows on the offering card (Private Sessions
+  // tab) AND on generated timetable rows (Classes tab) with no
+  // second-step required. Replaces the two standalone photo sections
+  // ("Offering photos" + "Timetable class photos") which forced
+  // partners to attach the same photo twice.
+  async function attachOfferingPhotoInline(idx, e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const off = dashSessionOfferings[idx];
+    if (!off) return;
+    setPhotoErr(""); setOfferingPhotoBusy(idx);
+    const { url, error } = await uploadPhotoFile(file, `offering-${idx}`);
+    if (error) { setOfferingPhotoBusy(null); setPhotoErr("Couldn't upload photo. " + error); return; }
+    const nextOfferings = dashSessionOfferings.map((o, i) => i === idx ? { ...o, img: url } : o);
+    const slotName = `${off.type} · ${off.length_min || 60} min`;
+    const nextClassPhotos = { ...(dashClassPhotos || {}), [slotName]: url };
+    setDashSessionOfferings(nextOfferings);
+    setDashClassPhotos(nextClassPhotos);
+    await supabase.from('businesses')
+      .update({ session_offerings: nextOfferings, class_photos: nextClassPhotos })
+      .eq('id', bizData.id);
+    setBizData(prev => ({ ...prev, session_offerings: nextOfferings, class_photos: nextClassPhotos }));
+    setOfferingPhotoBusy(null);
+  }
+  async function removeOfferingPhotoInline(idx) {
+    const off = dashSessionOfferings[idx];
+    if (!off) return;
+    if (!window.confirm(`Remove the photo for "${off?.type || 'this offering'}"? Falls back to your primary venue photo everywhere.`)) return;
+    const nextOfferings = dashSessionOfferings.map((o, i) => i === idx ? { ...o, img: null } : o);
+    const slotName = `${off.type} · ${off.length_min || 60} min`;
+    const nextClassPhotos = { ...(dashClassPhotos || {}) };
+    delete nextClassPhotos[slotName];
+    setDashSessionOfferings(nextOfferings);
+    setDashClassPhotos(nextClassPhotos);
+    await supabase.from('businesses')
+      .update({ session_offerings: nextOfferings, class_photos: nextClassPhotos })
+      .eq('id', bizData.id);
+    setBizData(prev => ({ ...prev, session_offerings: nextOfferings, class_photos: nextClassPhotos }));
+  }
+
+  // Quick "change the price of this whole class type" action. Prompts
+  // for a new price, updates the offering, and patches every future
+  // generated slot (matched by name = "${type} · ${length_min} min")
+  // in one UPDATE so the change is live everywhere — no Save
+  // availability round-trip needed. Skipped for offerings with
+  // per-location pricing (locations[] populated): those need the
+  // detailed edit modal because a single number can't represent the
+  // shape. Rentals get a similar prompt but only update the offering
+  // (no slot rows to patch).
+  async function updateOfferingPriceInline(idx) {
+    const off = dashSessionOfferings[idx];
+    if (!off) return;
+    if (Array.isArray(off.locations) && off.locations.length > 0) {
+      alert("This offering has per-location prices. Use Edit to change them per location.");
+      return;
+    }
+    const current = Number.isFinite(Number(off.price_eur)) ? Number(off.price_eur) : 0;
+    const raw = window.prompt(
+      off.kind === 'rental'
+        ? `New daily rate for "${off.type}" (€):`
+        : `New price for "${off.type}" (€):\n\nThis updates the offering AND every future scheduled slot in one go.`,
+      String(current)
+    );
+    if (raw == null) return;
+    const next = parseInt(String(raw).trim(), 10);
+    if (!Number.isFinite(next) || next < 0) { alert("Invalid price."); return; }
+    if (next === current) return;
+    const nextOfferings = dashSessionOfferings.map((o, i) => i === idx ? { ...o, price_eur: next } : o);
+    setDashSessionOfferings(nextOfferings);
+    const { error: offError } = await supabase.from('businesses')
+      .update({ session_offerings: nextOfferings }).eq('id', bizData.id);
+    if (offError) { flashSaveMsg("err", "Couldn't save the new price — " + offError.message); return; }
+    setBizData(prev => ({ ...prev, session_offerings: nextOfferings }));
+    // Rentals don't generate slot rows, so we're done there.
+    if (off.kind === 'rental') { flashSaveMsg("settings", `Updated ${off.type} to €${next}.`); return; }
+    const slotName = `${off.type} · ${off.length_min || 60} min`;
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: patched, error: slotError } = await supabase.from('slots')
+      .update({ credits: next, source: 'manual' })
+      .eq('listing_id', linkedListingId)
+      .eq('name', slotName)
+      .gte('date', today)
+      .select('id');
+    if (slotError) { flashSaveMsg("err", "Offering updated but slots failed — " + slotError.message); return; }
+    const n = Array.isArray(patched) ? patched.length : 0;
+    setDbSlots(prev => (prev || []).map(s =>
+      s.name === slotName && s.date >= today ? { ...s, credits: next, source: 'manual' } : s
+    ));
+    flashSaveMsg("settings", n > 0
+      ? `Updated ${off.type} to €${next} — patched ${n} future slot${n===1?'':'s'} at the new price.`
+      : `Updated ${off.type} to €${next}. No future slots yet — they'll pick up the price on Save availability.`);
+  }
+
   async function removeGalleryPhoto(idx) {
     const url = galleryImgs[idx];
     const next = galleryImgs.filter((_, i) => i !== idx);
@@ -9850,12 +9947,28 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                     if (locMinMax && locMinMax.count > 0)           flagPills.push({ label: `${locMinMax.count} location${locMinMax.count===1?'':'s'}`, color: '#213C18', bg: '#F5F3EE' });
                     if (off.capacity > 1)                            flagPills.push({ label: `${off.capacity} seats per slot`, color: '#213C18', bg: '#F5F3EE' });
                     if (off.extra_person_eur > 0)                    flagPills.push({ label: `+€${off.extra_person_eur} per extra person${off.max_people > 1 ? ` · up to ${off.max_people}` : ''}`, color: '#213C18', bg: '#F5F3EE' });
+                    const photoBusy = offeringPhotoBusy === idx;
+                    const hasPricingLocations = Array.isArray(off.locations) && off.locations.length > 0;
                     return (
                       <div key={idx} style={{padding:"12px 14px",borderRadius:10,background:"#fff",border:"1px solid rgba(33,60,24,0.18)",fontFamily:F2}}>
-                        {/* Row 1 — headline. Kind pill · name, length, price, actions.
-                            The kind pill is the first thing a partner sees so a
-                            "Rental" vs "Group class" is unmistakable. */}
+                        {/* Row 1 — thumb + headline + primary actions.
+                            Thumb doubles as the "attach photo" surface:
+                            file picker fires from the label wrapping it, so
+                            one photo click updates BOTH session_offerings[i].img
+                            (offering card on the venue popup) and
+                            class_photos["${type} · ${length_min} min"]
+                            (timetable row on Classes tab). */}
                         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                          <label title={off.img ? "Replace photo" : "Add photo"}
+                            style={{position:"relative",width:44,height:44,borderRadius:8,overflow:"hidden",flexShrink:0,cursor:photoBusy?"wait":"pointer",background:"#E4E2DD",border:"1px solid rgba(195,200,188,0.5)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                            {off.img
+                              ? <img src={off.img} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                              : <span style={{fontFamily:F2,fontSize:8,fontWeight:700,color:"#A3B18A",letterSpacing:"0.5px",textAlign:"center",padding:"0 2px",lineHeight:1.15}}>ADD<br/>PHOTO</span>}
+                            {photoBusy && (
+                              <span style={{position:"absolute",inset:0,background:"rgba(255,255,255,0.7)",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F2,fontSize:9,fontWeight:700,color:"#213C18"}}>…</span>
+                            )}
+                            <input type="file" accept="image/*" onChange={(e)=>attachOfferingPhotoInline(idx, e)} disabled={photoBusy} style={{position:"absolute",inset:0,opacity:0,cursor:photoBusy?"wait":"pointer"}}/>
+                          </label>
                           {(() => {
                             const kind = inferOfferingKind(off);
                             const kindMeta = {
@@ -9875,12 +9988,26 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                             <span style={{fontSize:12,color:"#54584F"}}>{off.length_min} min</span>
                           </>)}
                           <span style={{fontSize:12,color:"#54584F"}}>·</span>
-                          <span style={{fontSize:13,fontWeight:700,color:"#766149"}}>{off.kind === 'rental' ? `€${off.price_eur}/day` : priceText}</span>
+                          <button type="button" onClick={()=>updateOfferingPriceInline(idx)}
+                            title={hasPricingLocations
+                              ? "Per-location pricing — use Edit to change each location"
+                              : "Change the price for the whole class type (updates all future slots too)"}
+                            style={{background:hasPricingLocations?"transparent":"#F5F3EE",border:hasPricingLocations?"none":"1px dashed rgba(33,60,24,0.35)",padding:"3px 10px",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,color:"#766149",cursor:hasPricingLocations?"help":"pointer"}}>
+                            {off.kind === 'rental' ? `€${off.price_eur}/day` : priceText}
+                            {!hasPricingLocations && <span style={{fontSize:9,fontWeight:600,color:"#A3B18A",marginLeft:6,letterSpacing:"0.5px",textTransform:"uppercase"}}>Change</span>}
+                          </button>
                           {off.kind === 'rental' && off.inventory > 0 && (<>
                             <span style={{fontSize:12,color:"#54584F"}}>·</span>
                             <span style={{fontSize:12,color:"#54584F"}}>{off.inventory} in stock</span>
                           </>)}
                           <span style={{flex:1}}/>
+                          {off.img && !photoBusy && (
+                            <button type="button" onClick={()=>removeOfferingPhotoInline(idx)}
+                              title="Remove photo"
+                              style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:10,fontWeight:600,padding:"3px 6px",cursor:"pointer",letterSpacing:"0.3px"}}>
+                              Remove photo
+                            </button>
+                          )}
                           <button type="button" onClick={()=>openOfferingEdit(idx)} aria-label={`Edit ${off.type}`}
                             style={{background:"#213C18",border:"none",color:"#fff",fontSize:10,fontWeight:700,padding:"4px 12px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
                             Edit
@@ -10254,72 +10381,13 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               })()}
             </div>
 
-            {/* Offering photos — one photo per session_offering entry.
-                Shows on the offering row inside the venue popup (BizPanel).
-                Does NOT change the marketplace tile (that's biz.img). The
-                timetable-class equivalent lives further down under
-                "Timetable class photos" and writes to
-                businesses.class_photos. */}
-            {dashSessionOfferings.length > 0 && (
-              <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:14}}>
-                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>Offering photos <span style={{fontWeight:500,textTransform:"none",letterSpacing:0,fontSize:11,color:"#A3B18A",marginLeft:6}}>Optional</span></p>
-                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Attach a photo to each offering — private sessions, treatments and rentals. Shows on the offering row inside your venue popup (rentals especially benefit: customers want to see the actual bike, board, kayak, etc.). Does not change your main marketplace card — that stays your primary venue photo.</p>
-                <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {dashSessionOfferings.map((off, idx) => {
-                    const thumb = off?.img || null;
-                    const busy = offeringPhotoBusy === idx;
-                    // If a file is pending for THIS offering, show the
-                    // preview instead of the current thumb + expose Save
-                    // and Cancel. Save uploads + persists; Cancel discards
-                    // without touching Storage or the DB.
-                    const pending = pendingOfferingPhoto?.idx === idx ? pendingOfferingPhoto : null;
-                    const displayThumb = pending ? pending.previewUrl : thumb;
-                    return (
-                      <div key={idx} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 10px",background:pending?"#F0EEE9":"#F5F3EE",borderRadius:8,border:pending?"1px solid rgba(33,60,24,0.2)":"none"}}>
-                        <div style={{width:56,height:56,borderRadius:6,overflow:"hidden",background:"#E4E2DD",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",border:"1px solid rgba(195,200,188,0.5)"}}>
-                          {displayThumb
-                            ? <img src={displayThumb} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-                            : <span style={{fontFamily:F2,fontSize:9,fontWeight:700,color:"#A3B18A",letterSpacing:"0.5px",textAlign:"center",padding:"0 4px"}}>NO PHOTO</span>}
-                        </div>
-                        <div style={{flex:1,minWidth:0}}>
-                          <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:"0 0 2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{off.type}</p>
-                          <p style={{fontFamily:F2,fontSize:11,color:pending?"#7A5C32":"#54584F",margin:0,fontStyle:pending?"italic":"normal"}}>
-                            {pending ? "New photo selected — click Save to upload." : (off.kind === 'rental' ? `€${off.price_eur} / day` : `${off.length_min} min · €${off.price_eur}`)}
-                          </p>
-                        </div>
-                        <div style={{display:"flex",gap:6,flexShrink:0}}>
-                          {pending ? (
-                            <>
-                              <button type="button" onClick={cancelOfferingPhoto} disabled={busy}
-                                style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:11,fontWeight:500,cursor:busy?"not-allowed":"pointer",padding:"6px 10px"}}>
-                                Cancel
-                              </button>
-                              <button type="button" onClick={saveOfferingPhoto} disabled={busy}
-                                style={{padding:"6px 14px",background:busy?"#E4E2DD":"#213C18",color:busy?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:busy?"wait":"pointer",letterSpacing:"0.3px"}}>
-                                {busy ? "Saving…" : "Save"}
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <label style={{padding:"6px 12px",background:busy?"#E4E2DD":"#213C18",color:busy?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:busy?"not-allowed":"pointer",letterSpacing:"0.3px"}}>
-                                {thumb ? "Replace" : "Add photo"}
-                                <input type="file" accept="image/*" onChange={(e)=>pickOfferingPhoto(idx,e)} style={{display:"none"}} disabled={busy}/>
-                              </label>
-                              {thumb && !busy && (
-                                <button type="button" onClick={()=>removeOfferingPhoto(idx)}
-                                  style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"6px 10px",borderRadius:6,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
-                                  Remove
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            {/* Standalone "Offering photos" section deleted — photo
+                attach now lives inline on each offering card above.
+                Uploads write to both session_offerings[i].img AND
+                class_photos["${type} · ${length_min} min"] so the
+                same photo shows on the venue popup offering card AND
+                the timetable class row without partner having to
+                attach it twice. */}
 
             {/* Business-level "When you're available" panel removed —
                 per-offering "When it runs" replaces it. saveAvailability
@@ -10473,265 +10541,39 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
               </div>
             )}
 
-            {/* Live bookable slots panel — front-and-centre so the partner can
-                immediately see what got generated, when, and how customers
-                will see it. Groups by date, shows offering name + price. */}
-            <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
-              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginBottom:14}}>
-                <div>
-                  <h3 style={{fontFamily:F2,fontSize:15,fontWeight:700,color:"#213C18",margin:"0 0 4px"}}>What customers can book</h3>
-                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0,lineHeight:1.55}}>
-                    {dbSlots && dbSlots.length > 0
-                      ? `${dbSlots.length} slot${dbSlots.length===1?"":"s"} live on the marketplace. Edit your offerings or windows above and Save to regenerate.`
-                      : "No slots yet. Add at least one offering + one window above, then click Save availability."}
-                  </p>
-                </div>
-                {dbSlots && dbSlots.length > 0 && (
-                  <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 11px",borderRadius:999,background:"#CAECBA",border:"1px solid #A3B18A",fontFamily:F2,fontSize:11,fontWeight:600,color:"#213C18"}}>
-                    <span style={{width:7,height:7,borderRadius:"50%",background:"#A3B18A",display:"inline-block"}}/>
-                    Live
-                  </span>
-                )}
-              </div>
-
+            {/* Compact live-slots summary. The old "What customers can
+                book" panel with per-day list + per-slot Edit/Cancel +
+                bulk-edit form was deleted — every capability it exposed
+                is now either on the offering card (Change price /
+                Edit / photo) or in the day-carousel below (Pause /
+                Remove per slot). What remains here is a single-line
+                confirmation that slots exist, plus the orphan-cancel
+                nudge for cleanup after rule changes. */}
+            <div style={{background:"#fff",borderRadius:12,padding:"14px 18px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+              {dbSlots && dbSlots.length > 0 && (
+                <span style={{display:"inline-flex",alignItems:"center",gap:5,padding:"5px 11px",borderRadius:999,background:"#CAECBA",border:"1px solid #A3B18A",fontFamily:F2,fontSize:11,fontWeight:600,color:"#213C18"}}>
+                  <span style={{width:7,height:7,borderRadius:"50%",background:"#A3B18A",display:"inline-block"}}/>
+                  Live
+                </span>
+              )}
+              <p style={{fontFamily:F2,fontSize:13,color:"#213C18",fontWeight:600,margin:0,flex:"1 1 220px"}}>
+                {dbSlots === null
+                  ? "Loading slots…"
+                  : (dbSlots.length > 0
+                      ? `${dbSlots.length} slot${dbSlots.length===1?"":"s"} live on the marketplace`
+                      : "No slots yet — add an offering + a window above, then Save availability.")}
+              </p>
               {/* Orphan-cancel nudge — offering_gen rows that no longer
                   match any current rule (e.g. partner narrowed a window
                   or renamed an offering). Booked orphans are excluded
-                  because customers already paid; those need to go
-                  through the cancel-and-refund flow. */}
+                  because customers already paid. */}
               {orphanedSlots.length > 0 && (
-                <div style={{padding:"12px 14px",background:"#FFF3E6",border:"1px solid #E8C9A4",borderRadius:8,marginBottom:14,display:"flex",flexWrap:"wrap",alignItems:"center",gap:12,justifyContent:"space-between"}}>
-                  <p style={{fontFamily:F2,fontSize:12,color:"#7A5C32",margin:0,lineHeight:1.55,flex:"1 1 240px"}}>
-                    <strong style={{fontWeight:700}}>{orphanedSlots.length} slot{orphanedSlots.length===1?'':'s'} no longer match your rules.</strong> These came from an earlier version of your offerings and haven't been booked. Cancel them?
-                  </p>
-                  <button type="button" onClick={bulkCancelOrphans}
-                    style={{padding:"7px 14px",background:"#7A5C32",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:"0.3px"}}>
-                    Cancel all {orphanedSlots.length}
-                  </button>
-                </div>
+                <button type="button" onClick={bulkCancelOrphans}
+                  title={`${orphanedSlots.length} slot${orphanedSlots.length===1?'':'s'} no longer match your current rules — safe to cancel.`}
+                  style={{padding:"7px 14px",background:"#7A5C32",color:"#fff",border:"none",borderRadius:999,fontFamily:F2,fontSize:11,fontWeight:700,cursor:"pointer",letterSpacing:"0.3px"}}>
+                  Cancel {orphanedSlots.length} stale slot{orphanedSlots.length===1?'':'s'}
+                </button>
               )}
-
-              {dbSlots === null && (
-                <p style={{fontFamily:F2,fontSize:12,color:"#54584F",fontStyle:"italic",margin:0}}>Loading slots…</p>
-              )}
-
-              {dbSlots && dbSlots.length === 0 && (
-                <div style={{padding:"22px 16px",background:"#F5F3EE",borderRadius:8,textAlign:"center"}}>
-                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 6px",lineHeight:1.6}}>
-                    Either your offerings list is empty, your windows are entirely inside the 4-day lead buffer, or you haven't saved yet.
-                  </p>
-                  <p style={{fontFamily:F2,fontSize:11,color:"#A3B18A",margin:0,fontWeight:600}}>Add at least one offering AND one window above → Save availability.</p>
-                </div>
-              )}
-
-              {dbSlots && dbSlots.length > 0 && (() => {
-                // Summary chips per offering: "12 × Yoga 60 min", "8 × Pilates 90 min"
-                const byOffering = {};
-                for (const s of dbSlots) {
-                  const key = s.name || "Session";
-                  byOffering[key] = (byOffering[key] || 0) + 1;
-                }
-                // Group by date for the scrollable list
-                const byDate = {};
-                for (const s of dbSlots) {
-                  if (!byDate[s.date]) byDate[s.date] = [];
-                  byDate[s.date].push(s);
-                }
-                const dates = Object.keys(byDate).sort();
-                return (
-                  <>
-                    {/* Offering breakdown chips + per-offering "Select all"
-                        shortcut so a partner can grab every Sunrise Flow
-                        slot in one click without ticking dozens of rows. */}
-                    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:14}}>
-                      {Object.entries(byOffering).sort((a,b)=>b[1]-a[1]).map(([name, count]) => {
-                        const nameIds = (dbSlots || []).filter(s => s.name === name).map(s => s.id);
-                        const allNameSelected = nameIds.length > 0 && nameIds.every(id => selectedSlotIds.has(id));
-                        return (
-                          <button key={name} type="button"
-                            onClick={()=>selectSlotIds(nameIds, !allNameSelected)}
-                            title={allNameSelected ? `Deselect all ${name} slots` : `Select all ${name} slots for bulk edit`}
-                            style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 10px",borderRadius:999,background:allNameSelected?"#213C18":"#F5F3EE",border:`1px solid ${allNameSelected?"#213C18":"rgba(195,200,188,0.5)"}`,fontFamily:F2,fontSize:11,color:allNameSelected?"#fff":"#1B1C19",cursor:"pointer"}}>
-                            <strong style={{fontWeight:700,color:allNameSelected?"#fff":"#213C18"}}>{count}</strong>
-                            <span style={{color:allNameSelected?"rgba(255,255,255,0.7)":"#54584F"}}>×</span>
-                            {name}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Bulk action bar — appears when at least one slot is
-                        selected. Sticky-ish (position:sticky wouldn't help
-                        inside the scrolling list, so this sits above it
-                        and stays visible for as long as the schedule
-                        panel is on screen). */}
-                    {selectedSlotIds.size > 0 && (
-                      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"10px 14px",background:"#213C18",color:"#fff",borderRadius:10,marginBottom:12}}>
-                        <span style={{fontFamily:F2,fontSize:12,fontWeight:600,flex:"1 1 auto"}}>{selectedSlotIds.size} slot{selectedSlotIds.size===1?'':'s'} selected</span>
-                        <button type="button" onClick={()=>{ setBulkEditBuffer({ credits: '', spots: '', name: '' }); setBulkEditOpen(true); }} disabled={bulkBusy}
-                          style={{padding:"7px 14px",background:"#fff",color:"#213C18",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:bulkBusy?"wait":"pointer",letterSpacing:"0.3px"}}>
-                          Bulk edit
-                        </button>
-                        <button type="button" onClick={bulkCancelSelected} disabled={bulkBusy}
-                          style={{padding:"7px 14px",background:"transparent",color:"#fff",border:"1px solid rgba(255,255,255,0.4)",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:bulkBusy?"wait":"pointer",letterSpacing:"0.3px"}}>
-                          {bulkBusy ? "Working…" : "Bulk cancel"}
-                        </button>
-                        <button type="button" onClick={clearSlotSelection} disabled={bulkBusy}
-                          style={{padding:"7px 10px",background:"transparent",color:"rgba(255,255,255,0.7)",border:"none",fontFamily:F2,fontSize:11,fontWeight:500,cursor:"pointer"}}>
-                          Clear
-                        </button>
-                      </div>
-                    )}
-
-                    {/* Bulk-edit form — only rendered while open. Applies
-                        every filled field to every selected slot in one
-                        UPDATE; empty fields are left alone. Bulk-edited
-                        rows flip to source='manual' so the next Save
-                        availability doesn't overwrite them. */}
-                    {bulkEditOpen && (
-                      <div style={{padding:"12px 14px",background:"#F5F3EE",border:"1px solid rgba(33,60,24,0.2)",borderRadius:10,marginBottom:12}}>
-                        <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:"uppercase",margin:"0 0 6px"}}>Bulk edit · {selectedSlotIds.size} slot{selectedSlotIds.size===1?'':'s'}</p>
-                        <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 10px",lineHeight:1.5}}>Fill only the fields you want to change. Empty fields stay untouched. All updated slots are marked as manual so a Save availability won't overwrite them.</p>
-                        <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:10}}>
-                          <input type="text" value={bulkEditBuffer.name}
-                            onChange={e=>setBulkEditBuffer(p=>({...p,name:e.target.value}))}
-                            placeholder="New name (optional)"
-                            style={{...INP,marginBottom:0,flex:"2 1 180px",minWidth:0}}/>
-                          <div style={{position:"relative",width:110}}>
-                            <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontSize:12,fontWeight:600,pointerEvents:"none"}}>€</span>
-                            <input type="number" min="0" value={bulkEditBuffer.credits}
-                              onChange={e=>setBulkEditBuffer(p=>({...p,credits:e.target.value}))}
-                              onFocus={e=>e.target.select()}
-                              placeholder="Price"
-                              style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
-                          </div>
-                          <input type="number" min="1" value={bulkEditBuffer.spots}
-                            onChange={e=>setBulkEditBuffer(p=>({...p,spots:e.target.value}))}
-                            onFocus={e=>e.target.select()}
-                            placeholder="Seats"
-                            style={{...INP,marginBottom:0,width:90}}/>
-                        </div>
-                        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                          <button type="button" onClick={()=>{ setBulkEditOpen(false); setBulkEditBuffer({ credits: '', spots: '', name: '' }); }} disabled={bulkBusy}
-                            style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:11,fontWeight:500,cursor:bulkBusy?"not-allowed":"pointer",padding:"6px 10px"}}>Cancel</button>
-                          <button type="button" onClick={bulkEditSelected} disabled={bulkBusy}
-                            style={{padding:"7px 16px",background:bulkBusy?"#E4E2DD":"#213C18",color:bulkBusy?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:bulkBusy?"wait":"pointer"}}>
-                            {bulkBusy ? "Saving…" : `Apply to ${selectedSlotIds.size}`}
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Date-grouped list, scrollable */}
-                    <div style={{maxHeight:340,overflowY:"auto",borderTop:"1px solid #E4E2DD"}}>
-                      {dates.map(date => {
-                        const dayIds = byDate[date].map(s => s.id);
-                        const allSelected = dayIds.length > 0 && dayIds.every(id => selectedSlotIds.has(id));
-                        const anySelected = dayIds.some(id => selectedSlotIds.has(id));
-                        return (
-                        <div key={date} style={{padding:"10px 0",borderBottom:"1px solid #E4E2DD"}}>
-                          <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px",display:"flex",alignItems:"center",gap:8}}>
-                            <input type="checkbox" checked={allSelected}
-                              ref={el => { if (el) el.indeterminate = anySelected && !allSelected; }}
-                              onChange={e => selectSlotIds(dayIds, e.target.checked)}
-                              title={allSelected ? "Deselect this day" : "Select all slots this day"}
-                              style={{cursor:"pointer"}}/>
-                            <span>{new Date(date+'T00:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})}</span>
-                            <span style={{fontWeight:400,color:"#A3B18A"}}>{byDate[date].length} slot{byDate[date].length===1?"":"s"}</span>
-                          </p>
-                          <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                            {byDate[date].sort((a,b)=>(a.time||"").localeCompare(b.time||"")).map(s => {
-                              const isBooked = (s.booked || 0) > 0;
-                              const busy = cancelingSlotId === s.id;
-                              const editing = editingSlotId === s.id;
-                              const saving = savingSlotId === s.id;
-                              if (editing && slotEditBuffer) {
-                                return (
-                                  <div key={s.id} style={{padding:"10px 12px",borderRadius:8,background:"#F5F3EE",border:"1px solid rgba(33,60,24,0.2)",fontFamily:F2,fontSize:12,color:"#1B1C19"}}>
-                                    <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:8}}>
-                                      <input type="text" value={slotEditBuffer.name}
-                                        onChange={e=>setSlotEditBuffer(p=>({...p,name:e.target.value}))}
-                                        placeholder="Name" style={{...INP,marginBottom:0,flex:"1 1 160px",minWidth:0}}/>
-                                      <input type="time" value={slotEditBuffer.time}
-                                        onChange={e=>setSlotEditBuffer(p=>({...p,time:e.target.value}))}
-                                        style={{...INP,marginBottom:0,width:110}}/>
-                                      <div style={{position:"relative",width:90}}>
-                                        <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontSize:12,fontWeight:600,pointerEvents:"none"}}>€</span>
-                                        <input type="number" min="0" value={slotEditBuffer.credits}
-                                          onChange={e=>setSlotEditBuffer(p=>({...p,credits:e.target.value}))}
-                                          onFocus={e=>e.target.select()}
-                                          style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
-                                      </div>
-                                      <input type="number" min="1" value={slotEditBuffer.spots}
-                                        onChange={e=>setSlotEditBuffer(p=>({...p,spots:e.target.value}))}
-                                        onFocus={e=>e.target.select()}
-                                        title="Seats" style={{...INP,marginBottom:0,width:70}}/>
-                                    </div>
-                                    <p style={{fontFamily:F2,fontSize:10,color:"#766149",margin:"0 0 8px",lineHeight:1.4}}>Saving here marks this slot as manually edited — future Save availability runs will leave it alone.</p>
-                                    <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-                                      <button type="button" onClick={closeSlotEdit}
-                                        style={{background:"transparent",border:"none",color:"#54584F",fontSize:11,fontWeight:500,cursor:"pointer",padding:"6px 10px"}}>Cancel</button>
-                                      <button type="button" onClick={()=>saveSlotEdit(s)} disabled={saving}
-                                        style={{padding:"7px 14px",background:saving?"#E4E2DD":"#213C18",color:saving?"#54584F":"#fff",border:"none",borderRadius:6,fontSize:11,fontWeight:700,cursor:saving?"wait":"pointer"}}>
-                                        {saving ? "Saving…" : "Save"}
-                                      </button>
-                                    </div>
-                                  </div>
-                                );
-                              }
-                              const isRuleGen = s.source === 'offering_gen';
-                              const isChecked = selectedSlotIds.has(s.id);
-                              return (
-                                <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 8px",borderRadius:6,background:isChecked?"#EFEDE6":(isBooked?"#F0EEE9":"transparent"),fontFamily:F2,fontSize:12,color:"#1B1C19"}}>
-                                  <span style={{fontWeight:600,display:"inline-flex",alignItems:"center",gap:8}}>
-                                    <input type="checkbox" checked={isChecked}
-                                      onChange={()=>toggleSlotSelected(s.id)}
-                                      title="Select for bulk edit / cancel"
-                                      style={{cursor:"pointer",marginRight:2}}/>
-                                    {(s.time||"").slice(0,5)}
-                                    {/* Recurrence icon — differentiates a
-                                        rule-generated row from a hand-
-                                        edited one. Manual rows carry no
-                                        icon so the timetable stays clean. */}
-                                    {isRuleGen && (
-                                      <span title="Comes from your offering's recurrence rule. Save availability will keep it in sync."
-                                        style={{display:"inline-block",width:14,height:14,borderRadius:"50%",background:"rgba(33,60,24,0.12)",color:"#213C18",fontSize:9,lineHeight:"14px",textAlign:"center",fontWeight:800}}>↻</span>
-                                    )}
-                                    <span style={{color:"#54584F",fontWeight:400,marginLeft:2}}>{s.name || ""}</span>
-                                  </span>
-                                  <span style={{display:"flex",alignItems:"center",gap:8}}>
-                                    {isBooked && (
-                                      <span style={{fontSize:10,fontWeight:700,color:"#766149",letterSpacing:"0.5px",textTransform:"uppercase"}}>Booked</span>
-                                    )}
-                                    <span style={{color:"#766149",fontWeight:600}}>€{s.credits}</span>
-                                    <button type="button" onClick={()=>openSlotEdit(s)}
-                                      title="Edit just this slot. Saving marks it as manual so it won't be overwritten on the next Save availability."
-                                      style={{background:"#fff",border:"1px solid rgba(33,60,24,0.3)",color:"#213C18",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:999,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
-                                      Edit
-                                    </button>
-                                    <button type="button" disabled={isBooked || busy}
-                                      onClick={()=>cancelSlot(s.id)}
-                                      title={isBooked ? "Cancel the customer's booking first, then this slot can be removed." : "Cancel just this slot."}
-                                      style={{background:isBooked?"#F5F3EE":"#fff",border:`1px solid ${isBooked?"rgba(195,200,188,0.5)":"#C46A4D"}`,color:isBooked?"#A3B18A":"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"3px 8px",borderRadius:999,cursor:isBooked||busy?"not-allowed":"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
-                                      {busy ? "…" : "Cancel"}
-                                    </button>
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        );
-                      })}
-                    </div>
-
-                    <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"14px 0 0",lineHeight:1.6}}>
-                      <strong style={{color:"#213C18",fontWeight:700}}>To change a slot:</strong> edit the offerings or windows above and click Save availability — slots regenerate from your latest setup.
-                      <strong style={{color:"#213C18",fontWeight:700,marginLeft:6}}>To temporarily go offline:</strong> remove all your windows and Save.
-                    </p>
-                  </>
-                );
-              })()}
             </div>
 
           </div>
@@ -10819,80 +10661,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
 
         {tab==="manage" && manageSubTab==="schedule" && !dashIsPrivate && (
           <div>
-            {/* Class photos — one photo per distinct class name from the
-                timetable. Optional. Drives sharper discovery: Explore
-                category rails and BizPanel timetable rows use these
-                when set, otherwise fall back to the venue's primary
-                photo. Distinct names derived from bizData.slots[].name
-                so the panel only lists classes actually on the
-                timetable. Hidden entirely when no slots exist yet. */}
-            {(() => {
-              const rawSlots = Array.isArray(bizData?.slots) ? bizData.slots : [];
-              const distinctClassNames = Array.from(new Set(
-                rawSlots.map(s => (s?.name || '').trim()).filter(Boolean)
-              )).sort((a, b) => a.localeCompare(b));
-              if (distinctClassNames.length === 0) return null;
-              return (
-                <div style={{background:"#fff",borderRadius:12,padding:"18px 20px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",marginBottom:18}}>
-                  <p style={{fontFamily:F2,fontSize:11,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",margin:"0 0 6px"}}>Timetable class photos <span style={{fontWeight:500,textTransform:"none",letterSpacing:0,fontSize:11,color:"#A3B18A",marginLeft:6}}>Optional</span></p>
-                  <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px",lineHeight:1.6}}>Attach a photo to each timetable class name. Shows on the class row inside your venue popup and — when guests filter by that class on Explore — on your marketplace card. Distinct from Offering photos above, which are for request-based offerings.</p>
-                  <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                    {distinctClassNames.map(name => {
-                      const thumb = dashClassPhotos[name] || null;
-                      const busy = classPhotoBusy === name;
-                      const slotCount = rawSlots.filter(s => (s?.name || '').trim() === name).length;
-                      // If a file is pending for THIS class, show preview
-                      // + Save/Cancel. Same Edit → Save pattern as the
-                      // Offering photos panel above.
-                      const pending = pendingClassPhoto?.className === name ? pendingClassPhoto : null;
-                      const displayThumb = pending ? pending.previewUrl : thumb;
-                      return (
-                        <div key={name} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 10px",background:pending?"#F0EEE9":"#F5F3EE",borderRadius:8,border:pending?"1px solid rgba(33,60,24,0.2)":"none"}}>
-                          <div style={{width:56,height:56,borderRadius:6,overflow:"hidden",background:"#E4E2DD",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",border:"1px solid rgba(195,200,188,0.5)"}}>
-                            {displayThumb
-                              ? <img src={displayThumb} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-                              : <span style={{fontFamily:F2,fontSize:9,fontWeight:700,color:"#A3B18A",letterSpacing:"0.5px",textAlign:"center",padding:"0 4px"}}>NO PHOTO</span>}
-                          </div>
-                          <div style={{flex:1,minWidth:0}}>
-                            <p style={{fontFamily:F2,fontSize:13,fontWeight:700,color:"#1B1C19",margin:"0 0 2px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</p>
-                            <p style={{fontFamily:F2,fontSize:11,color:pending?"#7A5C32":"#54584F",margin:0,fontStyle:pending?"italic":"normal"}}>
-                              {pending ? "New photo selected — click Save to upload." : `${slotCount} slot${slotCount === 1 ? '' : 's'} on the timetable`}
-                            </p>
-                          </div>
-                          <div style={{display:"flex",gap:6,flexShrink:0}}>
-                            {pending ? (
-                              <>
-                                <button type="button" onClick={cancelClassPhoto} disabled={busy}
-                                  style={{background:"transparent",border:"none",color:"#54584F",fontFamily:F2,fontSize:11,fontWeight:500,cursor:busy?"not-allowed":"pointer",padding:"6px 10px"}}>
-                                  Cancel
-                                </button>
-                                <button type="button" onClick={saveClassPhoto} disabled={busy}
-                                  style={{padding:"6px 14px",background:busy?"#E4E2DD":"#213C18",color:busy?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:busy?"wait":"pointer",letterSpacing:"0.3px"}}>
-                                  {busy ? "Saving…" : "Save"}
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <label style={{padding:"6px 12px",background:busy?"#E4E2DD":"#213C18",color:busy?"#54584F":"#fff",border:"none",borderRadius:6,fontFamily:F2,fontSize:11,fontWeight:700,cursor:busy?"not-allowed":"pointer",letterSpacing:"0.3px"}}>
-                                  {thumb ? "Replace" : "Add photo"}
-                                  <input type="file" accept="image/*" onChange={(e)=>pickClassPhoto(name, e)} style={{display:"none"}} disabled={busy}/>
-                                </label>
-                                {thumb && !busy && (
-                                  <button type="button" onClick={()=>removeClassPhoto(name)}
-                                    style={{background:"#fff",border:"1px solid #C46A4D",color:"#C46A4D",fontFamily:F2,fontSize:9,fontWeight:700,padding:"6px 10px",borderRadius:6,cursor:"pointer",letterSpacing:"0.5px",textTransform:"uppercase"}}>
-                                    Remove
-                                  </button>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
+            {/* Standalone "Timetable class photos" section deleted —
+                inline photo attach on the offering card writes to
+                class_photos automatically, so this panel duplicated
+                the same action against the same data. */}
 
             {/* Day selector */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
