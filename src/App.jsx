@@ -336,6 +336,19 @@ const CONSUMER_TERMS_VERSION = 'v1.1-2026-09';
 // enabled on the platform account. Flip to true (redeploy) once Connect is
 // live in the Stripe Dashboard and the account.updated webhook is wired up.
 const STRIPE_GATE_ENABLED = false;
+
+// ─── PRE-LAUNCH GATE — single source of truth ───────────────────────────────
+// While the marketplace isn't ready to accept real bookings, every path
+// that would move money or create a booking is intercepted with the
+// "Notify me at launch" modal. Applies to everyone, no exceptions — a
+// signed-in partner testing their own venue would still take real money
+// off a real card, which is exactly the problem we're preventing.
+//
+// TO LAUNCH: flip this constant to false and redeploy. That's the whole
+// switch — the banner disappears, bookings resume, credit purchases
+// resume, gifts resume. Nothing else needs to change.
+const PRE_LAUNCH_MODE = true;
+const LAUNCH_CONTACT_EMAIL = 'hello@wello-wellness.com';
 // Body of the Wello Partner Agreement. Placeholder sections below — paste the
 // approved copy into each `body` (array of paragraphs). Schedule 1 is rendered
 // separately from live partner data and does not live in this array.
@@ -1209,6 +1222,122 @@ function DeleteVenueModal({ venueName, onCancel, onConfirm, busy = false }) {
             {busy ? "Removing…" : "Remove venue"}
           </button>
         </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ─── Pre-launch contact modal ────────────────────────────────────────────────
+// Rendered in place of a real booking / credit purchase while
+// PRE_LAUNCH_MODE is true. Instead of taking the visitor's money for a
+// service we can't yet reliably deliver, we offer a one-tap "notify me at
+// launch" that adds their email to the marketing audience. The visitor is
+// almost always signed in here — booking + credit purchase both require
+// auth first — so we can go straight from the button to their profile
+// email, no form fields required.
+function PreLaunchContactModal({ intercept, onClose, authSession, profile, onOptIn }) {
+  const F2 = "'Manrope','Jost',system-ui,sans-serif";
+  const kind = intercept?.kind || 'booking';
+  const ctx  = intercept?.context || {};
+  const bizName  = ctx.bizName  || ctx.venue || '';
+  const slotName = ctx.slotName || '';
+  const slotDate = ctx.slotDate || '';
+  const slotTime = ctx.slotTime || '';
+  const quantity = ctx.quantity || null;
+
+  // "signed in with a known email" is the fast path. If for any reason
+  // authSession is missing (shouldn't normally happen for booking/credits
+  // intercepts), fall back to an email input so the visitor still has a
+  // way onto the list.
+  const sessionEmail = authSession?.user?.email || '';
+  const alreadyOnList = !!profile?.marketing_opt_in;
+  const [emailInput, setEmailInput] = useState(sessionEmail);
+  const [busy, setBusy]     = useState(false);
+  const [done, setDone]     = useState(alreadyOnList);
+  const [errMsg, setErrMsg] = useState('');
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.trim());
+
+  async function submitOptIn() {
+    if (busy) return;
+    const email = (sessionEmail || emailInput).trim().toLowerCase();
+    if (!email || !emailValid) { setErrMsg("Please enter a valid email address."); return; }
+    setBusy(true); setErrMsg("");
+    try {
+      const result = await onOptIn(email);
+      if (result?.ok) setDone(true);
+      else setErrMsg(result?.error || "Sorry, we couldn't add you. Please try again.");
+    } catch (e) {
+      setErrMsg(e?.message || "Sorry, we couldn't add you. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const heading = "We're not quite live yet";
+  const subheading = kind === 'credits' || kind === 'topup'
+    ? "Credits go on sale when Wello launches. Pop your email in and we'll let you know the moment it goes live."
+    : kind === 'gift'
+      ? "Gift purchases open at launch. Leave your email and we'll ping you the moment it's ready."
+      : "Bookings open at launch. Leave your email and you'll be first to hear when this venue is bookable.";
+
+  return (
+    <ModalShell onClose={onClose}>
+      <div style={{padding:"clamp(24px,4vw,32px)"}}>
+        <div style={{width:44,height:44,borderRadius:"50%",background:"#F5F3EE",border:"1px solid rgba(163,177,138,0.5)",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:16,fontSize:20}}>◈</div>
+        <h2 style={{fontFamily:"'Jost',system-ui,sans-serif",fontSize:22,fontWeight:700,color:"#213C18",letterSpacing:"-0.5px",margin:"0 0 8px"}}>
+          {heading}
+        </h2>
+        <p style={{fontFamily:F2,fontSize:14,color:"#54584F",lineHeight:1.6,margin:"0 0 18px"}}>
+          {subheading}
+        </p>
+
+        {(bizName || slotName || slotDate) && (
+          <div style={{background:"#FBF9F4",border:"1px solid rgba(195,200,188,0.5)",borderRadius:10,padding:"12px 14px",marginBottom:18}}>
+            <p style={{fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#A3B18A",margin:"0 0 6px"}}>You wanted</p>
+            {bizName  && <p style={{fontFamily:F2,fontSize:13,color:"#213C18",margin:"0 0 2px",fontWeight:600}}>{bizName}</p>}
+            {slotName && <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 2px"}}>{slotName}</p>}
+            {(slotDate || slotTime) && <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0}}>{[slotDate,slotTime].filter(Boolean).join(' · ')}</p>}
+            {quantity && <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:0}}>{quantity} credits</p>}
+          </div>
+        )}
+
+        {done ? (
+          <>
+            <div style={{padding:"14px 16px",background:"#CAECBA",border:"1px solid #A3B18A",borderRadius:10,marginBottom:14}}>
+              <p style={{fontFamily:F2,fontSize:13,color:"#213C18",margin:0,fontWeight:600}}>
+                ✓ You're on the list. We'll email you at launch.
+              </p>
+            </div>
+            <button onClick={onClose}
+              style={{width:"100%",padding:"12px 16px",background:"#213C18",color:"#FBF9F4",border:"none",borderRadius:999,fontFamily:F2,fontSize:13,fontWeight:700,cursor:"pointer"}}>
+              Keep browsing
+            </button>
+          </>
+        ) : (
+          <>
+            {!sessionEmail && (
+              <div style={{marginBottom:12}}>
+                <label style={{display:"block",fontFamily:F2,fontSize:10,fontWeight:700,letterSpacing:"1.5px",textTransform:"uppercase",color:"#54584F",marginBottom:6}}>Your email</label>
+                <input type="email" value={emailInput} onChange={e=>{setEmailInput(e.target.value);setErrMsg("");}} placeholder="you@email.com"
+                  style={{width:"100%",padding:"11px 14px",border:"1px solid rgba(195,200,188,0.6)",borderRadius:8,fontFamily:F2,fontSize:14,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4"}}/>
+              </div>
+            )}
+            {sessionEmail && (
+              <p style={{fontFamily:F2,fontSize:12,color:"#54584F",margin:"0 0 12px"}}>
+                We'll email <strong style={{color:"#213C18"}}>{sessionEmail}</strong> at launch.
+              </p>
+            )}
+            {errMsg && <p style={{fontFamily:F2,fontSize:12,color:"#C46A4D",margin:"0 0 10px"}}>{errMsg}</p>}
+            <button onClick={submitOptIn} disabled={busy || (!sessionEmail && !emailValid)}
+              style={{display:"block",width:"100%",padding:"13px 18px",background:(busy || (!sessionEmail && !emailValid))?"#A3B18A":"#213C18",color:"#FBF9F4",border:"none",borderRadius:999,fontFamily:F2,fontSize:14,fontWeight:700,cursor:(busy || (!sessionEmail && !emailValid))?"wait":"pointer",marginBottom:10}}>
+              {busy ? "Adding you…" : "Notify me at launch"}
+            </button>
+            <button onClick={onClose}
+              style={{width:"100%",padding:"10px 16px",background:"transparent",color:"#54584F",border:"1px solid rgba(195,200,188,0.6)",borderRadius:999,fontFamily:F2,fontSize:12,fontWeight:600,cursor:"pointer"}}>
+              Maybe later
+            </button>
+          </>
+        )}
       </div>
     </ModalShell>
   );
@@ -6251,7 +6380,7 @@ CRITICAL: every "credits" value and "total_credits" MUST be a single positive in
   );
 }
 
-function GiftPage({ authSession, profile, onSetView, onGiftCreated }) {
+function GiftPage({ authSession, profile, onSetView, onGiftCreated, onPreLaunchIntercept }) {
   const F2 = "'Manrope','Jost',system-ui,sans-serif";
   // Prefill sender info if the user is signed in — one less thing to type.
   const [senderName,  setSenderName]     = useState(profile?.full_name || authSession?.user?.user_metadata?.full_name || "");
@@ -6277,6 +6406,10 @@ function GiftPage({ authSession, profile, onSetView, onGiftCreated }) {
 
   async function submit() {
     if (!canSubmit) return;
+    if (onPreLaunchIntercept) {
+      onPreLaunchIntercept({ kind: 'gift', context: { quantity: credits } });
+      return;
+    }
     setSubmitting(true); setErr("");
     try {
       const { data, error } = await supabase.functions.invoke('create-gift', {
@@ -7181,6 +7314,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // Confirmed bookings for the new Upcoming tab. Sorted by date+time so the
   // soonest session is on top. null while loading, [] when empty.
   const [upcomingBookings, setUpcomingBookings] = useState(null);
+  // Rolled-up stats for the Overview tiles. Computed live from `bookings`
+  // rather than the businesses.monthly_* rollup columns (which nothing
+  // writes to). null = still loading, so tiles render "—" instead of "0".
+  const [bookingStats, setBookingStats] = useState(null);
   const [respondingId, setRespondingId] = useState(null); // booking id currently being confirmed/declined
   // Partner cancel-confirmed-booking modal state. Available on confirmed
   // bookings until 24h after session end; beyond that the partner emails
@@ -7332,6 +7469,77 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
         _slot_name: slotMap[String(r.slot_id)] || null,
       }));
       if (!cancelled) setUpcomingBookings(enriched);
+    })();
+    return () => { cancelled = true; };
+  }, [isPreview, bizData?.id, requestsTick]);
+
+  // Overview stat rollups. Pulls every confirmed booking for this venue and
+  // computes month + all-time aggregates client-side. Kept in JS (rather than
+  // an SQL rollup or maintained businesses.monthly_* columns) because:
+  //  – volumes are tiny per venue (pre-launch, most rows count in tens),
+  //  – "new vs repeat customer this month" needs per-user first-booking
+  //    dates that a running counter can't reconstruct without extra state,
+  //  – re-fetching on requestsTick keeps the tiles in step with accepts /
+  //    cancels without a separate invalidation path.
+  useEffect(() => {
+    if (isPreview || !bizData?.id) { setBookingStats(null); return; }
+    let cancelled = false;
+    (async () => {
+      const { data: rows, error } = await supabase
+        .from('bookings')
+        .select('user_id, credits_used, booking_date, created_at')
+        .eq('business_id', bizData.id)
+        .eq('status', 'confirmed');
+      if (cancelled) return;
+      if (error) { console.error('bookingStats query error:', error.message); setBookingStats({ error: true }); return; }
+
+      const now = new Date();
+      const monthStartISO = new Date(now.getFullYear(), now.getMonth(), 1)
+        .toISOString().slice(0, 10);
+
+      let thisMonthCount = 0;
+      let thisMonthCredits = 0;
+      const totalByUser = new Map();     // user_id → total confirmed bookings
+      const firstDateByUser = new Map(); // user_id → earliest booking_date (YYYY-MM-DD)
+      const monthUsers = new Set();      // user_ids with ≥1 booking this month
+
+      for (const b of rows || []) {
+        const uid = b.user_id;
+        if (!uid) continue;
+        // booking_date is the session date; fall back to created_at if missing.
+        const bd = b.booking_date || (b.created_at || '').slice(0, 10);
+        totalByUser.set(uid, (totalByUser.get(uid) || 0) + 1);
+        const prev = firstDateByUser.get(uid);
+        if (!prev || bd < prev) firstDateByUser.set(uid, bd);
+        if (bd >= monthStartISO) {
+          thisMonthCount += 1;
+          thisMonthCredits += (Number(b.credits_used) || 0);
+          monthUsers.add(uid);
+        }
+      }
+
+      // "New" = this month is the customer's first-ever booking at this venue.
+      // "Repeat" = they've booked here before AND booked again this month.
+      let newCustomersThisMonth = 0;
+      let repeatCustomersThisMonth = 0;
+      for (const uid of monthUsers) {
+        const firstBd = firstDateByUser.get(uid);
+        if (firstBd && firstBd >= monthStartISO) newCustomersThisMonth += 1;
+        else repeatCustomersThisMonth += 1;
+      }
+
+      let returningAllTime = 0;
+      for (const c of totalByUser.values()) if (c > 1) returningAllTime += 1;
+
+      if (!cancelled) setBookingStats({
+        allTimeCount:            (rows || []).length,
+        thisMonthCount,
+        thisMonthCredits,
+        newCustomersThisMonth,
+        repeatCustomersThisMonth,
+        uniqueCustomersAllTime:  totalByUser.size,
+        returningCustomersAllTime: returningAllTime,
+      });
     })();
     return () => { cancelled = true; };
   }, [isPreview, bizData?.id, requestsTick]);
@@ -8455,21 +8663,39 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     {initials:"LM",name:"Léa M.",    cls:"Morning Yin",    when:"Tue 15 Apr 09:00",cr:12,status:"Pending"},
   ] : [];
 
-  // Header + Overview stats. Live partners pull from businesses-table fields; missing
-  // values render as "0" / "—" rather than fake demo numbers.
+  // Header + Overview stats. Live partners pull from the `bookings` table via
+  // the bookingStats aggregator above; a null value means the fetch is still
+  // in flight, so tiles show "—" instead of flashing "0" before the real
+  // numbers land. Partner-facing revenue uses the venue's commission_rate
+  // when present, falling back to the 20% standard.
   const monthLabel = new Date().toLocaleDateString('en-GB', { month:'long', year:'numeric' });
-  const monthlyBookings = +bizData.monthly_bookings || 0;
-  const monthlyCredits  = +bizData.monthly_credits  || 0;
-  const payoutAmt = monthlyCredits > 0 ? "€"+(monthlyCredits*0.8).toFixed(0) : "€0";
+  const statsLoading    = !isPreview && bookingStats === null;
+  const monthlyBookings = bookingStats?.thisMonthCount   ?? 0;
+  const monthlyCredits  = bookingStats?.thisMonthCredits ?? 0;
+  const totalSessions   = bookingStats?.allTimeCount     ?? 0;
+  const commissionPct   = (() => {
+    const raw = bizData?.commission_rate != null && bizData?.commission_rate !== ""
+      ? bizData.commission_rate : bizData?.commission;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n / 100 : 0.20;
+  })();
+  const partnerShare = 1 - commissionPct;
+  const payoutAmt = monthlyCredits > 0 ? "€"+Math.round(monthlyCredits*partnerShare) : "€0";
+  const newCust    = bookingStats?.newCustomersThisMonth    ?? 0;
+  const repeatCust = bookingStats?.repeatCustomersThisMonth ?? 0;
+  const uniqueAllTime  = bookingStats?.uniqueCustomersAllTime    ?? 0;
+  const returningAllTime = bookingStats?.returningCustomersAllTime ?? 0;
+  const returnRatePct = uniqueAllTime > 0 ? Math.round((returningAllTime/uniqueAllTime)*100) : null;
+
   const stats = isPreview ? [
     {label:"Bookings this month",value:"24",   sub:"April 2026",       accent:"#CAECBA"},
     {label:"Credits redeemed",   value:"◈ 86", sub:"this month",       accent:"rgba(255,255,255,0.25)"},
     {label:"Payout due",         value:"€619", sub:"paid this Friday", accent:"#A3B18A"},
     {label:"Avg rating",         value:"4.9",  sub:"38 reviews",       accent:"#D6B47C"},
   ] : [
-    {label:"Bookings this month",value:String(monthlyBookings),       sub:monthLabel,                                                accent:"#CAECBA"},
-    {label:"Credits redeemed",   value:"◈ "+monthlyCredits,           sub:"this month",                                              accent:"rgba(255,255,255,0.25)"},
-    {label:"Payout due",         value:payoutAmt,                     sub:monthlyCredits>0?"paid this Friday":"no payout yet",       accent:"#A3B18A"},
+    {label:"Bookings this month",value:statsLoading?"—":String(monthlyBookings), sub:monthLabel,                                          accent:"#CAECBA"},
+    {label:"Credits redeemed",   value:statsLoading?"◈ —":"◈ "+monthlyCredits,   sub:"this month",                                        accent:"rgba(255,255,255,0.25)"},
+    {label:"Payout due",         value:statsLoading?"—":payoutAmt,               sub:monthlyCredits>0?"paid this Friday":"no payout yet", accent:"#A3B18A"},
     {label:"Avg rating",         value:bizData.rating?String(bizData.rating):"—", sub:bizData.reviews?`${bizData.reviews} reviews`:"no reviews yet", accent:"#D6B47C"},
   ];
   const overviewCards = isPreview ? [
@@ -8478,10 +8704,12 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     {label:"Avg credits/booking",  value:"◈ 18", sub:"April 2026",             color:"#B8925C"},
     {label:"Revenue this month",   value:"€619", sub:"paid this Friday",       color:"#213C18"},
   ] : [
-    {label:"Total sessions",       value:String(monthlyBookings),    sub:"all time",                                                color:"#213C18"},
-    {label:"Customer return rate", value:"—",                        sub:"no bookings yet",                                         color:"#213C18"},
-    {label:"Avg credits/booking",  value:monthlyBookings>0?"◈ "+Math.round(monthlyCredits/monthlyBookings):"◈ —", sub:monthLabel,    color:"#B8925C"},
-    {label:"Revenue this month",   value:payoutAmt,                  sub:monthlyCredits>0?"paid this Friday":"no revenue yet",      color:"#213C18"},
+    {label:"Total sessions",     value:statsLoading?"—":String(totalSessions),    sub:"all time confirmed",                                    color:"#213C18"},
+    {label:"New customers",      value:statsLoading?"—":String(newCust),          sub:`first booking in ${monthLabel}`,                        color:"#213C18"},
+    {label:"Repeat customers",   value:statsLoading?"—":String(repeatCust),       sub:`returned in ${monthLabel}`,                             color:"#B8925C"},
+    {label:"Return rate",        value:statsLoading?"—":(returnRatePct==null?"—":`${returnRatePct}%`), sub:uniqueAllTime>0?`${uniqueAllTime} customer${uniqueAllTime===1?"":"s"} all time`:"no customers yet", color:"#213C18"},
+    {label:"Avg credits/booking",value:statsLoading?"◈ —":(monthlyBookings>0?"◈ "+Math.round(monthlyCredits/monthlyBookings):"◈ —"), sub:monthLabel, color:"#B8925C"},
+    {label:"Revenue this month", value:statsLoading?"—":payoutAmt,                sub:monthlyCredits>0?"paid this Friday":"no revenue yet",     color:"#213C18"},
   ];
 
   const INP = {width:"100%",border:"1px solid rgba(195,200,188,0.5)",borderRadius:8,padding:"10px 14px",fontFamily:F2,fontSize:13,color:"#1B1C19",outline:"none",boxSizing:"border-box",background:"#FBF9F4"};
@@ -16034,6 +16262,10 @@ export default function App() {
   const [localCredits,setLocalCredits] = useState(0);
   const [bookings,setBookings] = useState([]);
   const [toast,setToast] = useState(null);
+  // Pre-launch: intercept payload for the launch-list modal. When set,
+  // renders <PreLaunchContactModal /> with venue + slot / quantity context.
+  // Shape: { kind: 'booking'|'credits'|'gift'|'topup', context: {...} } | null
+  const [preLaunchIntercept, setPreLaunchIntercept] = useState(null);
 
   function showToast(msg, type="info", duration=2600) { setToast({msg,type}); setTimeout(()=>setToast(null),duration); }
 
@@ -16552,8 +16784,69 @@ export default function App() {
     setPendingCheckoutQty(qty);
     setAuthModal({ mode: "signup" });
   }
+  // Pre-launch: add the current visitor to the launch mailing list. Uses
+  // the same audience-sync path as the Settings toggle so anyone who opts
+  // in here will get the launch email when we do the broadcast, and won't
+  // be re-prompted next time they open the intercept modal.
+  const optInToLaunchList = useCallback(async (rawEmail) => {
+    const email = String(rawEmail || '').trim().toLowerCase();
+    if (!email) return { ok: false, error: "Please enter a valid email." };
+    const uid = authSession?.user?.id;
+    const sessionEmail = (authSession?.user?.email || '').trim().toLowerCase();
+    // profile-mark path: if the visitor is signed in and their session email
+    // matches what they submitted, record consent on their profile row so
+    // Settings reflects the opt-in and we don't re-prompt them.
+    if (uid && sessionEmail && sessionEmail === email) {
+      try {
+        const nowIso = new Date().toISOString();
+        const { error: profErr } = await supabase
+          .from('profiles').update({ marketing_opt_in: true, marketing_opt_in_at: nowIso }).eq('id', uid);
+        if (profErr) console.warn('optInToLaunchList: profile update failed:', profErr.message);
+        else setProfile(p => p ? { ...p, marketing_opt_in: true, marketing_opt_in_at: nowIso } : p);
+      } catch (e) {
+        console.warn('optInToLaunchList: profile update exception:', e?.message);
+      }
+    }
+    // Push to Resend audience. resend-audience-sync requires the caller's
+    // JWT email to match, so this only works for the signed-in-with-matching-
+    // email case. Signed-out visitors reaching the modal (rare — only via
+    // GiftPage) get a friendly error and can sign up to complete the opt-in.
+    try {
+      const { data, error } = await supabase.functions.invoke('resend-audience-sync', {
+        body: { action: 'add', email, first_name: profile?.full_name?.split(' ')[0] || null },
+      });
+      // Log the Resend leg's outcome for local debugging — the sync can fail
+      // without breaking the modal flow because profiles.marketing_opt_in
+      // is the authoritative list. Console warn only, no user-facing toast:
+      // we'd rather show "You're on the list" (they are, in the DB) than
+      // scare them with an internal-only Resend error.
+      if (error || !data?.success) {
+        console.warn('[optInToLaunchList] Resend sync did not land:', {
+          error: error?.message || null,
+          result: data?.result,
+          stage: data?.stage,
+          http_status: data?.http_status,
+          resend_body: data?.resend_body,
+          contact_id: data?.contact_id,
+          segment_id: data?.segment_id,
+        });
+      }
+      // Treat the opt-in as successful whenever we managed to record it on
+      // the profile (the source-of-truth list). Resend is a downstream
+      // mirror; if it fell over, we'll re-sync from profiles at launch.
+      return { ok: !!(uid && sessionEmail && sessionEmail === email) };
+    } catch (e) {
+      console.warn('[optInToLaunchList] invoke threw:', e?.message);
+      return { ok: !!(uid && sessionEmail && sessionEmail === email) };
+    }
+  }, [authSession?.user?.id, authSession?.user?.email, profile?.full_name]);
+
   // Runs checkout once. Uses the origin so Stripe redirects back to this app.
   const doCheckout = useCallback(async (qty) => {
+    if (PRE_LAUNCH_MODE) {
+      setPreLaunchIntercept({ kind: 'credits', context: { quantity: qty } });
+      return;
+    }
     const { data, error } = await supabase.functions.invoke('create-checkout-session', {
       body: { quantity: qty, origin: window.location.origin },
     });
@@ -16756,6 +17049,23 @@ export default function App() {
     showToast("Preferences saved. Refreshing For You…", "success");
   }
   async function onConfirm({biz,slot,form,cost}){
+    // Pre-launch gate: no real booking writes until launch. Applies to
+    // everyone, partners included — a partner testing their own venue
+    // would still charge a real card. Flipping PRE_LAUNCH_MODE to false
+    // is the one switch that ends this behaviour.
+    if (PRE_LAUNCH_MODE) {
+      setBkData(null);
+      setPreLaunchIntercept({
+        kind: 'booking',
+        context: {
+          bizName: biz?.name || '',
+          slotName: slot?.name || slot?.dur || '',
+          slotDate: slot?.date || '',
+          slotTime: slot?.time || '',
+        },
+      });
+      return;
+    }
     console.log('[onConfirm] start', {
       listing_id: biz.id,
       business_id: biz.business_id,
@@ -17064,6 +17374,15 @@ export default function App() {
 
       <SEO title="Wello — The Wellness Pass" />
       <Toast t={toast}/>
+      {/* Pre-launch strip. Non-dismissible on purpose: this is a legal +
+          consumer-protection signal, not a marketing banner. Hidden only on
+          the biz-portal view so the partner dashboard stays clean — partners
+          navigating out to Explore see the strip like anyone else. */}
+      {PRE_LAUNCH_MODE && view !== "biz-portal" && (
+        <div role="alert" style={{background:"#213C18",color:"#FBF9F4",padding:"8px 16px",textAlign:"center",fontFamily:"'Manrope','Jost',system-ui,sans-serif",fontSize:12,fontWeight:500,letterSpacing:"0.2px",borderBottom:"1px solid rgba(202,236,186,0.15)"}}>
+          <span style={{opacity:0.85}}>Wello is in pre-launch. Browse freely — booking &amp; credit purchases open at launch.</span>
+        </div>
+      )}
 
       {/* PASSWORD RECOVERY SCREEN */}
       {recovering&&(
@@ -17208,7 +17527,7 @@ export default function App() {
           {view==="partners"   &&<PartnersPage onSetView={setView}/>}
           {view==="gift"       &&(lastGift
             ? <GiftSentPage gift={lastGift} onSetView={(v)=>{ setLastGift(null); setView(v); }}/>
-            : <GiftPage authSession={authSession} profile={profile} onSetView={setView} onGiftCreated={(g)=>setLastGift(g)}/>
+            : <GiftPage authSession={authSession} profile={profile} onSetView={setView} onGiftCreated={(g)=>setLastGift(g)} onPreLaunchIntercept={PRE_LAUNCH_MODE ? setPreLaunchIntercept : null}/>
           )}
           {view==="redeem"     &&<RedeemPage authSession={authSession} prefilledCode={prefilledClaimCode} onSetView={setView} onOpenSignIn={()=>setAuthModal({mode:"signin"})} onCreditsAdded={(newBal)=>{ setCredits(newBal); reconcileCredits(); try { const url = new URL(window.location.href); url.searchParams.delete("claim"); window.history.replaceState({}, "", url.toString()); } catch { /* noop */ } setPrefilledClaimCode(""); }}/>}
           {view==="adminSetup" &&<AdminSetupPage/>}
@@ -17300,6 +17619,13 @@ export default function App() {
                      onBookingsChanged={()=>{ setBookingsVersion(v=>v+1); reconcileCredits(); }}
                      showToast={showToast}/>}
       {bkData   &&<BookingModal biz={bkData.biz} slot={bkData.slot} onClose={()=>setBkData(null)} onConfirm={onConfirm} credits={credits} onBuyCredits={()=>{setBkData(null);setView("credits");}} profile={profile} authSession={authSession} onOpenSignIn={()=>{setBkData(null);setAuthModal({mode:"signin"});}}/>}
+      {preLaunchIntercept && <PreLaunchContactModal
+        intercept={preLaunchIntercept}
+        authSession={authSession}
+        profile={profile}
+        onClose={()=>setPreLaunchIntercept(null)}
+        onOptIn={optInToLaunchList}
+      />}
       {authModal&&<AuthModal initialMode={authModal.mode} onClose={()=>setAuthModal(null)} onSuccess={()=>setAuthModal(null)} onOpenTerms={()=>{setAuthModal(null);setView("terms");}}/>}
       <SyncEngine listings={listings} onUpdate={onSyncUpdate}/>
       <Chatbot listings={listings} credits={credits} bookings={bookings} onSelectBiz={onSelect}/>
