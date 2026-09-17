@@ -1933,13 +1933,25 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   const bookableSlots = _isRentalOnlyBiz
     ? []
     : (biz.slots || []).filter(s => !isEffectivelyBlocked(s));
-  // Classes segment is drop-in / instant-book only. Request-mode slots
-  // (i.e. private sessions where the partner has to confirm each booking)
-  // don't belong in the Classes timetable — they surface as offering
-  // cards on the Private sessions tab instead. Slot rows inherit
-  // booking_mode from their source offering, so this filter is enough
-  // to keep the two experiences separate.
-  const classSlots = bookableSlots.filter(s => (s?.booking_mode || 'instant') === 'instant');
+  // Classes segment is for group-sized bookings. Solo slots (max_people
+  // == null or 1) belong on the Private sessions tab as a request-to-
+  // book card, not as chip-filters on Classes. We look up the source
+  // offering by slot.name so we can honour `max_people` / `capacity`
+  // which live on the offering, not the slot row. Slots that don't
+  // match any known offering (e.g. imported directly like Yoga Del
+  // Mar's 832 class rows) stay on Classes — safe default for the
+  // studio class-timetable pattern.
+  const offeringByName = new Map();
+  for (const o of (rawOfferings || [])) {
+    if (o?.type) offeringByName.set(o.type, o);
+  }
+  function slotIsGroupSized(s) {
+    const o = offeringByName.get(s?.name);
+    if (!o) return true; // no matching offering → assume class timetable slot
+    const cap = Number(o?.max_people ?? o?.capacity ?? 0);
+    return cap > 1;
+  }
+  const classSlots = bookableSlots.filter(slotIsGroupSized);
   const hasClasses = classSlots.length > 0;
   const hasOfferings = offerings.length > 0;
   // Segment label detection — honest labels for the offering mix.
@@ -1951,12 +1963,19 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   // rental cards under a "Private sessions" tab.
   const TREATMENT_RE = /(massage|treatment|therapy|reflexolog|facial|reiki|shiatsu|deep tissue|swedish|thai|hot stone|acupuncture)/i;
   const rentalOfferings = offerings.filter(o => o?.kind === 'rental');
-  // Private sessions tab is for "book me for 1:1 / request-mode" cards.
-  // Class-kind offerings surface only via their generated slots on the
-  // Classes tab — surfacing them again as private-tab cards means the same
-  // offering shows up twice (once as a chip on Classes, once as a card on
-  // Private sessions). Filter them out here so the tabs stay honest.
-  const nonRentalOfferings = offerings.filter(o => o?.kind !== 'rental' && o?.kind !== 'class');
+  // Private sessions tab is for "book me solo / 1:1" cards. An offering
+  // that's group-sized (max_people>1) belongs on the Classes tab via its
+  // generated slots, not here — surfacing it in both places was the
+  // "Group private appears as a chip AND as a card" bug on Noor's page.
+  // We filter by the same group-sized rule as classSlots so the two tabs
+  // partition offerings cleanly. Rental + class kinds are also excluded
+  // (they have their own tabs / are class-timetable-only).
+  const nonRentalOfferings = offerings.filter(o => {
+    if (o?.kind === 'rental' || o?.kind === 'class') return false;
+    const cap = Number(o?.max_people ?? o?.capacity ?? 0);
+    if (cap > 1) return false; // group offerings belong on Classes tab
+    return true;
+  });
   const hasRentals = rentalOfferings.length > 0;
   const hasNonRentalOfferings = nonRentalOfferings.length > 0;
   const allTreatments = nonRentalOfferings.length > 0 && nonRentalOfferings.every(o => TREATMENT_RE.test(String(o.type || "")));
