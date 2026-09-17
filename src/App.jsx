@@ -2028,13 +2028,22 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     ? classSlots
     : classSlots.filter(s => filterKeys.has(slotKey(s)));
 
-  // Build the 7-day chip array: Today, Tomorrow, then five more dated chips.
-  // Labels: "Today", "Tomorrow", then dow + day-of-month (e.g. "Thu 16").
+  // Day-picker window offset (in days). 0 = starts at today; 7 = a week
+  // ahead; etc. Pagination arrows shift by 7. Capped so the partner can
+  // browse up to WINDOW_MAX_DAYS ahead but not further — matches how far
+  // slot generation typically populates (4-8 weeks).
+  const DAY_WINDOW_SIZE = 7;
+  const WINDOW_MAX_DAYS = 56;
+  const [dayOffset, setDayOffset] = useState(0);
+  // Build the 7-day chip strip starting at today + dayOffset. Labels:
+  // "Today", "Tomorrow" for i=0/1 when dayOffset is 0; otherwise dow +
+  // day-of-month (e.g. "Thu 16").
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const dayChips = Array.from({ length: 7 }, (_, i) => {
+  const dayChips = Array.from({ length: DAY_WINDOW_SIZE }, (_, i) => {
+    const offset = dayOffset + i;
     const d = new Date(today);
-    d.setDate(today.getDate() + i);
+    d.setDate(today.getDate() + offset);
     // Local Y-M-D so the iso agrees with what the user sees. Using
     // toISOString() would produce UTC dates that go off-by-one in
     // positive-offset zones past midnight local. Slot rows also store
@@ -2042,28 +2051,40 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
     // and the wizard both emit), so this matcher lines up cleanly.
     const iso = localYMD(d);
     let label;
-    if (i === 0) label = "Today";
-    else if (i === 1) label = "Tomorrow";
+    if (offset === 0) label = "Today";
+    else if (offset === 1) label = "Tomorrow";
     else label = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric" });
     const count = filteredSlots.filter(s => s.date === iso).length;
     return { iso, label, count };
   });
+  // Furthest slot date in the filtered set — drives whether the "next
+  // week" arrow is available. If there's nothing beyond the current
+  // window, we grey it out rather than let the partner shift into empty
+  // territory forever.
+  const lastSlotIso = filteredSlots.reduce((acc, s) => (s.date && s.date > acc ? s.date : acc), '');
+  const canPagePrev = dayOffset > 0;
+  const canPageNext = dayOffset + DAY_WINDOW_SIZE < WINDOW_MAX_DAYS
+    && (!lastSlotIso || dayChips[DAY_WINDOW_SIZE - 1].iso < lastSlotIso);
   // Default the selection to the first day in the chip range with matching
   // slots. Falls back to today so the user still sees the empty-state copy.
   const firstDayWithSlots = dayChips.find(c => c.count > 0)?.iso || dayChips[0].iso;
   const [selDate, setSel] = useState(firstDayWithSlots);
-  // If the filter reshuffles which days have content, snap to the first
-  // still-available day so the user is not stuck on an empty tab.
+  // If the filter reshuffles which days have content OR the partner pages
+  // to a new week, snap to the first available day in the current window
+  // so the user is not stuck staring at an empty date. dayOffset is
+  // tracked in deps here so a page-forward with no slots on the first day
+  // still picks a non-empty one.
   useEffect(() => {
+    const isSelInWindow = dayChips.some(c => c.iso === selDate);
     const stillHas = dayChips.find(c => c.iso === selDate)?.count > 0;
-    if (!stillHas) {
+    if (!isSelInWindow || !stillHas) {
       const next = dayChips.find(c => c.count > 0)?.iso;
       if (next) setSel(next);
+      else if (!isSelInWindow) setSel(dayChips[0].iso);
     }
-    // Intentionally not tracking dayChips in deps — it rebuilds every render.
-    // We only care about the filter changing.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterKeys]);
+    // dayChips rebuilds every render; the meaningful triggers are filter
+    // changes and window paging. eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKeys, dayOffset]);
   const slotsForDate = filteredSlots
     .filter(s => s.date === selDate)
     .slice()
@@ -2766,10 +2787,25 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
                 </>
               )}
 
-              {/* 7-day chip strip: Today, Tomorrow, then five more dated
-                  chips. Chips with zero matching slots after filters render
-                  disabled but still visible so the strip stays predictable. */}
-              <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:"0 0 10px"}}>Pick a day</p>
+              {/* Sliding 7-day chip strip. Chips with zero matching slots
+                  after filters render disabled but still visible so the
+                  strip stays predictable. Prev / Next arrows shift the
+                  window by 7 days, capped at +8 weeks total lookahead. */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:10}}>
+                <p style={{fontFamily:F2,fontSize:11,fontWeight:700,color:"#213C18",letterSpacing:"1.5px",textTransform:"uppercase",margin:0}}>Pick a day</p>
+                <div style={{display:"flex",gap:6}}>
+                  <button type="button" onClick={() => setDayOffset(v => Math.max(0, v - DAY_WINDOW_SIZE))} disabled={!canPagePrev}
+                    aria-label="Previous week"
+                    style={{background:canPagePrev?"#F5F3EE":"transparent",border:`1px solid ${canPagePrev?"rgba(33,60,24,0.25)":"rgba(195,200,188,0.5)"}`,color:canPagePrev?"#213C18":"#A3B18A",width:32,height:32,borderRadius:999,cursor:canPagePrev?"pointer":"not-allowed",fontFamily:F2,fontSize:14,fontWeight:700,lineHeight:1,padding:0}}>
+                    ←
+                  </button>
+                  <button type="button" onClick={() => setDayOffset(v => Math.min(WINDOW_MAX_DAYS - DAY_WINDOW_SIZE, v + DAY_WINDOW_SIZE))} disabled={!canPageNext}
+                    aria-label="Next week"
+                    style={{background:canPageNext?"#F5F3EE":"transparent",border:`1px solid ${canPageNext?"rgba(33,60,24,0.25)":"rgba(195,200,188,0.5)"}`,color:canPageNext?"#213C18":"#A3B18A",width:32,height:32,borderRadius:999,cursor:canPageNext?"pointer":"not-allowed",fontFamily:F2,fontSize:14,fontWeight:700,lineHeight:1,padding:0}}>
+                    →
+                  </button>
+                </div>
+              </div>
               <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4,marginBottom:20,scrollbarWidth:"none",WebkitOverflowScrolling:"touch"}}>
                 {dayChips.map(c => {
                   const isSelected = selDate === c.iso;
