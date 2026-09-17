@@ -9362,19 +9362,25 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                                 style={{...INP,paddingRight:34,marginBottom:0,width:"100%"}}/>
                               <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:12,fontWeight:500,pointerEvents:"none"}}>min</span>
                             </div>
-                            <div style={{position:"relative",flex:"1 1 110px",minWidth:90}}>
-                              <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
-                              <input type="number" min="0" value={editBuffer?.price_eur ?? ''}
-                                onChange={e=>bufferUpdate({ price_eur: e.target.value })}
-                                onFocus={e=>e.target.select()}
-                                placeholder="base"
-                                disabled={hasLocs}
-                                title={hasLocs ? "Locations drive the price when set — base is ignored." : ""}
-                                style={{...INP,paddingLeft:22,marginBottom:0,width:"100%",opacity:hasLocs?0.55:1}}/>
-                            </div>
+                            {!hasLocs && (
+                              <div style={{position:"relative",flex:"1 1 110px",minWidth:90}}>
+                                <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#54584F",fontFamily:F2,fontSize:13,fontWeight:600,pointerEvents:"none"}}>€</span>
+                                <input type="number" min="0" value={editBuffer?.price_eur ?? ''}
+                                  onChange={e=>bufferUpdate({ price_eur: e.target.value })}
+                                  onFocus={e=>e.target.select()}
+                                  placeholder="price"
+                                  style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
+                              </div>
+                            )}
                           </div>
                           {hasLocs && !isRentalKind && (
-                            <p style={{fontFamily:F2,fontSize:11,color:"#766149",margin:"0 0 12px"}}>Base price ignored — per-location prices below drive booking cost.</p>
+                            <div style={{padding:"10px 12px",background:"#FFF3E6",border:"1px solid #E8C9A4",borderRadius:8,marginBottom:14,display:"flex",gap:10,alignItems:"flex-start"}}>
+                              <span style={{fontSize:14,lineHeight:1,marginTop:1}}>💡</span>
+                              <div style={{flex:1,minWidth:0}}>
+                                <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#7A5C32",margin:"0 0 3px"}}>This offering has per-location pricing</p>
+                                <p style={{fontFamily:F2,fontSize:12,color:"#766149",margin:0,lineHeight:1.5}}>Prices are set on each Location row below (currently {locs.map((l, i) => `${l.label || 'Untitled'} €${Number(l.price_eur) || 0}`).join(' · ')}). Scroll down to change them ↓</p>
+                              </div>
+                            </div>
                           )}
 
                           {isRentalKind && (
@@ -9675,8 +9681,10 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                               (e.g. Noor's Private: at studio 30, at home 60).
                               When empty, the offering uses the base price
                               above and inherits venue_side from the slot. */}
-                          <div style={{marginBottom:14}}>
-                            <p style={{fontFamily:F2,fontSize:11,fontWeight:600,color:"#54584F",margin:"6px 0 4px"}}>Locations (optional)</p>
+                          <div style={{marginBottom:14, ...(hasLocs ? { padding:"14px 16px", background:"#F5F3EE", border:"1px solid rgba(33,60,24,0.15)", borderRadius:10 } : {}) }}>
+                            <p style={{fontFamily:F2,fontSize:12,fontWeight:700,color:"#213C18",letterSpacing:"0.5px",textTransform:hasLocs?"uppercase":"none",margin:"0 0 6px"}}>
+                              {hasLocs ? "Location prices — edit here" : "Locations (optional)"}
+                            </p>
                             <p style={{fontFamily:F2,fontSize:11,color:"#54584F",margin:"0 0 10px",lineHeight:1.5}}>Add one row per venue option (e.g. "At studio" + "At your home"). Customers pick a location, and its price + venue side apply.</p>
                             {locs.length > 0 && (
                               <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:8}}>
