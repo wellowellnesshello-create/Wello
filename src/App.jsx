@@ -1969,19 +1969,15 @@ function BizPanel({ biz, onClose, onBook, authSession, credits, onOpenSignIn, on
   // rental cards under a "Private sessions" tab.
   const TREATMENT_RE = /(massage|treatment|therapy|reflexolog|facial|reiki|shiatsu|deep tissue|swedish|thai|hot stone|acupuncture)/i;
   const rentalOfferings = offerings.filter(o => o?.kind === 'rental');
-  // Private sessions tab is for "book me solo / 1:1" cards. An offering
-  // that's group-sized (max_people>1) belongs on the Classes tab via its
-  // generated slots, not here — surfacing it in both places was the
-  // "Group private appears as a chip AND as a card" bug on Noor's page.
-  // We filter by the same group-sized rule as classSlots so the two tabs
-  // partition offerings cleanly. Rental + class kinds are also excluded
-  // (they have their own tabs / are class-timetable-only).
-  const nonRentalOfferings = offerings.filter(o => {
-    if (o?.kind === 'rental' || o?.kind === 'class') return false;
-    const cap = Number(o?.max_people ?? o?.capacity ?? 0);
-    if (cap > 1) return false; // group offerings belong on Classes tab
-    return true;
-  });
+  // Private sessions tab is for "request-to-book" cards. Group-sized
+  // offerings (e.g. Noor's Group private, max_people=30) still surface
+  // here as a request card even though their generated slots also show
+  // on the Classes tab — the two entry points are intentional:
+  //   • Classes tab → book a scheduled slot at the time the partner
+  //     already set up
+  //   • Private tab → ask for a custom time / group booking
+  // Only rental + class kinds are excluded (own tab / class-timetable-only).
+  const nonRentalOfferings = offerings.filter(o => o?.kind !== 'rental' && o?.kind !== 'class');
   const hasRentals = rentalOfferings.length > 0;
   const hasNonRentalOfferings = nonRentalOfferings.length > 0;
   const allTreatments = nonRentalOfferings.length > 0 && nonRentalOfferings.every(o => TREATMENT_RE.test(String(o.type || "")));
@@ -7082,7 +7078,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
   // newOff.kind = null means the tile picker is showing (partner hasn't
   // chosen a listing type yet). Once picked, sensible defaults are seeded
   // per-kind and the form renders with only the relevant fields.
-  const [newOff, setNewOff] = useState({ kind: null, type: "", length_min: 60, price_eur: "", extra_person_eur: "", max_people: "", capacity: 1, venue_side: "instructor", booking_mode: "instant", inventory: "", weekly_price_eur: "", min_days: 1, max_days: 14, deposit_eur: "", addons: [], min_lead_hours: "", booqable_product_id: "" });
+  const [newOff, setNewOff] = useState({ kind: null, type: "", description: "", length_min: 60, price_eur: "", extra_person_eur: "", max_people: "", capacity: 1, venue_side: "instructor", booking_mode: "instant", inventory: "", weekly_price_eur: "", min_days: 1, max_days: 14, deposit_eur: "", addons: [], min_lead_hours: "", booqable_product_id: "" });
   // In-place offering edit. editingOfferingIdx is the row being edited (null
   // = none). editBuffer is a local draft so Cancel discards cleanly. Save
   // writes the buffer via dashUpdateOffering and closes.
@@ -7162,8 +7158,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       : (Number.isFinite(leadRaw) && leadRaw > 0 ? leadRaw : null);
     const booqable_product_id = kind === 'rental' && typeof newOff.booqable_product_id === 'string' && newOff.booqable_product_id.trim()
       ? newOff.booqable_product_id.trim() : null;
-    setDashSessionOfferings(prev => [...prev, { kind, type, length_min, price_eur, extra_person_eur, max_people, capacity, venue_side, booking_mode, inventory, weekly_price_eur, min_days, max_days, deposit_eur, addons, min_lead_hours, booqable_product_id, img: null }]);
-    setNewOff({ kind: null, type: "", length_min: 60, price_eur: "", extra_person_eur: "", max_people: "", capacity: 1, venue_side: "instructor", booking_mode: "instant", inventory: "", weekly_price_eur: "", min_days: 1, max_days: 14, deposit_eur: "", addons: [], min_lead_hours: "", booqable_product_id: "" });
+    const description = (newOff.description || '').trim() || null;
+    setDashSessionOfferings(prev => [...prev, { kind, type, description, length_min, price_eur, extra_person_eur, max_people, capacity, venue_side, booking_mode, inventory, weekly_price_eur, min_days, max_days, deposit_eur, addons, min_lead_hours, booqable_product_id, img: null }]);
+    setNewOff({ kind: null, type: "", description: "", length_min: 60, price_eur: "", extra_person_eur: "", max_people: "", capacity: 1, venue_side: "instructor", booking_mode: "instant", inventory: "", weekly_price_eur: "", min_days: 1, max_days: 14, deposit_eur: "", addons: [], min_lead_hours: "", booqable_product_id: "" });
     setShowAddOffering(false);
   }
   function dashAddOffering() {
@@ -7192,6 +7189,7 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
     setEditBuffer({
       kind: OFFERING_KINDS.includes(src.kind) ? src.kind : inferOfferingKind(src),
       type: src.type || "",
+      description: typeof src.description === 'string' ? src.description : '',
       length_min: src.length_min || 60,
       price_eur: Number.isFinite(Number(src.price_eur)) ? Number(src.price_eur) : 0,
       extra_person_eur: Number.isFinite(Number(src.extra_person_eur)) && src.extra_person_eur > 0 ? src.extra_person_eur : "",
@@ -7297,8 +7295,9 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
       : (Number.isFinite(leadRaw) && leadRaw > 0 ? leadRaw : null);
     const booqable_product_id = kind === 'rental' && typeof editBuffer.booqable_product_id === 'string' && editBuffer.booqable_product_id.trim()
       ? editBuffer.booqable_product_id.trim() : null;
+    const description = (editBuffer.description || '').trim() || null;
     const patched = {
-      kind, type, length_min, price_eur,
+      kind, type, description, length_min, price_eur,
       extra_person_eur: finalExtras, max_people: finalMax, capacity: finalCapacity,
       venue_side: finalVenueSide, booking_mode: finalBooking,
       locations: locations.length > 0 ? locations : undefined,
@@ -9396,6 +9395,11 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                               onChange={e=>bufferUpdate({ type: e.target.value })}
                               placeholder="Class type (e.g. Yoga)"
                               style={{...INP,marginBottom:0,flex:"2 1 180px",minWidth:0}}/>
+                            <textarea value={editBuffer?.description ?? ''}
+                              onChange={e=>bufferUpdate({ description: e.target.value })}
+                              placeholder="Description — appears under the class name on your venue page (optional)"
+                              rows={2}
+                              style={{...INP,marginBottom:0,flex:"1 1 100%",minWidth:0,resize:"vertical",fontFamily:F2,lineHeight:1.5}}/>
                             <div style={{position:"relative",flex:"1 1 110px",minWidth:90}}>
                               <input type="number" min="1" step="5" value={editBuffer?.length_min ?? ''}
                                 onChange={e=>bufferUpdate({ length_min: e.target.value })}
@@ -10047,6 +10051,14 @@ function BusinessPortalDashboard({ onExit, bizData: bizDataProp, isPreview = tru
                           style={{...INP,paddingLeft:22,marginBottom:0,width:"100%"}}/>
                         {isRental && <span style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",color:"#A3B18A",fontFamily:F2,fontSize:11,fontWeight:500,pointerEvents:"none"}}>/ day</span>}
                       </div>
+                    </div>
+
+                    <div style={{marginBottom:10}}>
+                      <textarea value={newOff.description}
+                        onChange={e=>setNewOff(p=>({...p,description:e.target.value}))}
+                        placeholder={isRental ? 'Description — appears under the item on your venue page (optional)' : 'Description — appears under the class name on your venue page (optional)'}
+                        rows={2}
+                        style={{...INP,marginBottom:0,width:"100%",resize:"vertical",fontFamily:F2,lineHeight:1.5}}/>
                     </div>
 
                     {/* Rental-only: inventory + weekly rate + min/max days + deposit + add-ons.
